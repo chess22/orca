@@ -35,13 +35,6 @@ export type RpcClient = {
 const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16000]
 const REQUEST_TIMEOUT_MS = 30_000
 const HANDSHAKE_TIMEOUT_MS = 5_000
-// Why: belt-and-suspenders against React Native WebSocket implementations
-// that occasionally never fire onerror/onclose for an unreachable host
-// (observed when waking the device with stale DNS). Without this safety
-// net the UI sat on 'Connecting…' forever and only a Metro reload
-// recovered. Five seconds is a generous upper bound — a healthy LAN WS
-// typically connects in <100ms.
-const CONNECT_TIMEOUT_MS = 5_000
 
 export function connect(
   endpoint: string,
@@ -55,7 +48,6 @@ export function connect(
   let reconnectAttempt = 0
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let handshakeTimer: ReturnType<typeof setTimeout> | null = null
-  let connectTimer: ReturnType<typeof setTimeout> | null = null
   let intentionallyClosed = false
 
   // Why: fresh ephemeral keypair per connection provides forward secrecy.
@@ -107,24 +99,7 @@ export function connect(
 
     ws = new WebSocket(endpoint)
 
-    connectTimer = setTimeout(() => {
-      connectTimer = null
-      // Why: WS still stuck before 'open' — force-close so onclose fires
-      // and reconnect logic kicks in (rather than sitting on 'connecting'
-      // until the user reloads Metro). Safe even if the WS is mid-open;
-      // close() will trigger the 'closing' → 'closed' transitions.
-      try {
-        ws?.close()
-      } catch {
-        // ignore — onclose will still wire up reconnect
-      }
-    }, CONNECT_TIMEOUT_MS)
-
     ws.onopen = () => {
-      if (connectTimer) {
-        clearTimeout(connectTimer)
-        connectTimer = null
-      }
       reconnectAttempt = 0
       setState('handshaking')
 
@@ -267,10 +242,6 @@ export function connect(
         clearTimeout(handshakeTimer)
         handshakeTimer = null
       }
-      if (connectTimer) {
-        clearTimeout(connectTimer)
-        connectTimer = null
-      }
       if (intentionallyClosed) {
         setState('disconnected')
         rejectAllPending('Connection closed')
@@ -410,10 +381,6 @@ export function connect(
       if (handshakeTimer) {
         clearTimeout(handshakeTimer)
         handshakeTimer = null
-      }
-      if (connectTimer) {
-        clearTimeout(connectTimer)
-        connectTimer = null
       }
       if (ws) {
         ws.close()
