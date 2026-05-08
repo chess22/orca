@@ -214,21 +214,30 @@ export async function addWorktree(
   //   missing write degrades to the same fallback as old git.
   // - The write is skipped when any value is already set (local, global,
   //   or system) so a deliberate user `false` is preserved.
+  // - Not rolled back on creation failure: addSparseWorktree's catch path
+  //   removes the worktree but does not unset this config. That is consistent
+  //   with the "benign and idempotent" rationale above — every Orca-created
+  //   worktree wants this default, and a future creation will silently re-set
+  //   it via the existing-value check anyway.
   try {
     // Why: `--get` (not `--local --get`) so a value set at any scope
     // (local/global/system) counts as "user already chose" and we don't
-    // overwrite it. `gitExecFileAsync` throws on non-zero exit; exit 1
-    // means the key is unset, which is the only case where we write.
+    // overwrite it.
     let alreadySet = false
     try {
       await gitExecFileAsync(['config', '--get', 'push.autoSetupRemote'], {
         cwd: worktreePath
       })
       alreadySet = true
-    } catch {
-      // Key is unset (or read failed for another reason). Fall through to
-      // the write attempt; if the underlying problem is e.g. a locked
-      // config, the write will fail too and the outer catch will warn.
+    } catch (readError) {
+      // Why: `git config --get` exits 1 only when the key is unset at every
+      // scope. Any other exit code means a real read failure (corrupt config,
+      // locked file, parse error) — surface that via the outer catch instead
+      // of silently overwriting whatever value the user actually has.
+      const code = (readError as { code?: unknown })?.code
+      if (code !== 1) {
+        throw readError
+      }
     }
     if (!alreadySet) {
       await gitExecFileAsync(['config', '--local', 'push.autoSetupRemote', 'true'], {
