@@ -51,22 +51,57 @@ describe('DockerFilesystemProvider', () => {
     engine.enqueueExecResult({ stdout: JSON.stringify(['src/index.ts']) })
 
     await expect(provider.stat('/workspace/a.txt')).resolves.toMatchObject({ type: 'file' })
-    await expect(provider.search({ rootPath: '/workspace', query: 'TODO' })).resolves.toMatchObject(
-      {
-        totalMatches: 0
+    await expect(
+      provider.search({
+        rootPath: '/workspace',
+        query: 'TODO',
+        useRegex: true,
+        wholeWord: true,
+        includePattern: '*.ts',
+        excludePattern: '*.test.ts'
+      })
+    ).resolves.toMatchObject({
+      totalMatches: 0
+    })
+    expect(engine.commands[1]).toMatchObject({
+      options: {
+        args: [
+          'node',
+          '-e',
+          expect.any(String),
+          JSON.stringify({
+            rootPath: '/workspace',
+            query: 'TODO',
+            useRegex: true,
+            wholeWord: true,
+            includePattern: '*.ts',
+            excludePattern: '*.test.ts'
+          })
+        ]
       }
-    )
+    })
     await expect(provider.listFiles('/workspace')).resolves.toEqual(['src/index.ts'])
   })
 
-  it('registers and unregisters watches without a real daemon watcher', async () => {
+  it('registers watches and forwards in-container change events', async () => {
     const callback = vi.fn()
     const unwatch = await provider.watch('/workspace', callback)
+    const session = engine.sessions.get('session-1')!
 
     expect(engine.commands[0]).toMatchObject({
-      command: 'container.exec',
-      options: { args: ['sh', '-lc', 'true'], cwd: '/workspace' }
+      command: 'container.exec.spawn',
+      options: {
+        args: ['node', '-e', expect.any(String), '/workspace'],
+        cwd: '/workspace',
+        tty: false
+      }
     })
+    session.emitData(
+      `${JSON.stringify([{ kind: 'update', absolutePath: '/workspace/src/app.ts' }])}\n`
+    )
+    expect(callback).toHaveBeenCalledWith([
+      { kind: 'update', absolutePath: '/workspace/src/app.ts' }
+    ])
     unwatch()
   })
 

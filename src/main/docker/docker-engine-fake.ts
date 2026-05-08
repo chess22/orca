@@ -31,6 +31,7 @@ export class DockerEngineFake implements DockerEngineClientLike {
   readonly sessions = new Map<string, FakeDockerExecSession>()
   buildDelayMs = 0
   nextBuildError: Error | null = null
+  nextStartError: Error | null = null
   nextExecError: Error | null = null
   private imageCounter = 0
   private containerCounter = 0
@@ -73,6 +74,11 @@ export class DockerEngineFake implements DockerEngineClientLike {
 
   async startContainer(id: string): Promise<void> {
     this.commands.push({ command: 'container.start', id })
+    if (this.nextStartError) {
+      const error = this.nextStartError
+      this.nextStartError = null
+      throw error
+    }
     const container = this.containers.get(id)
     if (!container) {
       throw new Error(`Unknown container ${id}`)

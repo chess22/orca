@@ -325,7 +325,9 @@ function parseStatus(stdout: string): GitStatusResult['entries'] {
     if (line.startsWith('1 ') || line.startsWith('2 ')) {
       const parts = line.split(' ')
       const xy = parts[1]
-      const filePath = line.startsWith('2 ') ? line.split('\t')[1] : parts.slice(8).join(' ')
+      const filePath = line.startsWith('2 ')
+        ? parsePorcelainV2RenamePath(line)
+        : parts.slice(8).join(' ')
       if (xy[0] !== '.') {
         entries.push({ path: filePath, status: parseFileStatus(xy[0]), area: 'staged' })
       }
@@ -342,6 +344,12 @@ function parseStatus(stdout: string): GitStatusResult['entries'] {
     }
   }
   return entries
+}
+
+function parsePorcelainV2RenamePath(line: string): string {
+  const [metadata] = line.split('\t')
+  const parts = metadata.split(' ')
+  return parts.slice(9).join(' ')
 }
 
 function parseFileStatus(char: string): GitFileStatus {

@@ -101,4 +101,19 @@ describe('docker-container-lifecycle', () => {
     )
     expect(engine.commands.map((command) => command.command)).toEqual(['image.build'])
   })
+
+  it('removes created containers when start fails', async () => {
+    engine.nextStartError = new Error('start fail')
+
+    await expect(spawnDockerContainer({ repoPath, worktreePath, engine })).rejects.toThrow(
+      'start fail'
+    )
+    expect(engine.commands.map((command) => command.command)).toEqual([
+      'image.build',
+      'container.create',
+      'container.start',
+      'container.rm'
+    ])
+    expect(engine.containers.has('container-1')).toBe(false)
+  })
 })

@@ -1,4 +1,4 @@
-import type { DockerEngineClientLike } from '../docker/docker-engine-client'
+import type { DockerEngineClientLike, DockerExecSession } from '../docker/docker-engine-client'
 import { DockerEngineClient } from '../docker/docker-engine-client'
 import type { DockerTarget } from '../docker/types'
 import type { IFilesystemProvider, FileReadResult, FileStat } from './types'
@@ -8,6 +8,7 @@ export class DockerFilesystemProvider implements IFilesystemProvider {
   private target: DockerTarget
   private engine: DockerEngineClientLike
   private watchListeners = new Map<string, (events: FsChangeEvent[]) => void>()
+  private watchSessions = new Map<string, DockerExecSession>()
 
   constructor(target: DockerTarget, engine: DockerEngineClientLike = new DockerEngineClient()) {
     this.target = target
@@ -71,13 +72,31 @@ export class DockerFilesystemProvider implements IFilesystemProvider {
 
   async watch(rootPath: string, callback: (events: FsChangeEvent[]) => void): Promise<() => void> {
     this.watchListeners.set(rootPath, callback)
-    await this.engine.exec({
+    const session = await this.engine.spawnExec({
       containerId: this.target.containerId,
-      args: ['sh', '-lc', 'true'],
-      cwd: rootPath
+      args: ['node', '-e', WATCH_SCRIPT, rootPath],
+      cwd: rootPath,
+      tty: false,
+      cols: 80,
+      rows: 24
+    })
+    this.watchSessions.set(rootPath, session)
+    let buffer = ''
+    session.onData((chunk) => {
+      buffer += chunk
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      for (const line of lines) {
+        if (!line) {
+          continue
+        }
+        callback(JSON.parse(line) as FsChangeEvent[])
+      }
     })
     return () => {
       this.watchListeners.delete(rootPath)
+      this.watchSessions.delete(rootPath)
+      void session.shutdown(true)
     }
   }
 
@@ -179,11 +198,57 @@ process.stdout.write(JSON.stringify(out.sort()));
 const SEARCH_SCRIPT = `
 const fs = require('fs');
 const path = require('path');
+const childProcess = require('child_process');
 const opts = JSON.parse(process.argv[1]);
-const query = opts.caseSensitive ? opts.query : opts.query.toLowerCase();
 const max = opts.maxResults || 2000;
-const files = [];
+const files = new Map();
 let totalMatches = 0;
+function globToRegExp(pattern) {
+  return new RegExp('^' + pattern.replace(/[.+^$(){}|[\\]\\\\]/g, '\\\\$&').replace(/\\*\\*/g, '.*').replace(/\\*/g, '[^/]*').replace(/\\?/g, '[^/]') + '$');
+}
+function patterns(value) {
+  return String(value || '').split(',').map((s) => s.trim()).filter(Boolean).map(globToRegExp);
+}
+const includes = patterns(opts.includePattern);
+const excludes = patterns(opts.excludePattern);
+function rel(filePath) {
+  return path.relative(opts.rootPath, filePath).replace(/\\\\/g, '/');
+}
+function allowed(filePath) {
+  const relative = rel(filePath);
+  return (includes.length === 0 || includes.some((p) => p.test(relative))) && !excludes.some((p) => p.test(relative));
+}
+function addMatch(filePath, match) {
+  const relativePath = rel(filePath);
+  const existing = files.get(filePath) || { filePath, relativePath, matches: [] };
+  existing.matches.push(match);
+  files.set(filePath, existing);
+  totalMatches++;
+}
+function searchWithRg() {
+  const args = ['--json', '--hidden', '--glob', '!.git', '--max-count', '100', '--max-filesize', '5M'];
+  if (!opts.caseSensitive) args.push('--ignore-case');
+  if (opts.wholeWord) args.push('--word-regexp');
+  if (!opts.useRegex) args.push('--fixed-strings');
+  for (const pat of String(opts.includePattern || '').split(',').map((s) => s.trim()).filter(Boolean)) args.push('--glob', pat);
+  for (const pat of String(opts.excludePattern || '').split(',').map((s) => s.trim()).filter(Boolean)) args.push('--glob', '!' + pat);
+  args.push('--', opts.query, opts.rootPath);
+  const result = childProcess.spawnSync('rg', args, { encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 });
+  if (result.error) return false;
+  for (const line of String(result.stdout || '').split(/\\n/)) {
+    if (totalMatches >= max || !line) continue;
+    const msg = JSON.parse(line);
+    if (msg.type !== 'match') continue;
+    const filePath = msg.data.path.text;
+    if (!allowed(filePath)) continue;
+    const lineContent = msg.data.lines.text.replace(/\\r?\\n$/, '');
+    for (const sub of msg.data.submatches) {
+      if (totalMatches >= max) break;
+      addMatch(filePath, { line: msg.data.line_number, column: sub.start + 1, matchLength: sub.end - sub.start, lineContent });
+    }
+  }
+  return true;
+}
 function visit(filePath) {
   if (totalMatches >= max) return;
   const stat = fs.statSync(filePath);
@@ -192,20 +257,57 @@ function visit(filePath) {
     for (const child of fs.readdirSync(filePath)) visit(path.join(filePath, child));
     return;
   }
+  if (!allowed(filePath) || stat.size > 5 * 1024 * 1024) return;
   const text = fs.readFileSync(filePath, 'utf8');
-  const haystack = opts.caseSensitive ? text : text.toLowerCase();
   const matches = [];
   const lines = text.split(/\\r?\\n/);
+  const flags = opts.caseSensitive ? 'g' : 'gi';
+  const escaped = opts.useRegex ? opts.query : opts.query.replace(/[.*+?^\${}()|[\\]\\\\]/g, '\\\\$&');
+  const needle = new RegExp(opts.wholeWord ? '\\\\b(?:' + escaped + ')\\\\b' : escaped, flags);
   for (let i = 0; i < lines.length && totalMatches < max; i++) {
-    const lineHaystack = opts.caseSensitive ? lines[i] : lines[i].toLowerCase();
-    const column = lineHaystack.indexOf(query);
-    if (column >= 0) {
-      matches.push({ line: i + 1, column: column + 1, matchLength: opts.query.length, lineContent: lines[i] });
-      totalMatches++;
+    for (const match of lines[i].matchAll(needle)) {
+      if (match.index === undefined || totalMatches >= max) break;
+      matches.push({ line: i + 1, column: match.index + 1, matchLength: match[0].length, lineContent: lines[i] });
+      totalMatches += 1;
     }
   }
-  if (matches.length) files.push({ filePath, relativePath: path.relative(opts.rootPath, filePath).replace(/\\\\/g, '/'), matches });
+  if (matches.length) files.set(filePath, { filePath, relativePath: rel(filePath), matches });
 }
-visit(opts.rootPath);
-process.stdout.write(JSON.stringify({ files, totalMatches, truncated: totalMatches >= max }));
+try {
+  if (!searchWithRg()) visit(opts.rootPath);
+} catch {
+  visit(opts.rootPath);
+}
+process.stdout.write(JSON.stringify({ files: Array.from(files.values()), totalMatches, truncated: totalMatches >= max }));
+`
+const WATCH_SCRIPT = `
+const fs = require('fs');
+const path = require('path');
+const root = process.argv[1];
+function snapshot(dir, out = new Map()) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === '.git') continue;
+    const abs = path.join(dir, entry.name);
+    const stat = fs.lstatSync(abs);
+    out.set(abs, { mtimeMs: stat.mtimeMs, size: stat.size, isDirectory: stat.isDirectory() });
+    if (entry.isDirectory()) snapshot(abs, out);
+  }
+  return out;
+}
+let previous = snapshot(root);
+setInterval(() => {
+  const next = snapshot(root);
+  const events = [];
+  for (const [abs, info] of next) {
+    const old = previous.get(abs);
+    if (!old) events.push({ kind: 'create', absolutePath: abs, isDirectory: info.isDirectory });
+    else if (old.mtimeMs !== info.mtimeMs || old.size !== info.size) events.push({ kind: 'update', absolutePath: abs, isDirectory: info.isDirectory });
+  }
+  for (const [abs, info] of previous) {
+    if (!next.has(abs)) events.push({ kind: 'delete', absolutePath: abs, isDirectory: info.isDirectory });
+  }
+  previous = next;
+  if (events.length) process.stdout.write(JSON.stringify(events) + '\\n');
+}, 500);
+process.stdin.resume();
 `

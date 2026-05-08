@@ -57,6 +57,17 @@ describe('DockerGitProvider', () => {
     ])
   })
 
+  it('uses the new path when parsing porcelain v2 renamed status records', async () => {
+    engine.enqueueExecResult({
+      stdout: '2 R. N... 100644 100644 100644 abc abc R100 src/new name.ts\tsrc/old name.ts\n'
+    })
+    engine.enqueueExecResult({ stdout: '.git\n' })
+
+    const result = await provider.getStatus('/workspace')
+
+    expect(result.entries).toEqual([{ path: 'src/new name.ts', status: 'renamed', area: 'staged' }])
+  })
+
   it('returns original and modified contents for staged diffs', async () => {
     engine.enqueueExecResult({ stdout: 'head content\n' })
     engine.enqueueExecResult({ stdout: 'staged content\n' })

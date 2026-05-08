@@ -36,7 +36,14 @@ export async function spawnDockerContainer(
     workdir,
     mounts: [mount]
   })
-  await options.engine.startContainer(created.id)
+  try {
+    await options.engine.startContainer(created.id)
+  } catch (error) {
+    // Why: a failed start leaves a stopped container behind unless we clean up
+    // the id returned by docker create before surfacing the original failure.
+    await options.engine.removeContainer(created.id)
+    throw error
+  }
 
   return {
     image,
