@@ -1276,20 +1276,3 @@
   justify-content: flex-end;
   gap: 6px;
 }
-
-/* Why: trailing kbd pill inside Save/Cancel so the keyboard shortcut sits on
-   the action it triggers — same pattern as the AppearancePane shortcut hints.
-   No min-width or fixed height so the glyph (Esc, ↵) sets the pill's natural
-   width instead of being centered in a forced square. */
-.orca-diff-comment-kbd {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 2px;
-  padding: 1px 4px;
-  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
-  border-radius: 3px;
-  font-family: inherit;
-  font-size: 10px;
-  line-height: 1;
-  opacity: 0.75;
-}

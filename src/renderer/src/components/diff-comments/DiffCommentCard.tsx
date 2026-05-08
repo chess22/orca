@@ -1,4 +1,4 @@
-import { Pencil, Trash } from 'lucide-react'
+import { CornerDownLeft, Pencil, Trash } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 
@@ -251,7 +251,7 @@ export function DiffCommentCard({
               title={submitting ? 'Saving…' : undefined}
             >
               Save
-              <kbd className="orca-diff-comment-kbd">↵</kbd>
+              {!submitting && <CornerDownLeft className="ml-1 size-3 opacity-70" />}
             </Button>
           </div>
         </>
