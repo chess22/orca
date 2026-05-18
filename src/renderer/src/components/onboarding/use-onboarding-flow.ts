@@ -7,6 +7,7 @@ import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { applyDocumentTheme } from '@/lib/document-theme'
 import { track } from '@/lib/telemetry'
 import { buildAgentPickedPayload } from './agent-picked-payload'
+import { ONBOARDING_FINAL_STEP } from '../../../../shared/constants'
 import { isGitRepoKind } from '../../../../shared/repo-kind'
 import type { GlobalSettings, OnboardingState, Repo, TuiAgent } from '../../../../shared/types'
 import type { NotificationDraft } from './NotificationStep'
@@ -274,24 +275,25 @@ export function useOnboardingFlow(
         const startup = isGit ? undefined : buildOnboardingFolderAgentStartup(settings)
         activateAndRevealWorktree(worktree.id, startup ? { startup } : undefined)
       }
-      // Why: next() short-circuits step 4, so emit step_completed here once the
-      // repo is successfully added to keep the funnel consistent. Gate on
-      // closeWith's success so a persistence failure doesn't double-count.
+      // Why: next() short-circuits the repo step, so emit step_completed here
+      // once the repo is successfully added to keep the funnel consistent.
+      // Gate on closeWith's success so a persistence failure doesn't
+      // double-count.
       const closed = await closeWith(
         'completed',
         isGit ? { addedRepo: true } : { addedFolder: true },
-        4,
+        ONBOARDING_FINAL_STEP,
         path
       )
       if (!closed) {
         return
       }
-      // Why: step 4 has no keyboard-vs-button advance — Cmd+Enter routes to
-      // `openFolder()` which collapses both into the path-clicked path. Emit
-      // `duration_ms` only; `advanced_via` is intentionally absent for step 4.
-      // See docs/onboarding-telemetry-extensions.md §3.
+      // Why: the repo step has no keyboard-vs-button advance — Cmd+Enter
+      // routes to `openFolder()` which collapses both into the path-clicked
+      // path. Emit `duration_ms` only; `advanced_via` is intentionally absent
+      // for the final step. See docs/onboarding-telemetry-extensions.md §3.
       track('onboarding_step_completed', {
-        step: 4,
+        step: ONBOARDING_FINAL_STEP,
         value_kind: 'repo',
         duration_ms: consumeStepDurationMs()
       })
@@ -559,13 +561,39 @@ export function useOnboardingFlow(
     updateSettings
   ])
 
+  const skipAgentSetup = useCallback(async () => {
+    if (busyLabel || currentStep.id !== 'notifications') {
+      return
+    }
+    setError(null)
+    const durationMs = consumeStepDurationMs()
+    try {
+      // Why: this step's primary action can request notification permission and
+      // run selected feature setup. Skip is the explicit "not now" path.
+      const nextState = await persistStep(currentStep.stepNumber)
+      onOnboardingChange(nextState)
+      track('onboarding_step_skipped', {
+        step: currentStep.stepNumber,
+        duration_ms: durationMs,
+        advanced_via: 'button'
+      })
+      setFeatureSetupTerminalCommand(null)
+      setFeatureSetupTerminalSelection(null)
+      setStepIndex((idx) => Math.min(idx + 1, STEPS.length - 1))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setError(message)
+      toast.error('Could not skip agent setup', { description: message })
+    }
+  }, [busyLabel, consumeStepDurationMs, currentStep.id, currentStep.stepNumber, onOnboardingChange])
+
   const openSshSettings = useCallback(async () => {
     if (busyLabel || currentStep.id !== 'repo') {
       return
     }
     setError(null)
     try {
-      onOnboardingChange(await persistStep(3))
+      onOnboardingChange(await persistStep(currentStep.stepNumber - 1))
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       setError(message)
@@ -584,6 +612,7 @@ export function useOnboardingFlow(
   }, [
     busyLabel,
     currentStep.id,
+    currentStep.stepNumber,
     onOnboardingChange,
     onSettingsDetourStart,
     openSettingsPage,
@@ -625,6 +654,7 @@ export function useOnboardingFlow(
     detectedSet,
     isDetectingAgents,
     next,
+    skipAgentSetup,
     skipToRepo,
     back,
     jumpToStep,

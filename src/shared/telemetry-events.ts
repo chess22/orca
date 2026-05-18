@@ -353,7 +353,13 @@ const onboardingFailureReasonSchema = z.enum([
   'cancelled',
   'unknown'
 ])
-const onboardingValueKindSchema = z.enum(['agent', 'theme', 'notifications', 'repo'])
+const onboardingValueKindSchema = z.enum([
+  'agent',
+  'theme',
+  'notifications',
+  'integrations',
+  'repo'
+])
 // `dismissed` from `OnboardingChecklistState` is intentionally excluded —
 // it is a UI panel-visibility flag, not an activation event, so it never
 // fires `activation_checklist_item_completed`. Keep this list in sync with
