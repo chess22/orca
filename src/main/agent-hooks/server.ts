@@ -84,6 +84,7 @@ type PaneKeyAliasEntry = {
 const LAST_STATUS_FILE_NAME = 'last-status.json'
 const ASSISTANT_MESSAGE_RETRY_ATTEMPTS = 5
 const ASSISTANT_MESSAGE_RETRY_MS = 50
+const INTERRUPTED_DONE_LATE_WORKING_SUPPRESSION_MS = 15_000
 
 // Why: starts at 2 (not 1) because pre-merge dev iterations of this branch
 // wrote a v1 shape with no receivedAt / stateStartedAt. Bumping to 2 means a
@@ -300,6 +301,11 @@ export class AgentHookServer {
     }
     const payload = existing.payload
     const agentType: AgentType | undefined = payload.agentType
+    // Why: OpenCode's running-turn interrupt is double Escape. A single Escape
+    // is only a TUI/editor cancel and can leave the turn running.
+    if (agentType === 'opencode' && request.intent === 'plain-escape' && request.inputCount !== 2) {
+      return false
+    }
     // Why: input-intent inference is a fallback for a missing final hook. A strict
     // baseline match keeps a delayed timer from overwriting any newer hook,
     // including same-millisecond prompt or agent identity changes.
@@ -374,6 +380,21 @@ export class AgentHookServer {
   }
 
   private applyNormalizedStatus(payload: AgentHookEventPayload): EnrichedAgentHookEventPayload {
+    const previous = this.state.lastStatusByPaneKey.get(payload.paneKey) as
+      | EnrichedAgentHookEventPayload
+      | undefined
+    // Why: some TUIs can emit a delayed tool/working hook after Ctrl+C already
+    // stopped the turn. Do not let that stale same-turn event resurrect the row.
+    if (
+      previous?.payload.state === 'done' &&
+      previous.payload.interrupted === true &&
+      payload.payload.state === 'working' &&
+      previous.payload.agentType === payload.payload.agentType &&
+      previous.payload.prompt === payload.payload.prompt &&
+      Date.now() - previous.receivedAt <= INTERRUPTED_DONE_LATE_WORKING_SUPPRESSION_MS
+    ) {
+      return previous
+    }
     if (payload.payload.state !== 'done' || payload.payload.lastAssistantMessage) {
       this.clearAssistantMessageRetry(payload.paneKey)
     }

@@ -11,6 +11,7 @@ export type AgentInterruptInferenceRequest = {
   baselinePrompt: string
   baselineAgentType: AgentType | undefined
   intent: AgentInterruptInputIntent
+  inputCount?: number
 }
 
 export function isAgentInterruptInputIntent(intent: unknown): intent is AgentInterruptInputIntent {

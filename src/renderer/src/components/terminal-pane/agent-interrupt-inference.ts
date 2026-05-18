@@ -29,6 +29,25 @@ type CapturedInterruptBaseline = {
   prompt: string
   agentType: AgentStatusEntry['agentType']
   intent: AgentInterruptInputIntent
+  inputCount?: number
+}
+
+function requiresDoubleEscapeForAgent(
+  agentType: AgentStatusEntry['agentType'],
+  intent: AgentInterruptInputIntent
+): boolean {
+  return agentType === 'opencode' && intent === 'plain-escape'
+}
+
+function isSameTurnBaseline(
+  left: CapturedInterruptBaseline,
+  right: CapturedInterruptBaseline
+): boolean {
+  return (
+    left.agentType === right.agentType &&
+    left.prompt === right.prompt &&
+    left.stateStartedAt === right.stateStartedAt
+  )
 }
 
 export function isPlainEscapeKeyEvent(
@@ -67,13 +86,19 @@ export function createAgentInterruptInference({
 }: AgentInterruptInferenceDeps): AgentInterruptInference {
   let pendingTimer: ReturnType<typeof setTimeout> | null = null
   let pendingBaseline: CapturedInterruptBaseline | null = null
+  let openCodeEscapeBaseline: CapturedInterruptBaseline | null = null
 
-  const clearPending = (): void => {
+  const clearPendingTimer = (): void => {
     if (pendingTimer !== null) {
       clearTimer(pendingTimer)
       pendingTimer = null
     }
     pendingBaseline = null
+  }
+
+  const clearPending = (): void => {
+    clearPendingTimer()
+    openCodeEscapeBaseline = null
   }
 
   const captureBaseline = (
@@ -123,7 +148,8 @@ export function createAgentInterruptInference({
       baselineStateStartedAt: baseline.stateStartedAt,
       baselinePrompt: baseline.prompt,
       baselineAgentType: baseline.agentType,
-      intent: baseline.intent
+      intent: baseline.intent,
+      ...(baseline.inputCount !== undefined ? { inputCount: baseline.inputCount } : {})
     })
   }
 
@@ -134,12 +160,26 @@ export function createAgentInterruptInference({
         clearPending()
         return
       }
-      const baseline = captureBaseline(entry, intent)
+      let baseline = captureBaseline(entry, intent)
       if (!baseline) {
         clearPending()
         return
       }
-      clearPending()
+      if (requiresDoubleEscapeForAgent(baseline.agentType, intent)) {
+        const isSecondEscape =
+          openCodeEscapeBaseline !== null && isSameTurnBaseline(openCodeEscapeBaseline, baseline)
+        openCodeEscapeBaseline = baseline
+        clearPendingTimer()
+        if (!isSecondEscape) {
+          return
+        }
+        // Why: OpenCode uses the first Escape as a TUI/editor cancel. The
+        // second Escape on the same turn is the actual running-turn interrupt.
+        baseline = { ...baseline, inputCount: 2 }
+      } else {
+        openCodeEscapeBaseline = null
+        clearPendingTimer()
+      }
       pendingBaseline = baseline
       pendingTimer = setTimer(flushPending, AGENT_INTERRUPT_SETTLE_MS)
     },

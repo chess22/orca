@@ -84,6 +84,114 @@ describe('agent interrupt inference', () => {
     entry = undefined
   })
 
+  it('requires double Escape on the same turn for OpenCode', () => {
+    vi.useFakeTimers()
+    let entry: AgentStatusEntry | undefined = makeEntry({ agentType: 'opencode' })
+    const inferInterrupt = vi.fn()
+    const tracker = createAgentInterruptInference({
+      paneKey: PANE_KEY,
+      getStatusEntry: () => entry,
+      inferInterrupt,
+      now: () => 1_100
+    })
+
+    tracker.observeInputIntent('plain-escape')
+    vi.runOnlyPendingTimers()
+    expect(inferInterrupt).not.toHaveBeenCalled()
+
+    tracker.observeInputIntent('plain-escape')
+    vi.advanceTimersByTime(500)
+
+    expect(inferInterrupt).toHaveBeenCalledWith({
+      paneKey: PANE_KEY,
+      baselineUpdatedAt: 1_000,
+      baselineStateStartedAt: 900,
+      baselinePrompt: 'write tests',
+      baselineAgentType: 'opencode',
+      intent: 'plain-escape',
+      inputCount: 2
+    })
+    tracker.dispose()
+    entry = undefined
+  })
+
+  it('does not count an OpenCode Escape across a new turn', () => {
+    vi.useFakeTimers()
+    let entry: AgentStatusEntry | undefined = makeEntry({ agentType: 'opencode' })
+    const inferInterrupt = vi.fn()
+    const tracker = createAgentInterruptInference({
+      paneKey: PANE_KEY,
+      getStatusEntry: () => entry,
+      inferInterrupt,
+      now: () => 1_100
+    })
+
+    tracker.observeInputIntent('plain-escape')
+    entry = makeEntry({ agentType: 'opencode', prompt: 'second task', stateStartedAt: 1_050 })
+    tracker.observeInputIntent('plain-escape')
+    vi.runOnlyPendingTimers()
+
+    expect(inferInterrupt).not.toHaveBeenCalled()
+    tracker.dispose()
+    entry = undefined
+  })
+
+  it('does not emit again for a third OpenCode Escape after the row is already done', () => {
+    vi.useFakeTimers()
+    let entry: AgentStatusEntry | undefined = makeEntry({ agentType: 'opencode' })
+    const inferInterrupt = vi.fn((request) => {
+      entry = makeEntry({
+        state: 'done',
+        agentType: request.baselineAgentType,
+        prompt: request.baselinePrompt,
+        updatedAt: 1_500,
+        stateStartedAt: 1_500
+      })
+    })
+    const tracker = createAgentInterruptInference({
+      paneKey: PANE_KEY,
+      getStatusEntry: () => entry,
+      inferInterrupt,
+      now: () => 1_100
+    })
+
+    tracker.observeInputIntent('plain-escape')
+    tracker.observeInputIntent('plain-escape')
+    vi.advanceTimersByTime(500)
+    tracker.observeInputIntent('plain-escape')
+    vi.runOnlyPendingTimers()
+
+    expect(inferInterrupt).toHaveBeenCalledTimes(1)
+    tracker.dispose()
+    entry = undefined
+  })
+
+  it('still infers Ctrl+C for OpenCode', () => {
+    vi.useFakeTimers()
+    let entry: AgentStatusEntry | undefined = makeEntry({ agentType: 'opencode' })
+    const inferInterrupt = vi.fn()
+    const tracker = createAgentInterruptInference({
+      paneKey: PANE_KEY,
+      getStatusEntry: () => entry,
+      inferInterrupt,
+      now: () => 1_100
+    })
+
+    tracker.observeInputIntent('ctrl-c')
+    vi.advanceTimersByTime(500)
+
+    expect(inferInterrupt).toHaveBeenCalledWith({
+      paneKey: PANE_KEY,
+      baselineUpdatedAt: 1_000,
+      baselineStateStartedAt: 900,
+      baselinePrompt: 'write tests',
+      baselineAgentType: 'opencode',
+      intent: 'ctrl-c'
+    })
+    tracker.dispose()
+    entry = undefined
+  })
+
   it('does not emit for non-working states', () => {
     vi.useFakeTimers()
     const inferInterrupt = vi.fn()
