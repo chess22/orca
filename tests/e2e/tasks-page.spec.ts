@@ -28,13 +28,21 @@ test.describe('Tasks page', () => {
       .poll(async () => getStoreState<string>(orcaPage, 'activeView'), { timeout: 5_000 })
       .toBe('tasks')
 
-    // Titlebar label, close button, and preset tabs should all render.
+    // Titlebar label, close button, and GitHub-style search controls should all render.
     await expect(orcaPage.getByRole('button', { name: 'Close tasks' })).toBeVisible({
       timeout: 10_000
     })
     await expect(orcaPage.getByRole('button', { name: 'GitHub', exact: true })).toBeVisible()
-    await expect(orcaPage.getByRole('button', { name: 'All', exact: true })).toBeVisible()
-    await expect(orcaPage.getByPlaceholder(/GitHub search/i)).toBeVisible()
+    await expect(orcaPage.getByRole('button', { name: 'Filters', exact: true })).toBeVisible()
+    const searchInput = orcaPage.getByRole('textbox', { name: 'Search Issues' })
+    await expect(searchInput).toHaveValue('is:issue state:open')
+    await expect(orcaPage.getByRole('button', { name: 'Search', exact: true })).toBeVisible()
+
+    await orcaPage.getByRole('button', { name: /^Closed/ }).click()
+    await expect(searchInput).toHaveValue('is:issue state:closed')
+
+    await orcaPage.getByRole('button', { name: 'Open', exact: true }).click()
+    await expect(searchInput).toHaveValue('is:issue state:open')
   })
 
   test('closing the tasks page returns to the previous view', async ({ orcaPage }) => {

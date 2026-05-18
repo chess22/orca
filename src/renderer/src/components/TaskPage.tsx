@@ -58,7 +58,7 @@ import RepoDotLabel from '@/components/repo/RepoDotLabel'
 import IssueSourceIndicator, { sameGitHubOwnerRepo } from '@/components/github/IssueSourceIndicator'
 import IssueSourceSelector, { issueSourceChipClass } from '@/components/github/IssueSourceSelector'
 import { reconcileLinearTeamSelection } from '@/components/task-page-linear-team-selection'
-import { stripRepoQualifiers } from '../../../shared/task-query'
+import { parseTaskQuery, stripRepoQualifiers } from '../../../shared/task-query'
 import GitHubItemDialog from '@/components/GitHubItemDialog'
 import GitLabItemDialog from '@/components/GitLabItemDialog'
 import ProjectViewWrapper from '@/components/github-project/ProjectViewWrapper'
@@ -167,6 +167,48 @@ const TASK_QUERY_PRESETS: TaskQueryPreset[] = [
   { id: 'my-prs', label: 'My PRs', query: getTaskPresetQuery('my-prs') }
 ]
 
+type GitHubIssueSearchFilter = {
+  id: string
+  label: string
+  query: string
+  preset: TaskViewPresetId | null
+}
+
+const GITHUB_ISSUE_SEARCH_FILTERS: GitHubIssueSearchFilter[] = [
+  { id: 'open-issues', label: 'Open issues', query: 'is:issue state:open', preset: 'issues' },
+  { id: 'closed-issues', label: 'Closed issues', query: 'is:issue state:closed', preset: null },
+  {
+    id: 'assigned-issues',
+    label: 'Assigned to me',
+    query: 'assignee:@me is:issue state:open',
+    preset: 'my-issues'
+  },
+  {
+    id: 'created-prs',
+    label: 'Created by me',
+    query: 'author:@me is:pr state:open',
+    preset: 'my-prs'
+  },
+  {
+    id: 'review-requested',
+    label: 'Needs my review',
+    query: 'review-requested:@me is:pr state:open',
+    preset: 'review'
+  }
+]
+
+function resolveInitialGitHubIssuePreset(presetId: TaskViewPresetId | null | undefined) {
+  return presetId && presetId !== 'all' ? presetId : 'issues'
+}
+
+function normalizeInitialGitHubIssueSearch(query: string | null | undefined): string {
+  const trimmed = query?.trim() ?? ''
+  if (!trimmed || trimmed === 'is:open' || trimmed === 'state:open') {
+    return 'is:issue state:open'
+  }
+  return trimmed
+}
+
 type LinearPresetId = 'assigned' | 'created' | 'all' | 'completed'
 type LinearPreset = { id: LinearPresetId; label: string }
 
@@ -177,7 +219,7 @@ const LINEAR_PRESETS: LinearPreset[] = [
   { id: 'completed', label: 'Completed' }
 ]
 
-const TASK_SEARCH_DEBOUNCE_MS = 300
+const LINEAR_SEARCH_DEBOUNCE_MS = 300
 const LINEAR_ITEM_LIMIT = 36
 
 // Why: Intl.RelativeTimeFormat allocation is non-trivial, and previously we
@@ -623,7 +665,7 @@ export default function TaskPage(): React.JSX.Element {
   // query. Previously a separate effect "re-seeded" these after mount, which
   // caused a throwaway empty-query fetch followed by a second fetch for the
   // real default — doubling the time-to-first-paint of the list.
-  const defaultTaskViewPreset = settings?.defaultTaskViewPreset ?? 'all'
+  const defaultTaskViewPreset = resolveInitialGitHubIssuePreset(settings?.defaultTaskViewPreset)
   const initialTaskQuery = getTaskPresetQuery(defaultTaskViewPreset)
 
   const defaultTaskSource = settings?.defaultTaskSource ?? 'github'
@@ -909,12 +951,12 @@ export default function TaskPage(): React.JSX.Element {
 
     const preset = taskResumeState?.githubItemsPreset
     if (preset === null) {
-      const query = taskResumeState?.githubItemsQuery ?? ''
+      const query = normalizeInitialGitHubIssueSearch(taskResumeState?.githubItemsQuery)
       setTaskSearchInput(query)
       setAppliedTaskSearch(query)
-      setActiveTaskPreset(null)
+      setActiveTaskPreset(query === 'is:issue state:open' ? 'issues' : null)
     } else {
-      const presetId = preset ?? settings.defaultTaskViewPreset
+      const presetId = resolveInitialGitHubIssuePreset(preset ?? settings.defaultTaskViewPreset)
       const query = getTaskPresetQuery(presetId)
       setTaskSearchInput(query)
       setAppliedTaskSearch(query)
@@ -1189,6 +1231,11 @@ export default function TaskPage(): React.JSX.Element {
     [applyTypeFilter, currentPageItems]
   )
 
+  const parsedAppliedTaskSearch = useMemo(
+    () => parseTaskQuery(appliedTaskSearch),
+    [appliedTaskSearch]
+  )
+
   // Why: totalPages is derived from the search API count when available,
   // so the pagination bar shows the full range (with ellipsis) upfront.
   // Falls back to the loaded page count when the count hasn't returned yet.
@@ -1253,16 +1300,6 @@ export default function TaskPage(): React.JSX.Element {
     },
     [paginationLoading, selectedRepos, pages, appliedTaskSearch, fetchWorkItemsNextPage]
   )
-
-  useEffect(() => {
-    if (!taskResumeApplied) {
-      return
-    }
-    const timeout = window.setTimeout(() => {
-      setAppliedTaskSearch(taskSearchInput)
-    }, TASK_SEARCH_DEBOUNCE_MS)
-    return () => window.clearTimeout(timeout)
-  }, [taskSearchInput, taskResumeApplied])
 
   useEffect(() => {
     if (!taskResumeApplied) {
@@ -1450,6 +1487,20 @@ export default function TaskPage(): React.JSX.Element {
     setTaskRefreshNonce((current) => current + 1)
   }, [setTaskResumeState, taskSearchInput])
 
+  const applyGitHubIssueSearchFilter = useCallback(
+    (filter: GitHubIssueSearchFilter): void => {
+      setTaskSearchInput(filter.query)
+      setAppliedTaskSearch(filter.query)
+      setActiveTaskPreset(filter.preset)
+      setTaskResumeState({
+        githubItemsPreset: filter.preset,
+        githubItemsQuery: filter.query
+      })
+      setTaskRefreshNonce((current) => current + 1)
+    },
+    [setTaskResumeState]
+  )
+
   const handleTaskSearchChange = useCallback((event: React.ChangeEvent<HTMLInputElement>): void => {
     const next = event.target.value
     setTaskSearchInput(next)
@@ -1478,6 +1529,7 @@ export default function TaskPage(): React.JSX.Element {
             false
           )
         ) {
+          event.preventDefault()
           return
         }
         event.preventDefault()
@@ -1764,15 +1816,15 @@ export default function TaskPage(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Why: debounce the Linear search input so we don't fire a request on every
-  // keystroke — matches the 300ms cadence used for GitHub search.
+  // Why: debounce Linear search so we don't fire a request on every keystroke.
+  // GitHub search intentionally follows github.com and applies only on submit.
   useEffect(() => {
     if (!taskResumeApplied) {
       return
     }
     const timeout = window.setTimeout(() => {
       setAppliedLinearSearch(linearSearchInput)
-    }, TASK_SEARCH_DEBOUNCE_MS)
+    }, LINEAR_SEARCH_DEBOUNCE_MS)
     return () => window.clearTimeout(timeout)
   }, [linearSearchInput, taskResumeApplied])
 
@@ -2124,42 +2176,52 @@ export default function TaskPage(): React.JSX.Element {
                 {taskSource === 'github' && githubMode === 'items' ? (
                   <div className="rounded-md rounded-b-none border border-border/50 bg-muted/50 p-3 shadow-sm">
                     <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex flex-wrap gap-2">
-                        {TASK_QUERY_PRESETS.map((option) => {
-                          const active = activeTaskPreset === option.id
-                          return (
-                            <button
-                              key={option.id}
-                              type="button"
-                              onClick={() => {
-                                const query = option.query
-                                setTaskSearchInput(query)
-                                setAppliedTaskSearch(query)
-                                setActiveTaskPreset(option.id)
-                                setTaskResumeState({
-                                  githubItemsPreset: option.id,
-                                  githubItemsQuery: query
-                                })
-                                setTaskRefreshNonce((current) => current + 1)
-                              }}
-                              onContextMenu={(event) => {
-                                event.preventDefault()
-                                handleSetDefaultTaskPreset(option.id)
-                              }}
-                              className={cn(
-                                'rounded-md border px-2 py-1 text-xs transition',
-                                active
-                                  ? 'border-border/50 bg-foreground/90 text-background backdrop-blur-md'
-                                  : 'border-border/50 bg-transparent text-foreground hover:bg-muted/50'
-                              )}
-                            >
-                              {option.label}
-                            </button>
-                          )
-                        })}
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-foreground">Search Issues</div>
                       </div>
 
                       <div className="flex shrink-0 items-center gap-2">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 border-border/50 bg-transparent text-xs hover:bg-muted/50 backdrop-blur-md supports-[backdrop-filter]:bg-transparent"
+                            >
+                              Filters
+                              <ChevronDown className="size-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-48">
+                            {GITHUB_ISSUE_SEARCH_FILTERS.map((filter) => (
+                              <DropdownMenuItem
+                                key={filter.id}
+                                onClick={() => applyGitHubIssueSearchFilter(filter)}
+                              >
+                                {filter.label}
+                              </DropdownMenuItem>
+                            ))}
+                            {TASK_QUERY_PRESETS.map((option) => (
+                              <DropdownMenuItem
+                                key={`preset-${option.id}`}
+                                onClick={() =>
+                                  applyGitHubIssueSearchFilter({
+                                    id: option.id,
+                                    label: option.label,
+                                    query: option.query,
+                                    preset: option.id
+                                  })
+                                }
+                                onContextMenu={(event) => {
+                                  event.preventDefault()
+                                  handleSetDefaultTaskPreset(option.id)
+                                }}
+                              >
+                                {option.label}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
@@ -2207,33 +2269,116 @@ export default function TaskPage(): React.JSX.Element {
                     </div>
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <div className="relative min-w-[320px] flex-1">
-                        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                        <Input
-                          ref={taskSearchInputRef}
-                          data-github-items-search-input
-                          value={taskSearchInput}
-                          onChange={handleTaskSearchChange}
-                          onKeyDown={handleTaskSearchKeyDown}
-                          placeholder="GitHub search, e.g. assignee:@me is:open"
-                          className="h-8 rounded-md border-border/50 bg-background pl-8 pr-8 text-xs"
-                        />
-                        {taskSearchInput || appliedTaskSearch ? (
-                          <button
-                            type="button"
-                            aria-label="Clear search"
-                            onClick={() => {
-                              setTaskSearchInput('')
-                              setAppliedTaskSearch('')
-                              setActiveTaskPreset(null)
-                              setTaskResumeState({ githubItemsPreset: null, githubItemsQuery: '' })
-                              setTaskRefreshNonce((current) => current + 1)
-                            }}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition hover:text-foreground"
-                          >
-                            <X className="size-4" />
-                          </button>
-                        ) : null}
+                      <form
+                        className="flex min-w-[320px] flex-1 items-center gap-2"
+                        onSubmit={(event) => {
+                          event.preventDefault()
+                          handleApplyTaskSearch()
+                        }}
+                      >
+                        <div className="relative min-w-0 flex-1">
+                          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            ref={taskSearchInputRef}
+                            data-github-items-search-input
+                            value={taskSearchInput}
+                            onChange={handleTaskSearchChange}
+                            onKeyDown={handleTaskSearchKeyDown}
+                            placeholder="is:issue state:open"
+                            aria-label="Search Issues"
+                            className="h-9 rounded-md border-border/50 bg-background pl-8 pr-8 text-sm"
+                          />
+                          {taskSearchInput || appliedTaskSearch ? (
+                            <button
+                              type="button"
+                              aria-label="Clear search"
+                              onClick={() => {
+                                setTaskSearchInput('')
+                                setAppliedTaskSearch('')
+                                setActiveTaskPreset(null)
+                                setTaskResumeState({
+                                  githubItemsPreset: null,
+                                  githubItemsQuery: ''
+                                })
+                                setTaskRefreshNonce((current) => current + 1)
+                              }}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition hover:text-foreground"
+                            >
+                              <X className="size-4" />
+                            </button>
+                          ) : null}
+                        </div>
+                        <Button type="submit" variant="default" size="sm" className="h-9 text-xs">
+                          <Search className="size-3.5" />
+                          Search
+                        </Button>
+                      </form>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-3">
+                      <div className="flex flex-wrap items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            applyGitHubIssueSearchFilter(GITHUB_ISSUE_SEARCH_FILTERS[0])
+                          }
+                          className={cn(
+                            'inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition hover:bg-muted',
+                            parsedAppliedTaskSearch.scope === 'issue' &&
+                              parsedAppliedTaskSearch.state === 'open'
+                              ? 'bg-background text-foreground shadow-xs'
+                              : 'text-muted-foreground'
+                          )}
+                        >
+                          <CircleDot className="size-3.5 text-emerald-500" />
+                          Open
+                          {parsedAppliedTaskSearch.scope === 'issue' &&
+                          parsedAppliedTaskSearch.state === 'open' &&
+                          totalItemCount !== null ? (
+                            <span className="text-muted-foreground">{totalItemCount}</span>
+                          ) : null}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            applyGitHubIssueSearchFilter(GITHUB_ISSUE_SEARCH_FILTERS[1])
+                          }
+                          className={cn(
+                            'inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition hover:bg-muted',
+                            parsedAppliedTaskSearch.scope === 'issue' &&
+                              parsedAppliedTaskSearch.state === 'closed'
+                              ? 'bg-background text-foreground shadow-xs'
+                              : 'text-muted-foreground'
+                          )}
+                        >
+                          <CircleDot className="size-3.5 text-violet-500" />
+                          Closed
+                          {parsedAppliedTaskSearch.scope === 'issue' &&
+                          parsedAppliedTaskSearch.state === 'closed' &&
+                          totalItemCount !== null ? (
+                            <span className="text-muted-foreground">{totalItemCount}</span>
+                          ) : null}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            applyGitHubIssueSearchFilter({
+                              id: 'open-prs',
+                              label: 'Open pull requests',
+                              query: 'is:pr state:open',
+                              preset: 'prs'
+                            })
+                          }
+                          className={cn(
+                            'inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition hover:bg-muted',
+                            parsedAppliedTaskSearch.scope === 'pr'
+                              ? 'bg-background text-foreground shadow-xs'
+                              : 'text-muted-foreground'
+                          )}
+                        >
+                          <GitPullRequest className="size-3.5 text-cyan-500" />
+                          Pull requests
+                        </button>
                       </div>
                     </div>
 

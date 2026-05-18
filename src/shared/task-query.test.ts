@@ -18,6 +18,13 @@ describe('tokenizeSearchQuery', () => {
     expect(tokenizeSearchQuery("'with spaces' bar")).toEqual(['with spaces', 'bar'])
   })
 
+  it('keeps quoted qualifier values in one token', () => {
+    expect(tokenizeSearchQuery('label:"needs review" state:open')).toEqual([
+      'label:needs review',
+      'state:open'
+    ])
+  })
+
   it('returns an empty list for an empty string', () => {
     expect(tokenizeSearchQuery('')).toEqual([])
   })
@@ -36,6 +43,13 @@ describe('parseTaskQuery', () => {
     const parsed = parseTaskQuery('is:issue is:open')
     expect(parsed.scope).toBe('issue')
     expect(parsed.state).toBe('open')
+  })
+
+  it('parses GitHub issue-page state and sort qualifiers', () => {
+    const parsed = parseTaskQuery('sort:updated-desc is:issue state:closed')
+    expect(parsed.scope).toBe('issue')
+    expect(parsed.state).toBe('closed')
+    expect(parsed.freeText).toBe('')
   })
 
   it('widens scope to all when both is:issue and is:pr are present', () => {
@@ -59,13 +73,13 @@ describe('parseTaskQuery', () => {
 
   it('extracts assignee, author, label, and review qualifiers', () => {
     const parsed = parseTaskQuery(
-      'assignee:@me author:alice review-requested:@me label:bug free text'
+      'assignee:@me author:alice review-requested:@me label:"needs review" free text'
     )
     expect(parsed.assignee).toBe('@me')
     expect(parsed.author).toBe('alice')
     expect(parsed.reviewRequested).toBe('@me')
     expect(parsed.scope).toBe('pr') // review-requested forces pr
-    expect(parsed.labels).toEqual(['bug'])
+    expect(parsed.labels).toEqual(['needs review'])
     expect(parsed.freeText).toBe('free text')
   })
 
@@ -86,6 +100,10 @@ describe('stripRepoQualifiers', () => {
 
   it('keeps other qualifiers intact', () => {
     expect(stripRepoQualifiers('label:bug repo:a/b')).toBe('label:bug')
+  })
+
+  it('preserves quoted qualifier values', () => {
+    expect(stripRepoQualifiers('label:"needs review" repo:a/b')).toBe('label:"needs review"')
   })
 
   it('re-quotes a standalone token that contains whitespace', () => {

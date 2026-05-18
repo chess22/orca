@@ -12,10 +12,54 @@ export type ParsedTaskQuery = {
 
 export function tokenizeSearchQuery(rawQuery: string): string[] {
   const tokens: string[] = []
-  const pattern = /"([^"]*)"|'([^']*)'|(\S+)/g
-  let match: RegExpExecArray | null
-  while ((match = pattern.exec(rawQuery)) !== null) {
-    tokens.push(match[1] ?? match[2] ?? match[3] ?? '')
+  let index = 0
+
+  while (index < rawQuery.length) {
+    while (index < rawQuery.length && /\s/.test(rawQuery[index])) {
+      index += 1
+    }
+    if (index >= rawQuery.length) {
+      break
+    }
+
+    let token = ''
+    let quote: '"' | "'" | null = null
+    const startingQuote = rawQuery[index] === '"' || rawQuery[index] === "'"
+    if (startingQuote) {
+      quote = rawQuery[index] as '"' | "'"
+      index += 1
+    }
+
+    while (index < rawQuery.length) {
+      const char = rawQuery[index]
+      if (quote) {
+        if (char === quote) {
+          quote = null
+          index += 1
+          if (startingQuote) {
+            break
+          }
+          continue
+        }
+        token += char
+        index += 1
+        continue
+      }
+      if (/\s/.test(char)) {
+        break
+      }
+      if (char === '"' || char === "'") {
+        quote = char
+        index += 1
+        continue
+      }
+      token += char
+      index += 1
+    }
+
+    if (token) {
+      tokens.push(token)
+    }
   }
   return tokens
 }
@@ -36,30 +80,39 @@ export function parseTaskQuery(rawQuery: string): ParsedTaskQuery {
   const freeTextTokens: string[] = []
   for (const token of tokenizeSearchQuery(rawQuery.trim())) {
     const normalized = token.toLowerCase()
-    if (normalized === 'is:issue') {
+    if (normalized === 'is:issue' || normalized === 'type:issue') {
       if (query.scope === 'pr') {
         continue
       }
       query.scope = 'issue'
       continue
     }
-    if (normalized === 'is:pr') {
+    if (
+      normalized === 'is:pr' ||
+      normalized === 'is:pull-request' ||
+      normalized === 'type:pr' ||
+      normalized === 'type:pull-request'
+    ) {
       query.scope = query.scope === 'issue' ? 'all' : 'pr'
       continue
     }
-    if (normalized === 'is:open') {
+    if (normalized === 'is:open' || normalized === 'state:open') {
       query.state = 'open'
       continue
     }
-    if (normalized === 'is:closed') {
+    if (normalized === 'is:closed' || normalized === 'state:closed') {
       query.state = 'closed'
       continue
     }
-    if (normalized === 'is:merged') {
+    if (normalized === 'is:merged' || normalized === 'state:merged') {
       query.state = 'merged'
       continue
     }
-    if (normalized === 'is:draft') {
+    if (normalized === 'state:all') {
+      query.state = 'all'
+      continue
+    }
+    if (normalized === 'is:draft' || normalized === 'draft:true') {
       query.scope = 'pr'
       query.state = 'open'
       query.draft = true
@@ -71,6 +124,9 @@ export function parseTaskQuery(rawQuery: string): ParsedTaskQuery {
     const key = rawKey.toLowerCase()
     if (!value) {
       freeTextTokens.push(token)
+      continue
+    }
+    if (key === 'sort') {
       continue
     }
 

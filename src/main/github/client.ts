@@ -232,7 +232,7 @@ function mapIssueWorkItem(item: Record<string, unknown>): MainWorkItem {
     type: 'issue',
     number: Number(item.number),
     title: String(item.title ?? ''),
-    state: String(item.state ?? 'open') === 'closed' ? 'closed' : 'open',
+    state: String(item.state ?? 'open').toLowerCase() === 'closed' ? 'closed' : 'open',
     url: String(item.html_url ?? item.url ?? ''),
     labels: Array.isArray(item.labels)
       ? item.labels

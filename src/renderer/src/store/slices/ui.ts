@@ -57,18 +57,32 @@ function clampPetSize(size: number): number {
 function presetToQuery(presetId: TaskViewPresetId | null): string {
   switch (presetId) {
     case 'issues':
-      return 'is:issue is:open'
+      return 'is:issue state:open'
     case 'my-issues':
-      return 'assignee:@me is:issue is:open'
+      return 'assignee:@me is:issue state:open'
     case 'prs':
-      return 'is:pr is:open'
+      return 'is:pr state:open'
     case 'review':
-      return 'review-requested:@me is:pr is:open'
+      return 'review-requested:@me is:pr state:open'
     case 'my-prs':
-      return 'author:@me is:pr is:open'
+      return 'author:@me is:pr state:open'
     default:
-      return 'is:open'
+      return 'is:issue state:open'
   }
+}
+
+function resolveInitialGitHubIssuePreset(
+  presetId: TaskViewPresetId | null | undefined
+): TaskViewPresetId {
+  return presetId && presetId !== 'all' ? presetId : 'issues'
+}
+
+function normalizeInitialGitHubIssueSearch(query: string | null | undefined): string {
+  const trimmed = query?.trim() ?? ''
+  if (!trimmed || trimmed === 'is:open' || trimmed === 'state:open') {
+    return 'is:issue state:open'
+  }
+  return trimmed
 }
 
 // Why: persisted UI state pre-dated the consolidation of `memory` + `sessions`
@@ -546,7 +560,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       })()
 
       const resume = state.taskResumeState
-      const defaultPreset = state.settings?.defaultTaskViewPreset ?? 'all'
+      const defaultPreset = resolveInitialGitHubIssuePreset(state.settings?.defaultTaskViewPreset)
       // Why: must match the exact query TaskPage's resume effect mounts with,
       // otherwise the warm cache key (e.g. 'is:open') misses the page's actual
       // fetch key (e.g. '') and the prefetch is wasted. When the user has an
@@ -554,8 +568,10 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       // query so both sides agree.
       const query =
         resume?.githubItemsPreset === null
-          ? (resume.githubItemsQuery ?? '').trim()
-          : presetToQuery(resume?.githubItemsPreset ?? defaultPreset)
+          ? normalizeInitialGitHubIssueSearch(resume.githubItemsQuery)
+          : presetToQuery(
+              resolveInitialGitHubIssuePreset(resume?.githubItemsPreset ?? defaultPreset)
+            )
       for (const repo of selectedRepos) {
         state.prefetchWorkItems(repo.id, repo.path, PER_REPO_FETCH_LIMIT, query)
       }

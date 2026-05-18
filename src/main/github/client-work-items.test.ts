@@ -346,4 +346,60 @@ describe('listWorkItems', () => {
       }
     ])
   })
+
+  it('treats GitHub issue-page query syntax as first-class filters', async () => {
+    getIssueOwnerRepoMock.mockResolvedValueOnce({ owner: 'acme', repo: 'widgets' })
+    getOwnerRepoMock.mockResolvedValueOnce({ owner: 'acme', repo: 'widgets' })
+    ghExecFileAsyncMock.mockResolvedValueOnce({
+      stdout: JSON.stringify([
+        {
+          number: 9,
+          title: 'Closed Windows issue',
+          state: 'CLOSED',
+          url: 'https://github.com/acme/widgets/issues/9',
+          labels: [{ name: 'os:Windows' }],
+          updatedAt: '2026-04-01T00:00:00Z',
+          author: { login: 'octocat' }
+        }
+      ])
+    })
+
+    const { items } = await listWorkItems(
+      '/repo-root',
+      10,
+      'sort:updated-desc is:issue state:closed label:"os:Windows"'
+    )
+
+    expect(ghExecFileAsyncMock).toHaveBeenCalledTimes(1)
+    expect(ghExecFileAsyncMock).toHaveBeenCalledWith(
+      [
+        'issue',
+        'list',
+        '--limit',
+        '10',
+        '--json',
+        'number,title,state,url,labels,updatedAt,author',
+        '--repo',
+        'acme/widgets',
+        '--state',
+        'closed',
+        '--label',
+        'os:Windows'
+      ],
+      { cwd: '/repo-root' }
+    )
+    expect(items).toEqual([
+      {
+        id: 'issue:9',
+        type: 'issue',
+        number: 9,
+        title: 'Closed Windows issue',
+        state: 'closed',
+        url: 'https://github.com/acme/widgets/issues/9',
+        labels: ['os:Windows'],
+        updatedAt: '2026-04-01T00:00:00Z',
+        author: 'octocat'
+      }
+    ])
+  })
 })
