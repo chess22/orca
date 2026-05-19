@@ -132,6 +132,8 @@ orca worktree ps --json
 orca worktree current --json
 orca worktree show --worktree id:<worktreeId> --json
 orca worktree create --repo id:<repoId> --name my-task --issue 123 --comment "seed" --json
+orca worktree create --repo id:<repoId> --name related-task --parent-worktree active --json
+orca worktree create --repo id:<repoId> --name independent-task --no-parent --json
 orca worktree set --worktree id:<worktreeId> --display-name "My Task" --json
 orca worktree set --worktree active --comment "reproduced bug; collecting logs from staging" --json
 orca worktree set --worktree active --comment "waiting on review" --json
@@ -145,6 +147,27 @@ Worktree selectors supported in focused v1:
 - `branch:<branch-name>`
 - `issue:<number>`
 - `active` / `current` to resolve the enclosing Orca-managed worktree from the shell `cwd`
+
+### Worktree Lineage
+
+When creating a worktree from inside an Orca-managed worktree, preserve parent lineage unless the new work is independent.
+
+Use the inferred parent by default. Pass `--parent-worktree active` when the command should make the current worktree relationship explicit.
+
+```bash
+orca worktree create --repo id:<repoId> --name related-task --json
+orca worktree create --repo id:<repoId> --name related-task --parent-worktree active --json
+```
+
+Pass `--no-parent` only when the new worktree should stand alone.
+
+```bash
+orca worktree create --repo id:<repoId> --name independent-task --no-parent --json
+```
+
+Use parent lineage for subtasks, follow-ups, repros, reviews, test runs, implementation slices, or work connected to the current task. Use `--no-parent` for explicit topic switches, unrelated projects/issues, or user requests for an independent workspace.
+
+Do not use `--no-parent` only because the new worktree uses a different branch, issue, or name. Those differences can still describe related child work.
 
 ### Automations
 
@@ -203,6 +226,8 @@ Why: `--direction horizontal` splits the pane **left and right** (new pane appea
 - Prefer `--json` for all machine-driven use.
 - Use `worktree ps` as the first summary view when many worktrees may exist.
 - Use `worktree current` or `--worktree active` when the agent is already running inside the target worktree.
+- When creating a worktree from an existing workspace, preserve parent lineage by default; pass `--parent-worktree active` when the relationship should be explicit.
+- Pass `--no-parent` on `worktree create` only when the new workspace should be independent of the current one.
 - Treat `orca worktree set --worktree active --comment ... --json` as a default coding-agent behavior whenever the agent reaches a meaningful checkpoint in the current Orca-managed worktree; the user does not need to explicitly ask for each update.
 - Update the worktree comment at significant checkpoints, not every trivial command. Good checkpoints include reproducing a bug, confirming a hypothesis, starting a risky migration, finishing a meaningful implementation slice, switching from investigation to fix, or blocking on external input.
 - Write comments as short status snapshots of the current state, for example `debugging AWS CLI profile resolution`, `confirmed flaky test is caused by temp-dir race`, or `fix implemented; running integration tests`.
