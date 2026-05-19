@@ -887,16 +887,21 @@ export class OrcaRuntimeService {
   // vice-versa. Keyed by `<repoPath>::<remote>` so multi-remote repos (even
   // though v1 only uses `origin`) don't cross-contaminate. The in-flight Map
   // also provides serialization — two concurrent callers share a single
-  // underlying `git fetch`. Lifecycle rules are enforced in
-  // `fetchRemoteWithCache` and MUST NOT be duplicated elsewhere:
+  // underlying `git fetch`. Full-remote fetch lifecycle rules:
   //   - entry inserted BEFORE await,
   //   - `.finally()` removes the entry on BOTH success and rejection,
   //   - timestamp written ONLY on success (rejection must not make the
   //     30s freshness cache lie).
   // A literal "insert before await / read-back after await" without these
-  // three rules wedges all future creates on the same repo after a single
-  // DNS hiccup until process restart (see §3.3 Lifecycle).
+  // three rules wedges future fetches on the same repo after a single
+  // DNS hiccup until process restart (see §3.3 Lifecycle). Exact base-ref
+  // refreshes share the in-flight rule but intentionally do not write the
+  // full-remote freshness timestamp.
   private fetchInflight = new Map<string, Promise<RemoteFetchResult>>()
+  // Why: `git fetch origin` and `git fetch origin <refspec>` contend for the
+  // same repo remote/ref locks. This queue serializes all fetch shapes for one
+  // canonical repo+remote while still letting same-shape callers share promises.
+  private remoteFetchQueueTail = new Map<string, Promise<RemoteFetchResult>>()
   private fetchLastCompletedAt = new Map<string, number>()
   // Why: `getCanonicalFetchKey` is awaited from every freshness probe and
   // every getOrStartRemoteFetch call. Without memoization the warm-cache hot
@@ -5558,19 +5563,33 @@ export class OrcaRuntimeService {
     const wslHome = wslInfo ? getWslHome(wslInfo.distro) : null
     const workspaceRoot = wslHome ? join(wslHome, 'orca', 'workspaces') : settings.workspaceDir
     worktreePath = ensurePathWithinWorkspace(worktreePath, workspaceRoot)
-    const remote = baseBranch.includes('/') ? baseBranch.split('/')[0] : 'origin'
-    // Why (§3.3 Lifecycle): route through the shared fetch cache so back-to-back
-    // CLI creates on the same repo don't each pay the round-trip, and so a
-    // subsequent dispatch probe within the 30s window reuses this result. The
-    // helper swallows rejection (log-and-proceed) so a DNS hiccup never wedges
-    // future creates and CLI creation stays usable offline — same intent as
-    // the previous try/catch around gitExecFileSync.
-    try {
-      await this.fetchRemoteWithCache(repo.path, remote)
-    } catch {
-      // Why: belt-and-suspenders. fetchRemoteWithCache already logs and does
-      // not throw; the outer try/catch guarantees create-path tolerance even
-      // if future refactors change that contract.
+    const remoteTrackingBase = await this.resolveRemoteTrackingBase(repo.path, baseBranch)
+    if (remoteTrackingBase) {
+      const hadLocalBaseRef = await this.hasRemoteTrackingRef(repo.path, remoteTrackingBase)
+      const refreshResult = await this.getOrStartRemoteTrackingBaseRefresh(
+        repo.path,
+        remoteTrackingBase
+      )
+      if (!refreshResult.ok) {
+        throw new Error(
+          `Could not refresh base ref "${baseBranch}" from "${remoteTrackingBase.remote}". Check your network and try again.`
+        )
+      }
+      if (!hadLocalBaseRef && !(await this.hasRemoteTrackingRef(repo.path, remoteTrackingBase))) {
+        throw new Error(`Base ref "${baseBranch}" was not found after fetching.`)
+      }
+    } else {
+      const remote = baseBranch.includes('/') ? baseBranch.split('/')[0] : 'origin'
+      // Why: local bases keep legacy best-effort fetch behavior. Remote-tracking
+      // bases fail closed above because stale create-from-base is worse than a
+      // clear retryable error.
+      try {
+        await this.fetchRemoteWithCache(repo.path, remote)
+      } catch {
+        // Why: belt-and-suspenders. fetchRemoteWithCache already logs and does
+        // not throw; the outer try/catch guarantees create-path tolerance even
+        // if future refactors change that contract.
+      }
     }
 
     const sparseDirectories = args.sparseCheckout
@@ -5923,9 +5942,8 @@ export class OrcaRuntimeService {
 
   /**
    * Fetch `remote` in `repoPath`, sharing the 30s freshness window + in-flight
-   * serialization with all other callers (renderer-create path, CLI create,
-   * dispatch drift probe). Never rejects — callers log-and-proceed on offline
-   * failures (§3.3 Lifecycle).
+   * serialization with all other callers. Never rejects — callers
+   * log-and-proceed on offline failures (§3.3 Lifecycle).
    *
    * Why a shared cache on the runtime instead of module-scoped: §7.1 relies on
    * one cache for BOTH the renderer create path and `probeWorktreeDrift`. A
@@ -5957,10 +5975,19 @@ export class OrcaRuntimeService {
     return resolved
   }
 
-  async isRemoteFetchFresh(repoPath: string, remote: string): Promise<boolean> {
-    const key = await this.getCanonicalFetchKey(repoPath, remote)
-    const lastAt = this.fetchLastCompletedAt.get(key)
-    return lastAt !== undefined && Date.now() - lastAt < FETCH_FRESHNESS_MS
+  private enqueueRemoteFetch(
+    remoteKey: string,
+    runFetch: () => Promise<RemoteFetchResult>
+  ): Promise<RemoteFetchResult> {
+    const previous = this.remoteFetchQueueTail.get(remoteKey)
+    const promise = previous ? previous.then(runFetch, runFetch) : runFetch()
+    this.remoteFetchQueueTail.set(remoteKey, promise)
+    promise.finally(() => {
+      if (this.remoteFetchQueueTail.get(remoteKey) === promise) {
+        this.remoteFetchQueueTail.delete(remoteKey)
+      }
+    })
+    return promise
   }
 
   async getOrStartRemoteFetch(repoPath: string, remote: string): Promise<RemoteFetchResult> {
@@ -5980,26 +6007,64 @@ export class OrcaRuntimeService {
       return existing
     }
 
-    const promise = gitExecFileAsync(['fetch', remote], { cwd: repoPath })
-      .then((): RemoteFetchResult => {
-        // Why (§3.3 Lifecycle): timestamp on success ONLY. Writing on rejection
-        // would make the freshness cache lie about the last known remote state.
-        this.fetchLastCompletedAt.set(key, Date.now())
-        return { ok: true }
-      })
-      .catch((err): RemoteFetchResult => {
-        // Why: swallow here so awaiters don't throw at the await site. Outer
-        // create/dispatch paths are already tolerant of offline fetch failure;
-        // this is the behavioral contract of this helper.
-        console.warn(`[fetchRemoteWithCache] ${remote} fetch failed for ${repoPath}:`, err)
-        return { ok: false, errorKind: 'git_error' }
-      })
-      .finally(() => {
-        // Why (§3.3 Lifecycle): evict on BOTH success and rejection. A
-        // rejected entry that survived in the Map would wedge every future
-        // create on this repo until Orca restarted (the F2 bug §3.3 pins).
-        this.fetchInflight.delete(key)
-      })
+    const promise = this.enqueueRemoteFetch(key, () =>
+      gitExecFileAsync(['fetch', remote], { cwd: repoPath })
+        .then((): RemoteFetchResult => {
+          // Why (§3.3 Lifecycle): timestamp on success ONLY. Writing on rejection
+          // would make the freshness cache lie about the last known remote state.
+          this.fetchLastCompletedAt.set(key, Date.now())
+          return { ok: true }
+        })
+        .catch((err): RemoteFetchResult => {
+          // Why: swallow here so awaiters don't throw at the await site. Outer
+          // create/dispatch paths are already tolerant of offline fetch failure;
+          // this is the behavioral contract of this helper.
+          console.warn(`[fetchRemoteWithCache] ${remote} fetch failed for ${repoPath}:`, err)
+          return { ok: false, errorKind: 'git_error' }
+        })
+    ).finally(() => {
+      // Why (§3.3 Lifecycle): evict on BOTH success and rejection. A
+      // rejected entry that survived in the Map would wedge every future
+      // create on this repo until Orca restarted (the F2 bug §3.3 pins).
+      this.fetchInflight.delete(key)
+    })
+
+    this.fetchInflight.set(key, promise)
+    return promise
+  }
+
+  async getOrStartRemoteTrackingBaseRefresh(
+    repoPath: string,
+    base: RemoteTrackingBase
+  ): Promise<RemoteFetchResult> {
+    const remoteKey = await this.getCanonicalFetchKey(repoPath, base.remote)
+    const existingRemoteFetch = this.fetchInflight.get(remoteKey)
+    if (existingRemoteFetch) {
+      return existingRemoteFetch
+    }
+
+    const key = await this.getCanonicalFetchKey(repoPath, `base:${base.remote}:${base.branch}`)
+    const existing = this.fetchInflight.get(key)
+    if (existing) {
+      return existing
+    }
+
+    const promise = this.enqueueRemoteFetch(remoteKey, () =>
+      gitExecFileAsync(
+        ['fetch', '--no-tags', base.remote, `+refs/heads/${base.branch}:${base.ref}`],
+        { cwd: repoPath }
+      )
+        .then((): RemoteFetchResult => ({ ok: true }))
+        .catch((err): RemoteFetchResult => {
+          console.warn(
+            `[refreshRemoteTrackingBase] ${base.base} refresh failed for ${repoPath}:`,
+            err
+          )
+          return { ok: false, errorKind: 'git_error' }
+        })
+    ).finally(() => {
+      this.fetchInflight.delete(key)
+    })
 
     this.fetchInflight.set(key, promise)
     return promise
@@ -6065,77 +6130,10 @@ export class OrcaRuntimeService {
     this.notifier?.worktreeBaseStatus?.(event)
   }
 
-  private async refreshUntouchedCreatedWorktree(args: {
-    worktreeId: string
-    createdWorktreePath: string
-    createdInstanceId: string
-    branchName: string
-    createdBaseSha: string
-    postFetchSha: string
-    stillCurrent: () => boolean
-  }): Promise<'refreshed' | 'skipped' | 'stale'> {
-    const instanceMatches = (): boolean =>
-      this.store?.getWorktreeMeta(args.worktreeId)?.instanceId === args.createdInstanceId
-    if (!args.stillCurrent()) {
-      return 'stale'
-    }
-    if (!instanceMatches()) {
-      return 'stale'
-    }
-
-    try {
-      const { stdout: isWorkTreeStdout } = await gitExecFileAsync(
-        ['rev-parse', '--is-inside-work-tree'],
-        { cwd: args.createdWorktreePath }
-      )
-      if (isWorkTreeStdout.trim() !== 'true') {
-        return 'skipped'
-      }
-
-      const { stdout: headStdout } = await gitExecFileAsync(
-        ['rev-parse', '--verify', 'HEAD^{commit}'],
-        { cwd: args.createdWorktreePath }
-      )
-      if (headStdout.trim() !== args.createdBaseSha) {
-        return 'skipped'
-      }
-
-      const { stdout: branchStdout } = await gitExecFileAsync(
-        ['symbolic-ref', '--quiet', '--short', 'HEAD'],
-        { cwd: args.createdWorktreePath }
-      )
-      if (branchStdout.trim() !== args.branchName) {
-        return 'skipped'
-      }
-
-      const { stdout: statusStdout } = await gitExecFileAsync(['status', '--porcelain'], {
-        cwd: args.createdWorktreePath
-      })
-      if (statusStdout.trim()) {
-        return 'skipped'
-      }
-
-      if (!args.stillCurrent()) {
-        return 'stale'
-      }
-      if (!instanceMatches()) {
-        return 'stale'
-      }
-      await gitExecFileAsync(['reset', '--hard', args.postFetchSha], {
-        cwd: args.createdWorktreePath
-      })
-      return args.stillCurrent() && instanceMatches() ? 'refreshed' : 'stale'
-    } catch {
-      return args.stillCurrent() ? 'skipped' : 'stale'
-    }
-  }
-
   async reconcileWorktreeBaseStatus(args: {
     repoId: string
     repoPath: string
     worktreeId: string
-    createdWorktreePath: string
-    createdInstanceId: string
     base: RemoteTrackingBase
     branchName: string
     createdBaseSha: string
@@ -6239,24 +6237,6 @@ export class OrcaRuntimeService {
         })
       } catch {
         emit({ status: 'base_changed' })
-        await checkPublishRemoteConflict()
-        return
-      }
-
-      const refreshResult = await this.refreshUntouchedCreatedWorktree({
-        worktreeId: args.worktreeId,
-        createdWorktreePath: args.createdWorktreePath,
-        createdInstanceId: args.createdInstanceId,
-        branchName: args.branchName,
-        createdBaseSha: args.createdBaseSha,
-        postFetchSha,
-        stillCurrent
-      })
-      if (refreshResult === 'stale') {
-        return
-      }
-      if (refreshResult === 'refreshed') {
-        emit({ status: 'current' })
         await checkPublishRemoteConflict()
         return
       }

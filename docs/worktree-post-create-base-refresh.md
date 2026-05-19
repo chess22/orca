@@ -1,106 +1,107 @@
-# Worktree Post-Create Base Refresh
+# Worktree Pre-Create Base Refresh
 
 ## Problem
 
-Before this change, only one local-create path was intentionally stale-on-create:
+When creating a local worktree from a remote-tracking base such as `origin/main`,
+Orca previously allowed one stale-on-create path:
 
-- `baseBranch` resolves to a remote-tracking ref.
-- That ref exists locally.
-- Fetch freshness is stale.
+- `baseBranch` resolved to a remote-tracking ref.
+- The remote-tracking ref already existed locally.
+- The cached ref was stale.
 
-In that path, Orca starts `getOrStartRemoteFetch(...)` and does not await it before `git worktree add` ([src/main/ipc/worktree-remote.ts](/Users/jinjingliang/Documents/projects/orca/https-github.com-stablyai-orca-issues-2307/src/main/ipc/worktree-remote.ts:531), [src/main/ipc/worktree-remote.ts](/Users/jinjingliang/Documents/projects/orca/https-github.com-stablyai-orca-issues-2307/src/main/ipc/worktree-remote.ts:724)). The new worktree may be created from stale `refs/remotes/<remote>/<branch>`.
+That path started `git fetch` in the background and then continued to
+`git worktree add`, so the new worktree could be created from the old local
+`refs/remotes/<remote>/<branch>` value.
 
-Later, `reconcileWorktreeBaseStatus` classifies the result (`current` / `drift` / `base_changed` / `unknown`) but did not repair the worktree ([src/main/runtime/orca-runtime.ts](/Users/jinjingliang/Documents/projects/orca/https-github.com-stablyai-orca-issues-2307/src/main/runtime/orca-runtime.ts:6068)).
+Issue #2307 asks for the next worktree after a merge to be based on the latest
+remote base. A post-create repair is not safe enough because the renderer may
+activate the worktree, launch setup, or start an agent immediately after create
+returns.
 
-Important current behavior constraints:
+## Decision
 
-- If the remote-tracking ref does not exist locally, create blocks on fetch before `addWorktree`; this path is not stale-on-create.
-- If fetch freshness is hit, create previously did not schedule reconcile: no `checking`, no post-create classification ([src/main/ipc/worktree-remote.ts](/Users/jinjingliang/Documents/projects/orca/https-github.com-stablyai-orca-issues-2307/src/main/ipc/worktree-remote.ts:551)).
-- `refreshLocalBaseRefOnWorktreeCreate` is separate and default-off ([src/shared/constants.ts](/Users/jinjingliang/Documents/projects/orca/https-github.com-stablyai-orca-issues-2307/src/shared/constants.ts:145)). It may fast-forward a local branch pointer, but does not make the remote-tracking base fresh ([src/main/git/worktree.ts](/Users/jinjingliang/Documents/projects/orca/https-github.com-stablyai-orca-issues-2307/src/main/git/worktree.ts:164)).
+For remote-tracking bases, refresh before `git worktree add`.
 
-## Root Cause
+Local and SSH create paths now follow the same rule:
 
-Latency optimization decouples create from fetch completion, but reconcile is read-only. There is no guarded post-fetch fast-forward of the just-created worktree.
+1. Resolve whether `baseBranch` names a configured remote-tracking ref.
+2. If it does, refresh only that remote-tracking ref before creating the worktree:
+   `git fetch --no-tags <remote> +refs/heads/<branch>:refs/remotes/<remote>/<branch>`.
+3. Do not update local branches such as `main`; the refreshed ref is
+   `refs/remotes/<remote>/<branch>`.
+4. Bypass the runtime's completed-fetch freshness cache for this create-time
+   refresh. Sharing an already in-flight exact-base refresh is still allowed.
+5. If the refresh fails, fail the create before any worktree is created.
+6. If the base ref did not exist before refresh and still does not exist after a
+   successful refresh, fail the create with a clear missing-base error.
+7. Only after the refresh succeeds, run `git worktree add`.
 
 ## Non-Goals
 
-- Do not block the optimistic local-create path on network fetch.
-- Do not mutate worktrees after any user/setup/agent filesystem or commit activity.
-- Do not change base-ref selection semantics.
-- Do not add extra fetches beyond existing `getOrStartRemoteFetch` reuse.
-- Do not broaden to SSH in this change.
+- Do not mutate a worktree after it has been returned to the renderer.
+- Do not run `git reset --hard` as part of stale-base repair.
+- Do not pull, merge, rebase, or fast-forward local `main`.
+- Do not change explicit local-base semantics. Local bases such as `main` keep
+  the legacy best-effort fetch behavior.
+- Do not change `refreshLocalBaseRefOnWorktreeCreate`; that setting may still
+  fast-forward a local branch pointer, but it is separate from refreshing the
+  remote-tracking base before create.
 
-## Design
+## Why Pre-Create Beats Post-Create
 
-1. Keep current non-blocking create behavior in the optimistic path.
+The tempting alternative was:
 
-2. Extend reconcile with guarded auto-refresh before emitting `drift`.
+```text
+create from stale ref -> wait for fetch -> if fast-forward, reset new worktree
+```
 
-Trigger only when:
-- `postFetchSha !== createdBaseSha`.
-- `createdBaseSha` is an ancestor of `postFetchSha`.
+That is unsafe because there is no atomic boundary between "the worktree is
+untouched" and `git reset --hard`. Setup scripts, agents, or user edits can
+start as soon as create returns. A clean-status check before reset still has a
+race window.
 
-Action:
-- `git reset --hard <postFetchSha>` in the created worktree.
+The chosen design is slower on cold network paths, but it has the property we
+need: when create succeeds from a remote-tracking base, setup and agents start
+from the refreshed base immediately.
 
-3. Required guards before reset.
+## Failure Behavior
 
-- Reconcile token still current.
-- Worktree `instanceId` still matches create-time value.
-- Worktree path still exists and is still a git worktree.
-- `HEAD` still equals `createdBaseSha`.
-- Current branch still equals created branch (skip detached/switch).
-- Worktree is clean via `git status --porcelain` (include untracked).
+- Exact base-ref fetch fails/offline: create fails before `git worktree add`.
+- Base ref missing after successful fetch: create fails before `git worktree add`.
+- Remote-tracking base already exists: still refresh that one ref before create.
+- Recent successful full-remote fetch exists in the 30s cache: still refresh the
+  selected base ref before create, because a merge can land immediately after
+  the cached fetch.
+- Local/non-remote base: preserve best-effort fetch and create from the
+  requested local base.
+- SSH remote-tracking base: fail closed on fetch failure before asking the relay
+  to create the worktree.
 
-4. Status behavior.
+## Data Flow
 
-- Reset succeeds: emit `current`.
-- Any guard fails in fast-forward case: emit existing `drift` payload.
-- Non-ancestor: emit `base_changed`.
-- Keep existing publish-remote conflict behavior unchanged: only run on `current` / `drift` / `base_changed` (not on `unknown`).
+```text
+[Create request]
+      |
+      v
+[Resolve baseBranch]
+      |
+      +-- remote-tracking? -- yes --> [fetch exact remote-tracking base ref]
+      |                                  |
+      |                                  +-- fail --> [no worktree created]
+      |                                  |
+      |                                  v
+      |                             [git worktree add]
+      |
+      +-- no ---------------------> [legacy best-effort fetch]
+                                      |
+                                      v
+                                 [git worktree add]
+```
 
-5. Close the fresh-cache classification gap.
+## Tests
 
-Freshness-hit creates now still schedule reconcile by passing `Promise.resolve({ ok: true })` as `fetchPromise`. This adds `checking` -> `current` consistency without starting another fetch.
-
-## Required Plumbing Changes
-
-- Thread `createdWorktreePath` and `createdInstanceId` from create into reconcile args.
-  - Reconcile currently only gets `worktreeId`; that is insufficient for safe mutation without extra lookups and path-reuse protection.
-- Add a runtime helper for “validate untouched + reset hard to postFetchSha”.
-- Re-validate token immediately before mutation and before emit.
-
-## Consistency and Concurrency
-
-- Token check handles stale async completions in one runtime instance.
-- `instanceId` check is mandatory for same-path delete/recreate races.
-- Fetch cache key canonicalizes by git common-dir + remote, so parallel creates across linked worktrees share one in-flight fetch/freshness window.
-- External git mutations between create and reconcile are expected; guards must downgrade to non-mutating classification.
-- Multi-window renderers are unaffected; event type remains `WorktreeBaseStatusEvent`.
-
-## Edge Cases
-
-- Fetch fails/offline: emit `unknown`, no mutation.
-- Base ref missing after fetch (`rev-parse` fails): emit `unknown`.
-- Force-push/rewrite (non-ancestor): emit `base_changed`, no mutation.
-- User/setup/agent file writes (including untracked): skip reset, emit `drift`.
-- User commit before reconcile: `HEAD` mismatch, skip reset.
-- Branch switched/detached: skip reset.
-- Worktree removed/recreated at same path: token + instance check prevent wrong-target mutation.
-
-## Rollout
-
-1. Add reconcile-time untouched-state/reset helper in runtime.
-2. Pass `createdWorktreePath` + `createdInstanceId` into reconcile.
-3. Invoke helper after ancestry check and before drift emit.
-4. Always schedule reconcile in the optimistic-base path, including freshness-hit creates.
-5. Add tests for:
-   - successful guarded auto-refresh to `current`;
-   - dirty/untracked skip;
-   - HEAD-changed skip;
-   - branch-switched/detached skip;
-   - non-ancestor `base_changed`;
-   - stale-token and instance-id mismatch skip;
-   - deleted/recreated path skip;
-   - freshness-hit path schedules reconcile (if adopted).
-6. Keep non-blocking cold-fetch create test intent intact (`src/main/ipc/worktrees.test.ts`).
+- Existing remote-tracking ref: create waits for refresh before `git worktree add`.
+- Refresh failure: create fails and does not call `git worktree add`.
+- Recent fetch cache: create still refreshes the exact base ref.
+- SSH remote-tracking ref: fetch failure prevents relay worktree creation.
+- Read-only reconcile remains non-mutating when a fetched base has moved.
