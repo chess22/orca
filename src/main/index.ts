@@ -767,8 +767,7 @@ function sendSyntheticTitle(ptyId: string, data: string, options: { force?: bool
   if (
     !shouldSendSyntheticTitleFrame({
       force: options.force === true,
-      windowVisible: mainWindow.isVisible(),
-      windowFocused: mainWindow.isFocused()
+      windowVisible: mainWindow.isVisible()
     })
   ) {
     return
@@ -782,8 +781,7 @@ function canSendDecorativeSyntheticTitle(): boolean {
     !mainWindow.isDestroyed() &&
     shouldSendSyntheticTitleFrame({
       force: false,
-      windowVisible: mainWindow.isVisible(),
-      windowFocused: mainWindow.isFocused()
+      windowVisible: mainWindow.isVisible()
     })
   )
 }

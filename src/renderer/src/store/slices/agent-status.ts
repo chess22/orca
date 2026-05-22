@@ -278,11 +278,19 @@ export const createAgentStatusSlice: StateCreator<AppState, [], [], AgentStatusS
         const wasFresh =
           !!existing && isExplicitAgentStatusFresh(existing, updatedAt, AGENT_STATUS_STALE_AFTER_MS)
         const sortRelevantChange = !existing || existing.state !== payload.state || !wasFresh
-        const retentionRelevantChange =
-          sortRelevantChange ||
-          (existing?.state === 'done' &&
-            payload.state === 'done' &&
-            updatedAt !== existing.updatedAt)
+        const doneRetentionFieldsChanged =
+          existing?.state === 'done' &&
+          entry.state === 'done' &&
+          (entry.prompt !== existing.prompt ||
+            entry.updatedAt !== existing.updatedAt ||
+            entry.stateStartedAt !== existing.stateStartedAt ||
+            entry.agentType !== existing.agentType ||
+            entry.terminalTitle !== existing.terminalTitle ||
+            entry.toolName !== existing.toolName ||
+            entry.toolInput !== existing.toolInput ||
+            entry.lastAssistantMessage !== existing.lastAssistantMessage ||
+            entry.interrupted !== existing.interrupted)
+        const retentionRelevantChange = sortRelevantChange || doneRetentionFieldsChanged
         // Why: a new status event means the agent is live again — lift any
         // one-shot retention suppressor so the row can be retained normally
         // on its next disappearance. setAgentStatus fires on every PTY status

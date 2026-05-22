@@ -36,9 +36,9 @@ import {
 import { hostedReviewSummaryFromGitHubPRInfo } from '../../../../shared/hosted-review-github'
 import {
   checksPanelAsyncResultKey,
-  shouldCommitChecksPanelAsyncResult,
-  shouldPollChecksPanel
+  shouldCommitChecksPanelAsyncResult
 } from './checks-panel-async-result-key'
+import { isWindowVisible } from '@/lib/window-visibility-interval'
 
 export default function ChecksPanel(): React.JSX.Element {
   const activeWorktree = useActiveWorktree()
@@ -390,11 +390,7 @@ export default function ChecksPanel(): React.JSX.Element {
     prevChecksRef.current = ''
     let cancelled = false
 
-    const shouldPollNow = (): boolean =>
-      shouldPollChecksPanel({
-        documentVisible: document.visibilityState === 'visible',
-        windowFocused: document.hasFocus()
-      })
+    const shouldPollNow = (): boolean => isWindowVisible()
 
     const clearScheduledPoll = (): void => {
       if (pollRef.current) {
@@ -436,14 +432,12 @@ export default function ChecksPanel(): React.JSX.Element {
 
     fetchAndSchedule()
     window.addEventListener('focus', reconcileVisibility)
-    window.addEventListener('blur', reconcileVisibility)
     document.addEventListener('visibilitychange', reconcileVisibility)
 
     return () => {
       cancelled = true
       clearScheduledPoll()
       window.removeEventListener('focus', reconcileVisibility)
-      window.removeEventListener('blur', reconcileVisibility)
       document.removeEventListener('visibilitychange', reconcileVisibility)
     }
   }, [fetchChecks, isPanelVisible, prNumber])

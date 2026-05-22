@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { getEditorExternalWatchTargets } from './useEditorExternalWatch'
+import {
+  getEditorExternalWatchTargets,
+  type EditorExternalWatchTargetState
+} from './useEditorExternalWatch'
 
 vi.mock('@/store', () => ({
   useAppStore: {
@@ -12,25 +15,35 @@ vi.mock('@/components/editor/editor-autosave', () => ({
 }))
 
 describe('getEditorExternalWatchTargets', () => {
-  const repo = { id: 'repo-1', path: '/repo', kind: 'git', connectionId: null }
-  const worktree = { id: 'wt-1', repoId: 'repo-1', path: '/repo' }
+  const repo = {
+    id: 'repo-1',
+    path: '/repo',
+    kind: 'git',
+    connectionId: null
+  } as EditorExternalWatchTargetState['repos'][number]
+  const worktree = {
+    id: 'wt-1',
+    repoId: 'repo-1',
+    path: '/repo'
+  } as EditorExternalWatchTargetState['worktreesByRepo'][string][number]
 
-  const makeState = (isDirty: boolean) =>
-    ({
-      openFiles: [
-        {
-          id: 'file-1',
-          worktreeId: 'wt-1',
-          filePath: '/repo/notes.md',
-          relativePath: 'notes.md',
-          isDirty
-        }
-      ],
-      worktreesByRepo: { 'repo-1': [worktree] },
-      repos: [repo],
-      activeWorktreeId: null,
-      settings: null
-    }) as never
+  const makeState = (isDirty: boolean): EditorExternalWatchTargetState => ({
+    openFiles: [
+      {
+        id: 'file-1',
+        worktreeId: 'wt-1',
+        filePath: '/repo/notes.md',
+        relativePath: 'notes.md',
+        language: 'markdown',
+        mode: 'edit',
+        isDirty
+      }
+    ],
+    worktreesByRepo: { 'repo-1': [worktree] },
+    repos: [repo],
+    activeWorktreeId: null,
+    settings: null
+  })
 
   it('preserves the snapshot when open-file metadata changes without changing watched roots', () => {
     const first = getEditorExternalWatchTargets(makeState(false))

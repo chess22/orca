@@ -1,23 +1,26 @@
-export type FocusedVisibilityIntervalTimer = ReturnType<typeof setInterval>
+export type WindowVisibilityIntervalTimer = ReturnType<typeof setInterval>
 
 export function isWindowVisible(): boolean {
-  return typeof document.visibilityState === 'undefined' || document.visibilityState === 'visible'
+  return (
+    typeof document === 'undefined' ||
+    typeof document.visibilityState === 'undefined' ||
+    document.visibilityState === 'visible'
+  )
 }
 
-export function installFocusedVisibilityInterval(args: {
+export function installWindowVisibilityInterval(args: {
   run: () => void
   intervalMs: number
-  setIntervalFn?: (callback: () => void, intervalMs: number) => FocusedVisibilityIntervalTimer
-  clearIntervalFn?: (handle: FocusedVisibilityIntervalTimer) => void
+  setIntervalFn?: (callback: () => void, intervalMs: number) => WindowVisibilityIntervalTimer
+  clearIntervalFn?: (handle: WindowVisibilityIntervalTimer) => void
 }): () => void {
   const setIntervalFn =
     args.setIntervalFn ??
-    ((callback: () => void, intervalMs: number): FocusedVisibilityIntervalTimer =>
+    ((callback: () => void, intervalMs: number): WindowVisibilityIntervalTimer =>
       setInterval(callback, intervalMs))
   const clearIntervalFn =
-    args.clearIntervalFn ??
-    ((handle: FocusedVisibilityIntervalTimer): void => clearInterval(handle))
-  let intervalId: FocusedVisibilityIntervalTimer | null = null
+    args.clearIntervalFn ?? ((handle: WindowVisibilityIntervalTimer): void => clearInterval(handle))
+  let intervalId: WindowVisibilityIntervalTimer | null = null
 
   const stop = (): void => {
     if (!intervalId) {
@@ -45,12 +48,12 @@ export function installFocusedVisibilityInterval(args: {
   }
 
   start()
-  if (typeof document.addEventListener === 'function') {
+  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
     document.addEventListener('visibilitychange', reconcile)
   }
   return () => {
     stop()
-    if (typeof document.removeEventListener === 'function') {
+    if (typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
       document.removeEventListener('visibilitychange', reconcile)
     }
   }

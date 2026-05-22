@@ -107,7 +107,7 @@ import { focusTerminalTabSurface } from '@/lib/focus-terminal-tab-surface'
 import { DiffNotesSendMenu } from '@/components/editor/DiffNotesSendMenu'
 import { AGENT_CATALOG } from '@/lib/agent-catalog'
 import { launchAgentInNewTab } from '@/lib/launch-agent-in-new-tab'
-import { installFocusedVisibilityInterval } from '@/lib/focused-visibility-interval'
+import { installWindowVisibilityInterval } from '@/lib/window-visibility-interval'
 import {
   notifyEditorExternalFileChange,
   requestEditorSaveQuiesce
@@ -2975,7 +2975,7 @@ function SourceControlInner(): React.JSX.Element {
     // Why: branch compare shells out to git every tick. The panel only needs
     // background freshness while Orca is visible; hidden-window time should not
     // burn subprocess work or timer wakeups.
-    return installFocusedVisibilityInterval({
+    return installWindowVisibilityInterval({
       run: () => void refreshBranchCompareRef.current(),
       intervalMs: BRANCH_REFRESH_INTERVAL_MS
     })

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Gauge, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { installFocusedVisibilityInterval } from '@/lib/focused-visibility-interval'
+import { installWindowVisibilityInterval } from '@/lib/window-visibility-interval'
 import { useAppStore } from '@/store'
 import { callRuntimeRpc, getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
 import type { GetRateLimitResult, GitHubRateLimitSnapshot } from '../../../../shared/types'
@@ -97,7 +97,7 @@ export function useGitHubRateLimitSnapshot(options?: { autoRefresh?: boolean }):
     if (!autoRefresh) {
       return
     }
-    return installFocusedVisibilityInterval({
+    return installWindowVisibilityInterval({
       run: () => void refresh(false),
       intervalMs: REFRESH_INTERVAL_MS
     })

@@ -122,13 +122,6 @@ test.describe('Terminal typing latency', () => {
           .map((value) => value.toFixed(1))
           .join(',')}`
       })
-      console.info(
-        `[terminal-typing-latency] median=${medianLatency.toFixed(
-          1
-        )}ms worst=${worstLatency.toFixed(1)}ms samples=${latencies
-          .map((value) => value.toFixed(1))
-          .join(',')}`
-      )
 
       expect(medianLatency).toBeLessThan(MAX_MEDIAN_KEY_LATENCY_MS)
       expect(worstLatency).toBeLessThan(MAX_WORST_KEY_LATENCY_MS)

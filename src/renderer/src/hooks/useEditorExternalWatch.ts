@@ -76,7 +76,7 @@ type WatchedTargetsSnapshot = {
   targetsKey: string
 }
 
-type EditorExternalWatchTargetState = Pick<
+export type EditorExternalWatchTargetState = Pick<
   AppState,
   'openFiles' | 'worktreesByRepo' | 'repos' | 'activeWorktreeId' | 'settings'
 >

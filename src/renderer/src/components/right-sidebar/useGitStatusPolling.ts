@@ -7,15 +7,9 @@ import { getConnectionId } from '@/lib/connection-context'
 import { getRuntimeGitConflictOperation } from '@/runtime/runtime-git-client'
 import { refreshGitStatusForWorktree } from './git-status-refresh'
 import { createCoalescedPollRunner } from './coalesced-poll-runner'
-import {
-  installFocusedVisibilityInterval,
-  isWindowVisible
-} from '@/lib/focused-visibility-interval'
+import { installWindowVisibilityInterval } from '@/lib/window-visibility-interval'
 
 const POLL_INTERVAL_MS = 3000
-export const isGitPollWindowVisible = isWindowVisible
-export const installFocusedGitPoll = installFocusedVisibilityInterval
-
 export function useGitStatusPolling(): void {
   const activeWorktree = useActiveWorktree()
   const allWorktrees = useAllWorktrees()
@@ -121,7 +115,7 @@ export function useGitStatusPolling(): void {
   fetchStatusRef.current = fetchStatus
 
   useEffect(() => {
-    return installFocusedVisibilityInterval({ run: fetchStatus, intervalMs: POLL_INTERVAL_MS })
+    return installWindowVisibilityInterval({ run: fetchStatus, intervalMs: POLL_INTERVAL_MS })
   }, [fetchStatus])
 
   // Why: poll conflict operation for non-active worktrees that have a stale
@@ -158,13 +152,13 @@ export function useGitStatusPolling(): void {
     // flight and coalesce skipped ticks into one trailing pass so stale badges
     // catch up without stacking SSH/RPC work.
     const pollRunner = createCoalescedPollRunner(pollStale)
-    const stopFocusedPoll = installFocusedVisibilityInterval({
+    const stopVisiblePoll = installWindowVisibilityInterval({
       run: () => pollRunner.run(),
       intervalMs: POLL_INTERVAL_MS
     })
     return () => {
       pollRunner.dispose()
-      stopFocusedPoll()
+      stopVisiblePoll()
     }
   }, [staleConflictWorktrees, setConflictOperation, isConnectionReady])
 }

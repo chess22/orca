@@ -213,7 +213,7 @@ describe('agent status tool + assistant fields', () => {
         lastAssistantMessage: 'final answer'
       },
       'claude',
-      { updatedAt: 2_000, stateStartedAt: 1_000 }
+      { updatedAt: 1_000, stateStartedAt: 1_000 }
     )
 
     expect(store.getState().agentStatusByPaneKey['tab-1:1'].lastAssistantMessage).toBe(

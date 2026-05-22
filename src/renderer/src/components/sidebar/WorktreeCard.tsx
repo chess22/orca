@@ -33,12 +33,7 @@ import type {
   IssueInfo,
   LinearIssue
 } from '../../../../shared/types'
-import {
-  branchDisplayName,
-  CONFLICT_OPERATION_LABELS,
-  FilledBellIcon,
-  shouldRefreshWorktreeCardDecoration
-} from './WorktreeCardHelpers'
+import { branchDisplayName, CONFLICT_OPERATION_LABELS, FilledBellIcon } from './WorktreeCardHelpers'
 import {
   WorktreeCardDetailsHover,
   WorktreeCardMetaBadges,
@@ -50,7 +45,7 @@ import { writeWorkspaceDragData } from './workspace-status'
 import { getWorktreeCardPrDisplay } from './worktree-card-pr-display'
 import { getWorkspacePortsByWorktreeId } from '@/lib/workspace-port-groups'
 import { hasActiveWorkspaceActivity } from '@/lib/worktree-activity-state'
-import { installFocusedVisibilityInterval } from '@/lib/focused-visibility-interval'
+import { installWindowVisibilityInterval, isWindowVisible } from '@/lib/window-visibility-interval'
 import { runWorktreeDelete } from './delete-worktree-flow'
 import { runSleepWorktree } from './sleep-worktree-flow'
 import { getWorkspaceQuickActionKind } from './worktree-card-quick-action'
@@ -274,12 +269,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
       return
     }
     const refreshHostedReviewIfVisible = (): void => {
-      if (
-        !shouldRefreshWorktreeCardDecoration({
-          documentVisible: document.visibilityState === 'visible',
-          windowFocused: document.hasFocus()
-        })
-      ) {
+      if (!isWindowVisible()) {
         return
       }
       // Why: branch lookup is lossy for fork/deleted-head PRs; reuse a known PR
@@ -330,23 +320,12 @@ const WorktreeCard = React.memo(function WorktreeCard({
     }
 
     const issueNumber = worktree.linkedIssue
-    const refreshIssueIfVisible = (): void => {
-      if (
-        !shouldRefreshWorktreeCardDecoration({
-          documentVisible: document.visibilityState === 'visible',
-          windowFocused: document.hasFocus()
-        })
-      ) {
-        return
-      }
-      void fetchIssue(repo.path, issueNumber, { repoId: repo.id })
-    }
 
     // Background poll as fallback (activity triggers handle the fast path).
     // The interval itself is stopped while hidden so issue cards do not keep
     // long-lived workspaces waking just to skip their fetch.
-    return installFocusedVisibilityInterval({
-      run: refreshIssueIfVisible,
+    return installWindowVisibilityInterval({
+      run: () => void fetchIssue(repo.path, issueNumber, { repoId: repo.id }),
       intervalMs: 5 * 60_000
     })
   }, [repo, isFolder, worktree.linkedIssue, fetchIssue, issueCacheKey, showIssue])
@@ -357,12 +336,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
     }
     const linearIssueId = worktree.linkedLinearIssue
     const refreshLinearIssueIfVisible = (): void => {
-      if (
-        !shouldRefreshWorktreeCardDecoration({
-          documentVisible: document.visibilityState === 'visible',
-          windowFocused: document.hasFocus()
-        })
-      ) {
+      if (!isWindowVisible()) {
         return
       }
       void fetchLinearIssue(linearIssueId)

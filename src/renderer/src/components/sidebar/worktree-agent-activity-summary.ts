@@ -21,7 +21,7 @@ const EMPTY_SUMMARY: WorktreeAgentActivitySummary = {
   hasRetainedDone: false
 }
 
-type AgentActivityInput = Pick<
+export type AgentActivityInput = Pick<
   AppState,
   | 'tabsByWorktree'
   | 'agentStatusEpoch'

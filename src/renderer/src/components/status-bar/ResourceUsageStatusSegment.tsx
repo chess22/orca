@@ -31,7 +31,7 @@ import {
 import { cn } from '@/lib/utils'
 import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { activateTabAndFocusPane } from '@/lib/activate-tab-and-focus-pane'
-import { installFocusedVisibilityInterval } from '@/lib/focused-visibility-interval'
+import { installWindowVisibilityInterval } from '@/lib/window-visibility-interval'
 import { useAppStore } from '../../store'
 import { useWorktreeMap } from '../../store/selectors'
 import { runWorktreeDelete } from '../sidebar/delete-worktree-flow'
@@ -802,7 +802,7 @@ export function ResourceUsageStatusSegment({
     // Why: the closed-popover badge is informational. Polling daemon sessions
     // while the whole window is hidden keeps IPC and daemon list calls hot for
     // no visible UI; visibility refreshes catch the badge up immediately.
-    return installFocusedVisibilityInterval({
+    return installWindowVisibilityInterval({
       run: () => void refreshSessions(),
       intervalMs: SESSIONS_POLL_MS
     })

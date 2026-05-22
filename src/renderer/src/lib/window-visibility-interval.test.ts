@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { installFocusedVisibilityInterval } from './focused-visibility-interval'
+import { installWindowVisibilityInterval } from './window-visibility-interval'
 
-describe('installFocusedVisibilityInterval', () => {
+describe('installWindowVisibilityInterval', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
@@ -22,14 +22,13 @@ describe('installFocusedVisibilityInterval', () => {
       get visibilityState() {
         return visibilityState
       },
-      hasFocus: () => false,
       addEventListener: vi.fn((event: string, listener: () => void) => {
         documentListeners.set(event, listener)
       }),
       removeEventListener: vi.fn()
     })
 
-    const cleanup = installFocusedVisibilityInterval({
+    const cleanup = installWindowVisibilityInterval({
       run,
       intervalMs: 3000,
       setIntervalFn: setIntervalMock,

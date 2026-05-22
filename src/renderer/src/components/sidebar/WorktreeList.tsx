@@ -499,7 +499,7 @@ function getVirtualRowKey(element: Element): string | null {
   return element.getAttribute('data-worktree-virtual-row-key')
 }
 
-export const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewport({
+const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewport({
   rows,
   activeWorktreeId,
   groupBy,
