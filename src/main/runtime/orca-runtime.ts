@@ -306,6 +306,7 @@ import {
   configureCreatedWorktreePushTarget,
   prepareWorktreePushTarget
 } from '../ipc/worktree-remote'
+import { getSshGitUsername } from '../git/git-username'
 import { normalizeSparseDirectories } from '../ipc/sparse-checkout-directories'
 import type { Store } from '../persistence'
 import type { StatsCollector } from '../stats/collector'
@@ -4814,6 +4815,18 @@ export class OrcaRuntimeService {
 
   listRepos(): Repo[] {
     return this.store?.getRepos() ?? []
+  }
+
+  async getRepoGitUsername(repoSelector: string): Promise<string> {
+    const repo = await this.resolveRepoSelector(repoSelector, { includeGitUsername: false })
+    if (isFolderRepo(repo)) {
+      return ''
+    }
+    if (!repo.connectionId) {
+      return getGitUsername(repo.path)
+    }
+    const provider = getSshGitProvider(repo.connectionId)
+    return provider ? getSshGitUsername(provider, repo.path) : ''
   }
 
   async listSparsePresets(repoSelector: string) {

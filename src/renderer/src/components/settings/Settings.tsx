@@ -91,6 +91,7 @@ import {
   getInitialMountedSectionIds,
   getRuntimeTargetIdentity
 } from './settings-load-performance'
+import { callRuntimeRpc, getActiveRuntimeTarget } from '../../runtime/runtime-rpc-client'
 
 type SettingsNavTarget =
   | 'general'
@@ -703,6 +704,7 @@ function Settings(): React.JSX.Element {
   const cachedGitUsername =
     gitUsernameRepoId !== undefined ? gitUsernameByRepoId[gitUsernameRepoId] : undefined
   const displayedGitUsername = hydratedGitUsername ?? cachedGitUsername ?? ''
+  const activeRuntimeEnvironmentId = settings?.activeRuntimeEnvironmentId
 
   useEffect(() => {
     if (
@@ -716,10 +718,24 @@ function Settings(): React.JSX.Element {
     }
 
     let cancelled = false
+    const fetchGitUsername = async (): Promise<string> => {
+      const target = getActiveRuntimeTarget({
+        activeRuntimeEnvironmentId: activeRuntimeEnvironmentId ?? null
+      })
+      if (target.kind === 'local') {
+        return window.api.repos.getGitUsername({ repoId: gitUsernameRepoId })
+      }
+      const result = await callRuntimeRpc<{ username: string }>(
+        target,
+        'repo.gitUsername',
+        { repo: `id:${gitUsernameRepoId}` },
+        { timeoutMs: 15_000 }
+      )
+      return result.username
+    }
     // Why: repo listing is a startup path, so username probing stays lazy and
     // only runs for the Git settings preview that actually displays it.
-    void window.api.repos
-      .getGitUsername({ repoId: gitUsernameRepoId })
+    void fetchGitUsername()
       .then((username) => {
         if (cancelled) {
           return
@@ -747,6 +763,7 @@ function Settings(): React.JSX.Element {
     }
   }, [
     cachedGitUsername,
+    activeRuntimeEnvironmentId,
     gitUsernameRepoId,
     hydratedGitUsername,
     neededSectionIds,

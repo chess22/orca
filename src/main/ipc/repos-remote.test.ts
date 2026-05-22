@@ -87,6 +87,65 @@ vi.mock('./ssh', () => ({
 
 import { registerRepoHandlers } from './repos'
 
+describe('repos:getGitUsername', () => {
+  const handlers = new Map<string, (_event: unknown, args: unknown) => unknown>()
+  const mockWindow = {
+    isDestroyed: () => false,
+    webContents: { send: vi.fn() }
+  }
+
+  beforeEach(() => {
+    handlers.clear()
+    handleMock.mockReset()
+    handleMock.mockImplementation((channel: string, handler: (...a: unknown[]) => unknown) => {
+      handlers.set(channel, handler)
+    })
+    mockStore.getRepo.mockReset()
+    mockGitProvider.exec.mockReset()
+    mockWindow.webContents.send.mockReset()
+
+    registerRepoHandlers(mockWindow as never, mockStore as never)
+  })
+
+  it('uses the same SSH username config order as remote worktree creation', async () => {
+    mockStore.getRepo.mockReturnValue({
+      id: 'repo-ssh',
+      path: '/remote/repo',
+      displayName: 'ssh',
+      badgeColor: '#000',
+      addedAt: 0,
+      kind: 'git',
+      connectionId: 'conn-1'
+    })
+    mockGitProvider.exec.mockImplementation(async (args: string[]) => {
+      if (args[0] === 'config' && args[1] === '--get') {
+        const valueByKey: Record<string, string> = {
+          'user.email': 'remote-user@example.com',
+          'user.name': 'Remote User'
+        }
+        const value = valueByKey[args[2]]
+        if (value) {
+          return { stdout: `${value}\n`, stderr: '' }
+        }
+      }
+      throw new Error(`unexpected git args: ${args.join(' ')}`)
+    })
+
+    const username = await handlers.get('repos:getGitUsername')!(null, { repoId: 'repo-ssh' })
+
+    expect(username).toBe('remote-user')
+    expect(mockStore.getRepo).toHaveBeenCalledWith('repo-ssh', { includeGitUsername: false })
+    expect(mockGitProvider.exec).toHaveBeenCalledWith(
+      ['config', '--get', 'user.email'],
+      '/remote/repo'
+    )
+    expect(mockGitProvider.exec).not.toHaveBeenCalledWith(
+      ['config', '--get', 'user.name'],
+      '/remote/repo'
+    )
+  })
+})
+
 describe('repos:addRemote', () => {
   const handlers = new Map<string, (_event: unknown, args: unknown) => unknown>()
   const mockWindow = {

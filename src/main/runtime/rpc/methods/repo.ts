@@ -69,6 +69,13 @@ export const REPO_METHODS: RpcMethod[] = [
     handler: (_params, { runtime }) => ({ repos: runtime.listRepos() })
   }),
   defineMethod({
+    name: 'repo.gitUsername',
+    params: RepoSelector,
+    handler: async (params, { runtime }) => ({
+      username: await runtime.getRepoGitUsername(params.repo)
+    })
+  }),
+  defineMethod({
     name: 'repo.sparsePresets',
     params: RepoSelector,
     handler: async (params, { runtime }) => ({

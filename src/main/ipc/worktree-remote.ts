@@ -45,6 +45,7 @@ import { getActiveMultiplexer } from './ssh'
 import type { SshGitProvider } from '../providers/ssh-git-provider'
 import { isTuiAgent } from '../../shared/tui-agent-config'
 import { isWindowsAbsolutePathLike } from '../../shared/cross-platform-path'
+import { getSshGitUsername } from '../git/git-username'
 import {
   sanitizeWorktreeName,
   sanitizeWorktreeDisplayName,
@@ -130,41 +131,6 @@ async function resolveCreateBranchNameSsh(
   }
   await provider.exec(['check-ref-format', '--branch', branchNameOverride], repoPath)
   return branchNameOverride
-}
-
-function normalizeSshGitUsername(value: string): string {
-  const trimmed = value.trim()
-  if (!trimmed) {
-    return ''
-  }
-
-  const localPart = trimmed.includes('@') ? trimmed.split('@')[0] : trimmed
-  return localPart.replace(/^\d+\+/, '')
-}
-
-async function getSshGitConfigValue(
-  provider: SshGitProvider,
-  repoPath: string,
-  key: string
-): Promise<string> {
-  try {
-    const { stdout } = await provider.exec(['config', '--get', key], repoPath)
-    return stdout.trim()
-  } catch {
-    return ''
-  }
-}
-
-async function getSshGitUsername(provider: SshGitProvider, repoPath: string): Promise<string> {
-  // Why: remote hosts cannot safely rely on the local `gh` account. Prefer
-  // explicit username config, then derive from email before using display name.
-  for (const key of ['github.user', 'user.username', 'user.email', 'user.name']) {
-    const username = normalizeSshGitUsername(await getSshGitConfigValue(provider, repoPath, key))
-    if (username) {
-      return username
-    }
-  }
-  return ''
 }
 
 function normalizeLocalBranchName(branchName: string | undefined): string {

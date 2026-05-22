@@ -16,6 +16,7 @@ vi.mock('child_process', async () => {
 
 describe('getGitUsername', () => {
   let gitConfig: Record<string, string>
+  let originRemoteUrl: string | undefined
   let getGitUsername: typeof RepoModule.getGitUsername
 
   beforeEach(async () => {
@@ -23,6 +24,7 @@ describe('getGitUsername', () => {
     execSyncMock.mockReset()
     execFileSyncMock.mockReset()
     gitConfig = {}
+    originRemoteUrl = undefined
 
     execFileSyncMock.mockImplementation((_binary: string, args: string[]) => {
       if (args[0] === 'config' && args[1] === '--get') {
@@ -32,6 +34,12 @@ describe('getGitUsername', () => {
         }
         throw new Error(`missing config ${args[2]}`)
       }
+      if (args[0] === 'remote' && args[1] === 'get-url' && args[2] === 'origin') {
+        if (originRemoteUrl) {
+          return `${originRemoteUrl}\n`
+        }
+        throw new Error('missing origin remote')
+      }
       throw new Error(`unexpected git args: ${args.join(' ')}`)
     })
 
@@ -39,6 +47,7 @@ describe('getGitUsername', () => {
   })
 
   it('prefers GitHub CLI login over the repo-local email fallback', () => {
+    originRemoteUrl = 'https://github.com/stablyai/orca.git'
     gitConfig['user.email'] = 'demo@example.com'
     gitConfig['user.name'] = 'Demo User'
     execSyncMock.mockImplementationOnce(() => 'gh-demo\n')
@@ -47,7 +56,17 @@ describe('getGitUsername', () => {
     expect(execSyncMock).toHaveBeenCalledTimes(1)
   })
 
+  it('uses repo-local email before GitHub CLI for non-GitHub remotes', () => {
+    originRemoteUrl = 'https://gitlab.com/stablyai/orca.git'
+    gitConfig['user.email'] = 'demo@example.com'
+    execSyncMock.mockImplementationOnce(() => 'gh-demo\n')
+
+    expect(getGitUsername('/repo')).toBe('demo')
+    expect(execSyncMock).not.toHaveBeenCalled()
+  })
+
   it('bounds and caches failed GitHub CLI lookup', () => {
+    originRemoteUrl = 'https://github.com/stablyai/orca.git'
     execSyncMock.mockImplementation(() => {
       throw new Error('gh unavailable')
     })
@@ -62,6 +81,7 @@ describe('getGitUsername', () => {
   })
 
   it('skips auth status fallback when GitHub CLI API lookup times out', () => {
+    originRemoteUrl = 'https://github.com/stablyai/orca.git'
     execSyncMock.mockImplementationOnce(() => {
       throw Object.assign(new Error('spawnSync /bin/sh ETIMEDOUT'), { code: 'ETIMEDOUT' })
     })
@@ -74,6 +94,7 @@ describe('getGitUsername', () => {
   })
 
   it('uses auth status fallback after fast GitHub CLI API failure', () => {
+    originRemoteUrl = 'https://github.com/stablyai/orca.git'
     execSyncMock
       .mockImplementationOnce(() => {
         throw new Error('gh api unavailable')

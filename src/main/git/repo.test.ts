@@ -94,6 +94,7 @@ describe('getGitUsername', () => {
 
   it('prefers the GitHub CLI login over the git email local-part', () => {
     installFakeGh(binDir, 'gh-login-wins')
+    git(tmpDir, ['remote', 'add', 'origin', 'https://github.com/stablyai/orca.git'])
     git(tmpDir, ['config', 'user.email', 'email-local@example.com'])
     git(tmpDir, ['config', 'user.name', 'Brennan Benson'])
     process.env.PATH = originalPath ? `${binDir}${path.delimiter}${originalPath}` : binDir
@@ -101,6 +102,17 @@ describe('getGitUsername', () => {
     const username = getGitUsername(tmpDir)
 
     expect(username).toBe('gh-login-wins')
+  })
+
+  it('uses the git email local-part before GitHub CLI for non-GitHub remotes', () => {
+    installFakeGh(binDir, 'gh-login-ignored')
+    git(tmpDir, ['remote', 'add', 'origin', 'https://gitlab.com/stablyai/orca.git'])
+    git(tmpDir, ['config', 'user.email', 'email-local@example.com'])
+    process.env.PATH = originalPath ? `${binDir}${path.delimiter}${originalPath}` : binDir
+
+    const username = getGitUsername(tmpDir)
+
+    expect(username).toBe('email-local')
   })
 })
 

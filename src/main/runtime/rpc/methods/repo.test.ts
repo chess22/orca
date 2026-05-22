@@ -9,6 +9,22 @@ function makeRequest(method: string, params?: unknown): RpcRequest {
 }
 
 describe('repo RPC methods', () => {
+  it('routes git username lookup to the runtime server', async () => {
+    const runtime = {
+      getRuntimeId: () => 'test-runtime',
+      getRepoGitUsername: vi.fn().mockResolvedValue('remote-user')
+    } as unknown as OrcaRuntimeService
+    const dispatcher = new RpcDispatcher({ runtime, methods: REPO_METHODS })
+
+    const response = await dispatcher.dispatch(makeRequest('repo.gitUsername', { repo: 'repo-1' }))
+
+    expect(runtime.getRepoGitUsername).toHaveBeenCalledWith('repo-1')
+    expect(response).toMatchObject({
+      ok: true,
+      result: { username: 'remote-user' }
+    })
+  })
+
   it('creates a repo on the runtime server', async () => {
     const runtime = {
       getRuntimeId: () => 'test-runtime',
