@@ -118,10 +118,6 @@ describe('remote hook service installers', () => {
     try {
       const installers = [
         {
-          path: '/home/dev/.orca/agent-hooks/claude-hook.sh',
-          install: (sftp: SFTPWrapper) => new ClaudeHookService().installRemote(sftp, '/home/dev')
-        },
-        {
           path: '/home/dev/.orca/agent-hooks/codex-hook.sh',
           install: (sftp: SFTPWrapper) => new CodexHookService().installRemote(sftp, '/home/dev')
         },
@@ -162,6 +158,21 @@ describe('remote hook service installers', () => {
         Object.defineProperty(process, 'platform', originalPlatform)
       }
     }
+  })
+
+  it('does not mutate remote Claude settings while Claude uses runtime-home hooks', async () => {
+    const { sftp, fs } = createFakeSftp()
+
+    const status = await new ClaudeHookService().installRemote(sftp, '/home/dev')
+
+    expect(status).toMatchObject({
+      agent: 'claude',
+      state: 'not_installed',
+      configPath: '/home/dev',
+      managedHooksPresent: false
+    })
+    expect(fs.files.has('/home/dev/.claude/settings.json')).toBe(false)
+    expect(fs.files.has('/home/dev/.orca/agent-hooks/claude-hook.sh')).toBe(false)
   })
 
   it('installs remote Codex hooks with matching trust entries', async () => {
