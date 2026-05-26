@@ -36,6 +36,7 @@ import { cn } from '@/lib/utils'
 import { isDiffComment } from '@/lib/diff-comment-compat'
 import { Button } from '@/components/ui/button'
 import { installEditorSaveShortcut } from './editor-shortcuts'
+import { PierreTextDiff } from './PierreTextDiff'
 
 const ImageDiffViewer = lazy(() => import('./ImageDiffViewer'))
 
@@ -166,12 +167,13 @@ export function DiffSectionItem({
     }
     return diffComments.some((c) => c.id === scrollToDiffCommentId) ? scrollToDiffCommentId : null
   }, [scrollToDiffCommentId, diffComments])
+  const visibleComments = inlineComments ?? (worktreeId ? diffComments : [])
 
   useDiffCommentDecorator({
-    editor: hasLineCommentAction ? modifiedEditor : null,
+    editor: hasLineCommentAction && isEditable ? modifiedEditor : null,
     filePath: section.path,
     worktreeId: worktreeId ?? '',
-    comments: inlineComments ?? (worktreeId ? diffComments : []),
+    comments: visibleComments,
     commentableLineNumbers: getCommentableLineNumbers?.(section),
     addButtonLabel: addLineCommentLabel,
     onAddCommentClick: ({ lineNumber, startLine, top }) =>
@@ -224,6 +226,34 @@ export function DiffSectionItem({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modifiedEditor, popover?.lineNumber])
 
+  const handleAddLineCommentForLine = useCallback(
+    async (args: { lineNumber: number; startLine?: number; body: string }): Promise<boolean> => {
+      if (onAddLineComment) {
+        return onAddLineComment(section, args)
+      }
+      if (!worktreeId) {
+        return false
+      }
+      // Why: await persistence before closing the popover. If addDiffComment
+      // resolves to null, the store rolled back the optimistic insert; keeping
+      // the popover open preserves the user's draft so they can retry.
+      const result = await addDiffComment({
+        worktreeId,
+        filePath: section.path,
+        source: 'diff',
+        startLine: args.startLine,
+        lineNumber: args.lineNumber,
+        body: args.body,
+        side: 'modified'
+      })
+      if (!result) {
+        console.error('Failed to add diff comment - draft preserved')
+      }
+      return Boolean(result)
+    },
+    [addDiffComment, onAddLineComment, section, worktreeId]
+  )
+
   useEffect(() => {
     const diffEditor = diffEditorRef.current
     if (!diffEditor) {
@@ -241,37 +271,13 @@ export function DiffSectionItem({
     if (!popover) {
       return
     }
-    if (onAddLineComment) {
-      const ok = await onAddLineComment(section, {
-        lineNumber: popover.lineNumber,
-        startLine: popover.startLine,
-        body
-      })
-      if (ok) {
-        setPopover(null)
-      }
-      return
-    }
-    if (!worktreeId) {
-      return
-    }
-    // Why: await persistence before closing the popover. If addDiffComment
-    // resolves to null, the store rolled back the optimistic insert; keeping
-    // the popover open preserves the user's draft so they can retry instead
-    // of silently losing their text.
-    const result = await addDiffComment({
-      worktreeId,
-      filePath: section.path,
-      source: 'diff',
-      startLine: popover.startLine,
+    const ok = await handleAddLineCommentForLine({
       lineNumber: popover.lineNumber,
-      body,
-      side: 'modified'
+      startLine: popover.startLine,
+      body
     })
-    if (result) {
+    if (ok) {
       setPopover(null)
-    } else {
-      console.error('Failed to add diff comment — draft preserved')
     }
   }
 
@@ -307,6 +313,17 @@ export function DiffSectionItem({
     changedLineCount,
     useIntrinsicImageHeight
   })
+  const handlePierreContentHeightChange = useCallback(
+    (contentHeight: number): void => {
+      setSectionHeights((prev) => {
+        if (prev[index] === contentHeight) {
+          return prev
+        }
+        return { ...prev, [index]: contentHeight }
+      })
+    },
+    [index, setSectionHeights]
+  )
 
   const handleMount: DiffOnMount = (editor, _monaco) => {
     diffEditorRef.current = editor
@@ -499,6 +516,31 @@ export function DiffSectionItem({
                 </div>
               </div>
             )
+          ) : !isEditable ? (
+            <PierreTextDiff
+              originalContent={section.originalContent}
+              modifiedContent={section.modifiedContent}
+              filePath={section.path}
+              language={language}
+              sideBySide={sideBySide}
+              isDark={isDark}
+              fontSize={editorFontSize}
+              fontFamily={settings?.terminalFontFamily}
+              comments={visibleComments}
+              commentableLineNumbers={getCommentableLineNumbers?.(section)}
+              addLineCommentLabel={addLineCommentLabel}
+              addLineCommentPlaceholder={addLineCommentPlaceholder}
+              onAddLineComment={hasLineCommentAction ? handleAddLineCommentForLine : undefined}
+              onDeleteComment={
+                worktreeId ? (id) => void deleteDiffComment(worktreeId, id) : undefined
+              }
+              onUpdateComment={
+                worktreeId ? (id, body) => updateDiffComment(worktreeId, id, body) : undefined
+              }
+              pendingScrollCommentId={pendingScrollForThisSection}
+              onPendingScrollConsumed={() => setScrollToDiffCommentId(null)}
+              onContentHeightChange={handlePierreContentHeightChange}
+            />
           ) : (
             <DiffEditor
               height="100%"

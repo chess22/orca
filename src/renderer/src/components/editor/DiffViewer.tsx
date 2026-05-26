@@ -17,6 +17,7 @@ import { applyDiffEditorLineNumberOptions } from './diff-editor-line-number-opti
 import type { DiffComment } from '../../../../shared/types'
 import { isDiffComment } from '@/lib/diff-comment-compat'
 import { installEditorSaveShortcut } from './editor-shortcuts'
+import { PierreDiffViewer } from './PierreDiffViewer'
 
 type DiffViewerProps = {
   modelKey: string
@@ -45,7 +46,29 @@ type DiffViewerProps = {
   onSave?: (content: string) => void
 }
 
-export default function DiffViewer({
+export default function DiffViewer(props: DiffViewerProps): React.JSX.Element {
+  if (!props.editable) {
+    return (
+      <PierreDiffViewer
+        originalContent={props.originalContent}
+        modifiedContent={props.modifiedContent}
+        language={props.language}
+        filePath={props.filePath}
+        relativePath={props.relativePath}
+        sideBySide={props.sideBySide}
+        worktreeId={props.worktreeId}
+        onAddLineComment={props.onAddLineComment}
+        commentableLineNumbers={props.commentableLineNumbers}
+        addLineCommentLabel={props.addLineCommentLabel}
+        addLineCommentPlaceholder={props.addLineCommentPlaceholder}
+      />
+    )
+  }
+
+  return <MonacoDiffViewer {...props} />
+}
+
+function MonacoDiffViewer({
   modelKey,
   originalModelKey,
   modifiedModelKey,

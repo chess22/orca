@@ -5,18 +5,18 @@ import { buildTerminalAgentQuickCommandPreset } from './terminal-agent-quick-com
 
 describe('terminal agent quick command presets', () => {
   it('matches the supported one-line startup commands for every prompt-starting agent', () => {
-    const expectedCommands: Partial<Record<TuiAgent, string>> = {
-      claude: "claude 'your prompt here'",
-      codex: "codex 'your prompt here'",
-      copilot: "copilot -i 'your prompt here'",
-      omp: "omp 'your prompt here'",
-      opencode: "opencode --prompt 'your prompt here'",
-      pi: "pi 'your prompt here'",
-      gemini: "gemini --prompt-interactive 'your prompt here'",
-      antigravity: "agy --prompt-interactive 'your prompt here'",
-      cursor: "cursor-agent 'your prompt here'",
-      droid: "droid 'your prompt here'"
-    }
+    const expectedCommandEntries: [TuiAgent, string][] = [
+      ['claude', "claude 'your prompt here'"],
+      ['codex', "codex 'your prompt here'"],
+      ['copilot', "copilot -i 'your prompt here'"],
+      ['omp', "omp 'your prompt here'"],
+      ['opencode', "opencode --prompt 'your prompt here'"],
+      ['pi', "pi 'your prompt here'"],
+      ['gemini', "gemini --prompt-interactive 'your prompt here'"],
+      ['antigravity', "agy --prompt-interactive 'your prompt here'"],
+      ['cursor', "cursor-agent 'your prompt here'"],
+      ['droid', "droid 'your prompt here'"]
+    ]
 
     const promptStartingCommands = Object.keys(TUI_AGENT_CONFIG)
       .map((agent) =>
@@ -31,7 +31,7 @@ describe('terminal agent quick command presets', () => {
 
     expect(
       Object.fromEntries(promptStartingCommands.map((preset) => [preset.agent, preset.command]))
-    ).toEqual(expectedCommands)
+    ).toEqual(Object.fromEntries(expectedCommandEntries))
   })
 
   it('does not expose post-start paste agents as insertable command templates', () => {
