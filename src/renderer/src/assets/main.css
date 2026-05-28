@@ -2394,9 +2394,9 @@ html.onboarding-tour-start-transition::view-transition-new(root) {
   gap: 6px;
 }
 
-/* Why: contextual-tour spotlight is a full-cover scrim with an SVG-mask
-   hole at the target rect plus a thin edge stroke, so attention reads
-   from the dim contrast rather than from chrome painted over the target.
+/* Why: contextual-tour spotlight is a full-cover scrim with one SVG-mask
+   hole at the target rect, so attention reads from the single undimmed area
+   rather than from extra chrome painted over the target.
    The mask uses the target's own border-radius so curved buttons don't
    leave un-dimmed corners between their curve and the cutout edge. */
 .contextual-tour-spotlight {
@@ -2417,17 +2417,14 @@ html.onboarding-tour-start-transition::view-transition-new(root) {
    theme — tinting toward --background would be invisible in light theme
    (white over white). */
 .contextual-tour-spotlight-fill {
-  fill: rgb(0 0 0 / 0.5);
+  fill: rgb(0 0 0 / 0.22);
 }
 
-.contextual-tour-spotlight-edge {
-  pointer-events: none;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ring) 55%, transparent);
-  transition:
-    top 180ms ease,
-    left 180ms ease,
-    width 180ms ease,
-    height 180ms ease;
+/* Why: tours can appear inside existing modal surfaces. In that case the
+   modal backdrop is secondary context, not the primary attention device. */
+:root[data-contextual-tour-active='true'] [data-slot='dialog-overlay'],
+:root[data-contextual-tour-active='true'] [data-slot='sheet-overlay'] {
+  background-color: rgb(0 0 0 / 0.28);
 }
 
 @keyframes contextual-tour-spotlight-fade-in {
@@ -2442,8 +2439,5 @@ html.onboarding-tour-start-transition::view-transition-new(root) {
 @media (prefers-reduced-motion: reduce) {
   .contextual-tour-spotlight {
     animation: none;
-  }
-  .contextual-tour-spotlight-edge {
-    transition: none;
   }
 }

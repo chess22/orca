@@ -221,16 +221,6 @@ function ContextualTourSpotlight({
           mask={`url(#${maskId})`}
         />
       </svg>
-      <div
-        className={cn('contextual-tour-spotlight-edge', positionClass)}
-        style={{
-          top: rect.top,
-          left: rect.left,
-          width: rect.width,
-          height: rect.height,
-          borderRadius: rect.radius
-        }}
-      />
     </div>
   )
 }

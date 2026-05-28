@@ -288,6 +288,18 @@ export function ContextualTourOverlay(): JSX.Element | null {
   }, [activeTourId])
 
   useEffect(() => {
+    if (!activeTourId || typeof document === 'undefined') {
+      return
+    }
+    // Why: a tour over a Dialog/Sheet already has a modal backdrop; keep that
+    // backdrop lighter so the tour has one clear focus instead of a blackout.
+    document.documentElement.dataset.contextualTourActive = 'true'
+    return () => {
+      delete document.documentElement.dataset.contextualTourActive
+    }
+  }, [activeTourId])
+
+  useEffect(() => {
     const panelHost = renderState?.panelHost
     if (!activeTourId || !panelHost) {
       return
