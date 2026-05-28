@@ -520,6 +520,10 @@ export default function AutomationsPage(): React.JSX.Element {
     }
   }, [setSelectedId])
 
+  const hydratePersistedUIState = useCallback(async (): Promise<void> => {
+    useAppStore.getState().hydratePersistedUI(await window.api.ui.get())
+  }, [])
+
   useEffect(() => {
     void fetchAllWorktrees()
     void refresh()
@@ -903,6 +907,9 @@ export default function AutomationsPage(): React.JSX.Element {
               jobId: editingExternalTarget.job.id
             })
           : window.api.automations.createExternal(input))
+        if (!editingExternalTarget) {
+          useAppStore.getState().recordFeatureInteraction('automation-created')
+        }
         await refresh()
         setCreateOpen(false)
         setEditingExternalTarget(null)
@@ -978,6 +985,9 @@ export default function AutomationsPage(): React.JSX.Element {
             dtstart: now,
             missedRunGraceMinutes
           })
+      if (!editingAutomationId) {
+        await hydratePersistedUIState()
+      }
       setAutomations((current) => {
         const next = current.filter((entry) => entry.id !== automation.id)
         return [...next, automation].sort((left, right) => left.name.localeCompare(right.name))
@@ -1053,6 +1063,7 @@ export default function AutomationsPage(): React.JSX.Element {
 
   const runNow = async (automation: Automation): Promise<void> => {
     await window.api.automations.runNow({ id: automation.id })
+    await hydratePersistedUIState()
     await refresh()
     toast.message('Automation run queued.')
   }
@@ -1068,6 +1079,7 @@ export default function AutomationsPage(): React.JSX.Element {
     setRerunRunIdsInFlight(new Set(rerunRunIdsInFlightRef.current))
     try {
       await window.api.automations.runNow({ id: automationId })
+      await hydratePersistedUIState()
       await refresh()
       toast.message('Automation run queued.')
     } catch (error) {
@@ -1096,6 +1108,9 @@ export default function AutomationsPage(): React.JSX.Element {
         jobId: job.id,
         action
       })
+      if (action === 'run') {
+        useAppStore.getState().recordFeatureInteraction('automation-run')
+      }
       await refresh()
       toast.success(
         action === 'delete'
