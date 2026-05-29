@@ -22,6 +22,7 @@ import Animated, {
   Extrapolation
 } from 'react-native-reanimated'
 import { colors, spacing } from '../theme/mobile-theme'
+import { resolveBottomDrawerMounted } from './bottom-drawer-mount-state'
 
 const DISMISS_THRESHOLD = 80
 const SPRING_CONFIG = { damping: 28, stiffness: 400 }
@@ -49,16 +50,17 @@ export function BottomDrawer({
   zIndex
 }: Props) {
   const [mounted, setMounted] = useState(visible)
+  const resolvedMounted = resolveBottomDrawerMounted(visible, mounted)
 
-  useEffect(() => {
-    if (visible) {
-      setMounted(true)
-    }
-  }, [visible])
+  // Why: opening drawers should mount before commit; waiting for a passive
+  // Effect adds a null render before every drawer can animate in.
+  if (resolvedMounted !== mounted) {
+    setMounted(resolvedMounted)
+  }
 
   // Why: hidden drawers are rendered by parent screens even while closed; keep
   // their Reanimated/Gesture setup out of hot paths like commit-message typing.
-  if (!mounted) return null
+  if (!resolvedMounted) return null
 
   return (
     <MountedBottomDrawer
