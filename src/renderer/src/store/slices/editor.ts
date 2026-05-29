@@ -47,7 +47,7 @@ import {
 } from '@/runtime/runtime-file-client'
 import { settingsForRuntimeOwner } from '@/runtime/runtime-rpc-client'
 import { findWorktreeById, getRepoIdFromWorktreeId } from './worktree-helpers'
-import { createUntitledMarkdownFile } from '@/lib/create-untitled-markdown'
+import { createUntitledMarkdownFileWithTemplateSelection } from '@/lib/create-untitled-markdown'
 import { extractIpcErrorMessage } from '@/lib/ipc-error'
 
 export type { RightSidebarTab } from '../../../../shared/types'
@@ -1536,12 +1536,15 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
     try {
       const connectionId =
         state.repos.find((entry) => entry.id === worktree.repoId)?.connectionId ?? undefined
-      const fileInfo = await createUntitledMarkdownFile(
+      const fileInfo = await createUntitledMarkdownFileWithTemplateSelection(
         worktree.path,
         worktreeId,
         connectionId,
         get().settings
       )
+      if (!fileInfo) {
+        return
+      }
       get().openFile(fileInfo, { preview: false, targetGroupId: groupId })
     } catch (err) {
       toast.error(extractIpcErrorMessage(err, 'Failed to create untitled markdown file.'))

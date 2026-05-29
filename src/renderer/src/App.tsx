@@ -51,6 +51,7 @@ import { onOnboardingReopened } from './components/onboarding/show-onboarding-ev
 import { shouldShowOnboarding } from './components/onboarding/should-show-onboarding'
 import { SshPassphraseDialog } from './components/settings/SshPassphraseDialog'
 import DeleteWorktreeDialog from './components/sidebar/DeleteWorktreeDialog'
+import { MarkdownTemplatePicker } from './components/editor/MarkdownTemplatePicker'
 import {
   FloatingTerminalPanel,
   FloatingTerminalToggleButton
@@ -1982,6 +1983,14 @@ function App(): React.JSX.Element {
             compact
           >
             <DeleteWorktreeDialog />
+          </RecoverableRenderErrorBoundary>
+          <RecoverableRenderErrorBoundary
+            boundaryId="modal.markdown-template-picker"
+            surface="modal"
+            resetKey={activeModal}
+            compact
+          >
+            <MarkdownTemplatePicker />
           </RecoverableRenderErrorBoundary>
           <RecoverableRenderErrorBoundary
             boundaryId="modal.crash-report"
