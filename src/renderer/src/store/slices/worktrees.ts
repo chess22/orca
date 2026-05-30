@@ -913,8 +913,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
     workspaceStatus,
     linkedGitLabMR,
     linkedGitLabIssue,
-    startup,
-    runtimeStartupPrompt
+    startup
   ) => {
     const retryableConflictPatterns = [
       /already exists locally/i,
@@ -989,12 +988,6 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
                       ? {
                           startupCommand: startup.command,
                           ...(startup.env ? { startupEnv: startup.env } : {}),
-                          activate: true
-                        }
-                      : {}),
-                    ...(runtimeStartupPrompt
-                      ? {
-                          startupPrompt: runtimeStartupPrompt,
                           activate: true
                         }
                       : {})

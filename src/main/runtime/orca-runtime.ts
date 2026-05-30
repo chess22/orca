@@ -620,12 +620,6 @@ type WorktreeStartupDraftPaste = {
   content: string
 }
 
-type WorktreeStartupFollowupPaste = {
-  agent: TuiAgent
-  expectedProcess: string
-  content: string
-}
-
 const DECSET_BRACKETED_PASTE = '\x1b[?2004h'
 const CODEX_COMPOSER_PROMPT = '›'
 const BRACKETED_PASTE_BEGIN = '\x1b[200~'
@@ -7129,71 +7123,6 @@ export class OrcaRuntimeService {
     }
   }
 
-  private async buildStartupForPrompt(
-    repo: Repo,
-    prompt: string,
-    requestedAgent?: TuiAgent
-  ): Promise<{
-    agent: TuiAgent
-    startup: WorktreeStartupLaunch
-    followupPaste?: WorktreeStartupFollowupPaste
-  } | null> {
-    if (!this.store) {
-      return null
-    }
-    const content = prompt.trim()
-    if (!content) {
-      return null
-    }
-    const settings = this.store.getSettings()
-    const agent =
-      requestedAgent && isTuiAgentEnabled(requestedAgent, settings.disabledTuiAgents)
-        ? requestedAgent
-        : null
-    if (!agent) {
-      return null
-    }
-    const detectedAgents = repo.connectionId
-      ? await detectRemoteAgents({ connectionId: repo.connectionId })
-      : await detectInstalledAgents()
-    if (!detectedAgents.includes(agent)) {
-      return null
-    }
-
-    // Why: runtime/web clients can run on a different OS than the workspace host.
-    // Startup command quoting must target the host shell that will execute it.
-    const agentLaunchPlatform: NodeJS.Platform = repo.connectionId
-      ? isWindowsAbsolutePathLike(repo.path)
-        ? 'win32'
-        : 'linux'
-      : process.platform
-    const startupPlan = buildAgentStartupPlan({
-      agent,
-      prompt: content,
-      cmdOverrides: settings.agentCmdOverrides ?? {},
-      platform: agentLaunchPlatform
-    })
-    if (!startupPlan) {
-      return null
-    }
-    return {
-      agent,
-      startup: {
-        command: startupPlan.launchCommand,
-        ...(startupPlan.env ? { env: startupPlan.env } : {})
-      },
-      ...(startupPlan.followupPrompt
-        ? {
-            followupPaste: {
-              agent,
-              expectedProcess: startupPlan.expectedProcess,
-              content: startupPlan.followupPrompt
-            }
-          }
-        : {})
-    }
-  }
-
   private markLocalWorkspaceTrustedForAgent(agent: TuiAgent, workspacePath: string): void {
     const preset = TUI_AGENT_CONFIG[agent].preflightTrust
     if (!preset) {
@@ -7367,72 +7296,6 @@ export class OrcaRuntimeService {
       })
   }
 
-  private pasteStartupFollowupWhenReady(
-    handle: string,
-    followup: WorktreeStartupFollowupPaste
-  ): void {
-    void this.waitForStartupAgentReady(handle, followup.expectedProcess)
-      .then((ptyId) => {
-        if (!ptyId) {
-          console.warn('[worktree-create] agent did not become ready for startup follow-up')
-          return
-        }
-        this.ptyController?.write(ptyId, `${followup.content}\r`)
-      })
-      .catch((error) => {
-        console.warn('[worktree-create] failed to send startup follow-up:', error)
-      })
-  }
-
-  private waitForStartupAgentReady(
-    handle: string,
-    expectedProcess: string
-  ): Promise<string | null> {
-    const livePty = this.getLivePtyForHandle(handle)
-    const ptyId = livePty?.pty.ptyId
-    if (!ptyId) {
-      return Promise.resolve(null)
-    }
-    return new Promise<string | null>((resolve) => {
-      let attempt = 0
-      const poll = (): void => {
-        void this.ptyController
-          ?.getForegroundProcess(ptyId)
-          .then(async (processName) => {
-            const foreground = processName?.toLowerCase() ?? ''
-            if (foreground.includes(expectedProcess.toLowerCase())) {
-              resolve(ptyId)
-              return
-            }
-            if (attempt >= 4 && foreground && !isShellProcess(foreground)) {
-              const hasChildProcesses = await this.ptyController?.hasChildProcesses?.(ptyId)
-              if (hasChildProcesses) {
-                resolve(ptyId)
-                return
-              }
-            }
-            attempt += 1
-            if (attempt >= 30) {
-              // Why: startup prompts can contain shell syntax; only send them
-              // after we positively identify the intended agent process.
-              resolve(null)
-              return
-            }
-            setTimeout(poll, 150)
-          })
-          .catch(() => {
-            attempt += 1
-            if (attempt >= 30) {
-              resolve(null)
-              return
-            }
-            setTimeout(poll, 150)
-          })
-      }
-      poll()
-    })
-  }
-
   private waitForStartupDraftReady(handle: string, agent: TuiAgent): Promise<string | null> {
     const livePty = this.getLivePtyForHandle(handle)
     const ptyId = livePty?.pty.ptyId
@@ -7538,7 +7401,6 @@ export class OrcaRuntimeService {
     setupDecision?: 'run' | 'skip' | 'inherit'
     createdWithAgent?: TuiAgent
     startup?: WorktreeStartupLaunch
-    startupPrompt?: string
     startupDraft?: string
     startupDraftPaste?: WorktreeStartupDraftPaste
     lineage?: WorktreeLineageInput
@@ -7566,23 +7428,14 @@ export class OrcaRuntimeService {
       ) {
         throw new Error('Selected agent is disabled. Choose an enabled agent before creating.')
       }
-      const promptStartup = args.startupPrompt
-        ? await this.buildStartupForPrompt(repo, args.startupPrompt, args.createdWithAgent)
-        : null
-      if (args.startupPrompt && !promptStartup) {
-        throw new Error('Could not build a startup command for the selected agent.')
-      }
       const draftStartup = args.startupDraft
         ? await this.buildStartupForDraft(repo, args.startupDraft, args.createdWithAgent)
         : null
-      const effectiveStartup = args.startup ?? promptStartup?.startup ?? draftStartup?.startup
+      const effectiveStartup = args.startup ?? draftStartup?.startup
       const effectiveCreatedWithAgent = args.startup
         ? args.createdWithAgent
-        : (promptStartup?.agent ??
-          draftStartup?.agent ??
-          (requestedAgentEnabled ? args.createdWithAgent : undefined))
+        : (draftStartup?.agent ?? (requestedAgentEnabled ? args.createdWithAgent : undefined))
       const effectiveDraftPaste = args.startupDraftPaste ?? draftStartup?.draftPaste
-      const effectiveFollowupPaste = promptStartup?.followupPaste
       if (isFolderRepo(repo)) {
         const now = Date.now()
         const settings = createSettings
@@ -7621,10 +7474,7 @@ export class OrcaRuntimeService {
         let didSpawnStartup = false
         if (effectiveStartup && this.ptyController?.spawn) {
           try {
-            const startupTrustAgent =
-              effectiveDraftPaste?.agent ??
-              effectiveFollowupPaste?.agent ??
-              effectiveCreatedWithAgent
+            const startupTrustAgent = effectiveDraftPaste?.agent ?? effectiveCreatedWithAgent
             if (startupTrustAgent) {
               this.markLocalWorkspaceTrustedForAgent(startupTrustAgent, worktree.path)
             }
@@ -7634,9 +7484,6 @@ export class OrcaRuntimeService {
             })
             if (effectiveDraftPaste) {
               this.pasteStartupDraftWhenReady(terminal.handle, effectiveDraftPaste)
-            }
-            if (effectiveFollowupPaste) {
-              this.pasteStartupFollowupWhenReady(terminal.handle, effectiveFollowupPaste)
             }
             didSpawnStartup = true
           } catch (err) {
@@ -7690,8 +7537,7 @@ export class OrcaRuntimeService {
           ...args,
           ...(effectiveStartup ? { startup: effectiveStartup } : {}),
           ...(effectiveCreatedWithAgent ? { createdWithAgent: effectiveCreatedWithAgent } : {}),
-          ...(effectiveDraftPaste ? { startupDraftPaste: effectiveDraftPaste } : {}),
-          ...(effectiveFollowupPaste ? { startupFollowupPaste: effectiveFollowupPaste } : {})
+          ...(effectiveDraftPaste ? { startupDraftPaste: effectiveDraftPaste } : {})
         })
         track('workspace_created', {
           source: telemetrySource,
@@ -8022,8 +7868,7 @@ export class OrcaRuntimeService {
           // Why: automation startup must not depend on a renderer TerminalPane
           // mounting. Runtime-spawned PTYs run immediately and the UI adopts the
           // session later, matching `orca terminal create` background semantics.
-          const startupTrustAgent =
-            effectiveDraftPaste?.agent ?? effectiveFollowupPaste?.agent ?? effectiveCreatedWithAgent
+          const startupTrustAgent = effectiveDraftPaste?.agent ?? effectiveCreatedWithAgent
           if (startupTrustAgent) {
             this.markLocalWorkspaceTrustedForAgent(startupTrustAgent, worktreePath)
           }
@@ -8033,9 +7878,6 @@ export class OrcaRuntimeService {
           })
           if (effectiveDraftPaste) {
             this.pasteStartupDraftWhenReady(terminal.handle, effectiveDraftPaste)
-          }
-          if (effectiveFollowupPaste) {
-            this.pasteStartupFollowupWhenReady(terminal.handle, effectiveFollowupPaste)
           }
           didSpawnStartup = true
           startupTerminalHandle = terminal.handle
@@ -8172,7 +8014,6 @@ export class OrcaRuntimeService {
       createdWithAgent?: TuiAgent
       startup?: WorktreeStartupLaunch
       startupDraftPaste?: WorktreeStartupDraftPaste
-      startupFollowupPaste?: WorktreeStartupFollowupPaste
     }
   ): Promise<CreateWorktreeResult> {
     if (!this.store) {
@@ -8227,8 +8068,7 @@ export class OrcaRuntimeService {
     let startupTerminalHandle: string | null = null
     if (args.startup && this.ptyController?.spawn) {
       try {
-        const startupTrustAgent =
-          args.startupDraftPaste?.agent ?? args.startupFollowupPaste?.agent ?? args.createdWithAgent
+        const startupTrustAgent = args.startupDraftPaste?.agent ?? args.createdWithAgent
         if (startupTrustAgent) {
           await this.markRemoteWorkspaceTrustedForAgent(
             startupTrustAgent,
@@ -8242,9 +8082,6 @@ export class OrcaRuntimeService {
         })
         if (args.startupDraftPaste) {
           this.pasteStartupDraftWhenReady(terminal.handle, args.startupDraftPaste)
-        }
-        if (args.startupFollowupPaste) {
-          this.pasteStartupFollowupWhenReady(terminal.handle, args.startupFollowupPaste)
         }
         didSpawnStartup = true
         startupTerminalHandle = terminal.handle

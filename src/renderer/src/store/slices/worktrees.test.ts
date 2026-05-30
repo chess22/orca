@@ -1648,9 +1648,9 @@ describe('worktree remote runtime mutations', () => {
   it('passes startup commands through remote runtime worktree creation', async () => {
     const store = createTestStore()
     const wt = makeWorktree({
-      id: 'repo1::/path/setup-script',
+      id: 'repo1::/path/agent-startup',
       repoId: 'repo1',
-      path: '/path/setup-script'
+      path: '/path/agent-startup'
     })
     runtimeEnvironmentCall.mockResolvedValue({
       id: 'rpc-create',
@@ -1667,12 +1667,12 @@ describe('worktree remote runtime mutations', () => {
       .getState()
       .createWorktree(
         'repo1',
-        'setup-script',
+        'agent-startup',
         undefined,
         'skip',
         undefined,
         'sidebar',
-        'Add orca.yaml setup script',
+        'Launch agent',
         undefined,
         undefined,
         undefined,
@@ -1683,8 +1683,8 @@ describe('worktree remote runtime mutations', () => {
         undefined,
         undefined,
         {
-          command: "codex 'write orca.yaml'",
-          env: { ORCA_AGENT_MODE: 'setup' }
+          command: "codex 'summarize repo'",
+          env: { ORCA_AGENT_MODE: 'direct' }
         }
       )
 
@@ -1693,68 +1693,13 @@ describe('worktree remote runtime mutations', () => {
         method: 'worktree.create',
         params: expect.objectContaining({
           repo: 'repo1',
-          name: 'setup-script',
+          name: 'agent-startup',
           setupDecision: 'skip',
           telemetrySource: 'sidebar',
-          displayName: 'Add orca.yaml setup script',
+          displayName: 'Launch agent',
           createdWithAgent: 'codex',
-          startupCommand: "codex 'write orca.yaml'",
-          startupEnv: { ORCA_AGENT_MODE: 'setup' },
-          activate: true
-        })
-      })
-    )
-  })
-
-  it('passes startup prompts through remote runtime worktree creation', async () => {
-    const store = createTestStore()
-    const wt = makeWorktree({
-      id: 'repo1::/path/setup-script',
-      repoId: 'repo1',
-      path: '/path/setup-script'
-    })
-    runtimeEnvironmentCall.mockResolvedValue({
-      id: 'rpc-create',
-      ok: true,
-      result: { worktree: wt },
-      _meta: { runtimeId: 'runtime-remote' }
-    })
-    store.setState({
-      settings: { activeRuntimeEnvironmentId: 'env-1' } as never,
-      worktreesByRepo: { repo1: [] }
-    } as Partial<AppState>)
-
-    await store
-      .getState()
-      .createWorktree(
-        'repo1',
-        'setup-script',
-        undefined,
-        'skip',
-        undefined,
-        'sidebar',
-        'Add orca.yaml setup script',
-        undefined,
-        undefined,
-        undefined,
-        'codex',
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        'Inspect the repo and add orca.yaml.'
-      )
-
-    expect(runtimeEnvironmentCall).toHaveBeenCalledWith(
-      expect.objectContaining({
-        method: 'worktree.create',
-        params: expect.objectContaining({
-          repo: 'repo1',
-          name: 'setup-script',
-          createdWithAgent: 'codex',
-          startupPrompt: 'Inspect the repo and add orca.yaml.',
+          startupCommand: "codex 'summarize repo'",
+          startupEnv: { ORCA_AGENT_MODE: 'direct' },
           activate: true
         })
       })

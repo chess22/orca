@@ -96,8 +96,7 @@ export type WorktreeSlice = {
     workspaceStatus?: WorkspaceStatus,
     linkedGitLabMR?: number,
     linkedGitLabIssue?: number,
-    startup?: WorktreeStartupLaunch,
-    runtimeStartupPrompt?: string
+    startup?: WorktreeStartupLaunch
   ) => Promise<CreateWorktreeResult>
   removeWorktree: (
     worktreeId: string,

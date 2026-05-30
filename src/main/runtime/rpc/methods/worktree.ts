@@ -81,7 +81,6 @@ export const WORKTREE_METHODS: RpcMethod[] = [
               ...(params.startupEnv ? { env: params.startupEnv } : {})
             }
           : undefined,
-        startupPrompt: params.startupPrompt,
         startupDraft: params.startupDraft,
         lineage: {
           parentWorktree: params.parentWorktree,

@@ -59,7 +59,6 @@ describe('worktree RPC methods', () => {
       setupDecision: 'skip',
       createdWithAgent: undefined,
       startup: undefined,
-      startupPrompt: undefined,
       startupDraft: undefined,
       lineage: {
         parentWorktree: 'id:parent',
@@ -80,9 +79,9 @@ describe('worktree RPC methods', () => {
     await dispatcher.dispatch(
       makeRequest('worktree.create', {
         repo: 'repo-1',
-        name: 'setup-script',
-        startupCommand: "codex 'write orca.yaml'",
-        startupEnv: { ORCA_AGENT_MODE: 'setup' },
+        name: 'agent-startup',
+        startupCommand: "codex 'summarize repo'",
+        startupEnv: { ORCA_AGENT_MODE: 'direct' },
         activate: true
       })
     )
@@ -90,41 +89,12 @@ describe('worktree RPC methods', () => {
     expect(runtime.createManagedWorktree).toHaveBeenCalledWith(
       expect.objectContaining({
         repoSelector: 'repo-1',
-        name: 'setup-script',
+        name: 'agent-startup',
         activate: true,
         startup: {
-          command: "codex 'write orca.yaml'",
-          env: { ORCA_AGENT_MODE: 'setup' }
+          command: "codex 'summarize repo'",
+          env: { ORCA_AGENT_MODE: 'direct' }
         }
-      })
-    )
-  })
-
-  it('forwards startup prompts for runtime-host command construction', async () => {
-    const runtime = {
-      getRuntimeId: () => 'test-runtime',
-      createManagedWorktree: vi.fn().mockResolvedValue({ worktree: { id: 'wt-1' } })
-    } as unknown as OrcaRuntimeService
-    const dispatcher = new RpcDispatcher({ runtime, methods: WORKTREE_METHODS })
-
-    await dispatcher.dispatch(
-      makeRequest('worktree.create', {
-        repo: 'repo-1',
-        name: 'setup-script',
-        startupPrompt: 'Inspect the repo and add orca.yaml.',
-        createdWithAgent: 'codex',
-        activate: true
-      })
-    )
-
-    expect(runtime.createManagedWorktree).toHaveBeenCalledWith(
-      expect.objectContaining({
-        repoSelector: 'repo-1',
-        name: 'setup-script',
-        activate: true,
-        createdWithAgent: 'codex',
-        startup: undefined,
-        startupPrompt: 'Inspect the repo and add orca.yaml.'
       })
     )
   })
@@ -153,7 +123,6 @@ describe('worktree RPC methods', () => {
         activate: true,
         createdWithAgent: 'codex',
         startup: undefined,
-        startupPrompt: undefined,
         startupDraft: 'https://github.com/stablyai/orca/issues/123'
       })
     )

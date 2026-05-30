@@ -99,9 +99,6 @@ export const WorktreeCreate = z
     // terminal pane launches the selected agent instead of an idle shell.
     startupCommand: OptionalString,
     startupEnv: z.record(z.string(), z.string()).optional(),
-    // Why: web/runtime clients may not share the runtime host OS or installed
-    // agents. The runtime builds this prompt into the host-side agent command.
-    startupPrompt: OptionalString,
     // Why: task-driven mobile creates need desktop parity: the host chooses
     // the same default/detected agent and drafts the linked issue/PR URL into it.
     startupDraft: OptionalString,
