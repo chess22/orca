@@ -595,6 +595,9 @@ function DiffLineRow({
   const commentLine = line.newLineNumber
   const isCommenting = commentLine !== undefined && activeCommentLine === commentLine
   const canComment = commentLine !== undefined
+  // Why: review notes are anchored to the modified side, so the single mobile
+  // gutter should show the same line number the note will reference.
+  const gutterLineNumber = line.newLineNumber ?? line.oldLineNumber ?? ''
   return (
     <View style={styles.diffLineBlock}>
       <View
@@ -604,7 +607,7 @@ function DiffLineRow({
           line.kind === 'delete' && styles.diffLineDeleted
         ]}
       >
-        <Text style={styles.diffGutter}>{line.oldLineNumber ?? line.newLineNumber ?? ''}</Text>
+        <Text style={styles.diffGutter}>{gutterLineNumber}</Text>
         <Text
           selectable
           style={styles.diffText}
