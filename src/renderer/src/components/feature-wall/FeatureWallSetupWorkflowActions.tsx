@@ -4,7 +4,6 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { activateAndRevealWorktree } from '@/lib/worktree-activation'
-import { activateTabAndFocusPane } from '@/lib/activate-tab-and-focus-pane'
 import { focusTerminalTabSurface } from '@/lib/focus-terminal-tab-surface'
 import { useAppStore } from '@/store'
 import { useAllWorktrees } from '@/store/selectors'
@@ -56,17 +55,6 @@ export function TwoAgentsAction(props: { reducedMotion: boolean }): React.JSX.El
       })
       return
     }
-    if (paneTarget) {
-      closeModal()
-      requestSetupGuideTourAfterFrame(() => {
-        activateAndRevealWorktree(targetWorktree.id)
-        useAppStore.getState().setActiveTabType('terminal')
-        activateTabAndFocusPane(paneTarget.tabId, paneTarget.leafId, {
-          flashFocusedPane: true
-        })
-      })
-      return
-    }
     closeModal()
     requestSetupGuideTourAfterFrame(() => {
       activateWorktreeTerminalForSetupTour(targetWorktree.id)
@@ -77,7 +65,7 @@ export function TwoAgentsAction(props: { reducedMotion: boolean }): React.JSX.El
         shouldContinue: () => isWorktreeTerminalStillCurrent(targetWorktree.id)
       })
     })
-  }, [closeModal, openModal, paneTarget, targetWorktree])
+  }, [closeModal, openModal, targetWorktree])
 
   const handleSecondaryAction = useCallback(() => {
     cancelPendingSetupGuideTourRequest()
@@ -93,30 +81,31 @@ export function TwoAgentsAction(props: { reducedMotion: boolean }): React.JSX.El
   return (
     <div className="space-y-4">
       <SetupTwoAgentsVisual reducedMotion={props.reducedMotion} />
-      <div className="space-y-2">
-        <p className="max-w-[48ch] text-xs text-muted-foreground">
-          {paneTarget
-            ? 'You already have a second terminal. Focus it to run another agent, a dev server, or a REPL alongside your work.'
-            : 'Split the terminal to run a second thing at once — another agent, a dev server, or a REPL.'}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" size="sm" className="w-fit gap-2" onClick={handlePrimaryAction}>
-            <ArrowUpRight className="size-3.5" />
-            {paneTarget ? 'Focus second pane' : 'Split terminal'}
-          </Button>
-          {targetWorktree && !paneTarget ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="w-fit"
-              onClick={handleSecondaryAction}
-            >
-              Start from current workspace
+      {!paneTarget ? (
+        <div className="space-y-2">
+          <p className="max-w-[48ch] text-xs text-muted-foreground">
+            Split the terminal to run a second thing at once — another agent, a dev server, or a
+            REPL.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" className="w-fit gap-2" onClick={handlePrimaryAction}>
+              <ArrowUpRight className="size-3.5" />
+              Split terminal
             </Button>
-          ) : null}
+            {targetWorktree ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-fit"
+                onClick={handleSecondaryAction}
+              >
+                Start from current workspace
+              </Button>
+            ) : null}
+          </div>
         </div>
-      </div>
+      ) : null}
     </div>
   )
 }
