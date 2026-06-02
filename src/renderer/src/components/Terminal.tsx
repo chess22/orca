@@ -251,7 +251,11 @@ function Terminal(): React.JSX.Element | null {
 
   // Why: the TabBar is rendered into the titlebar via a portal so tabs share
   // the same row as the "Orca" title. The target element is created by App.tsx.
-  const titlebarTabsTarget = document.getElementById('titlebar-tabs')
+  // Uses useEffect because the DOM element doesn't exist during the render phase.
+  const [titlebarTabsTarget, setTitlebarTabsTarget] = useState<HTMLElement | null>(null)
+  useEffect(() => {
+    setTitlebarTabsTarget(document.getElementById('titlebar-tabs'))
+  }, [])
 
   useEffect(() => {
     if (!activeWorktreeId) {
