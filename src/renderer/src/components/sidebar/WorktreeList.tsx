@@ -565,6 +565,23 @@ function getPointerDropStatusTarget(args: {
   }
 }
 
+function shouldPreferSidebarStatusDropTarget(args: {
+  sourceGroupKey: string
+  target: WorktreeSidebarStatusDropTarget
+  workspaceStatuses: readonly WorkspaceStatusDefinition[]
+}): boolean {
+  if (args.target.isPinDrop) {
+    return true
+  }
+  if (!args.target.status) {
+    return false
+  }
+  const sourceStatus = getWorkspaceStatusFromGroupKey(args.sourceGroupKey, args.workspaceStatuses)
+  // Why: source-group edge zones overlap adjacent status sections; the visible
+  // section under the pointer must win so the guide and committed drop agree.
+  return sourceStatus !== null && args.target.status !== sourceStatus
+}
+
 function isWorktreeItemRow(row: Row): row is WorktreeItemRow {
   return row.type === 'item'
 }
@@ -1652,16 +1669,69 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
       return
     }
 
-    const drop = computeWorktreeDrop(drag.currentY)
     const sidebarContainer = scrollRef.current
-    if (!drop) {
-      const target = sidebarContainer
-        ? getPointerDropStatusTarget({
-            container: sidebarContainer,
-            x: drag.currentX,
-            y: drag.currentY
+    const preferredStatusTarget = sidebarContainer
+      ? getPointerDropStatusTarget({
+          container: sidebarContainer,
+          x: drag.currentX,
+          y: drag.currentY
+        })
+      : { status: null, isPinDrop: false }
+    if (
+      shouldPreferSidebarStatusDropTarget({
+        sourceGroupKey: drag.sourceGroupKey,
+        target: preferredStatusTarget,
+        workspaceStatuses
+      })
+    ) {
+      const statusDrop = preferredStatusTarget.status
+        ? computeWorktreeStatusDrop({
+            pointerY: drag.currentY,
+            status: preferredStatusTarget.status,
+            draggedIds: drag.draggedIds
           })
-        : { status: null, isPinDrop: false }
+        : null
+      if (statusDrop) {
+        updateLatestWorktreeStatusDropTarget(drag, preferredStatusTarget, statusDrop)
+        clearWorkspaceKanbanSidebarDropTargetVisual()
+        setDragOverStatus(null)
+        setPinDragOver(false)
+        setWorktreeDragState((prev) =>
+          prev.dropIndex === statusDrop.dropIndex &&
+          prev.dropIndicatorY === statusDrop.dropIndicatorY &&
+          prev.pointerY === drag.currentY &&
+          areWorktreeDragPreviewOffsetsEqual(
+            prev.previewOffsetsByWorktreeId,
+            statusDrop.previewOffsetsByWorktreeId
+          )
+            ? prev
+            : { ...prev, ...statusDrop, pointerY: drag.currentY }
+        )
+        return
+      }
+      updateLatestWorktreeStatusDropTarget(drag, preferredStatusTarget, statusDrop)
+      setDragOverStatus(preferredStatusTarget.status)
+      setPinDragOver(preferredStatusTarget.isPinDrop)
+      setWorktreeDragState((prev) =>
+        prev.dropIndex === null &&
+        prev.dropIndicatorY === null &&
+        prev.pointerY === drag.currentY &&
+        prev.previewOffsetsByWorktreeId.size === 0
+          ? prev
+          : {
+              ...prev,
+              dropIndex: null,
+              dropIndicatorY: null,
+              previewOffsetsByWorktreeId: EMPTY_WORKTREE_DRAG_PREVIEW_OFFSETS,
+              pointerY: drag.currentY
+            }
+      )
+      return
+    }
+
+    const drop = computeWorktreeDrop(drag.currentY)
+    if (!drop) {
+      const target = preferredStatusTarget
       const statusDrop = target.status
         ? computeWorktreeStatusDrop({
             pointerY: drag.currentY,
@@ -1726,7 +1796,8 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
     computeWorktreeDrop,
     computeWorktreeStatusDrop,
     refreshWorktreeDragSession,
-    shouldShowWorkspaceBoardDropIndicator
+    shouldShowWorkspaceBoardDropIndicator,
+    workspaceStatuses
   ])
 
   const scheduleWorktreePointerDragFrame = useCallback(
@@ -1945,6 +2016,44 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
           groups: getWorkspaceKanbanSidebarDropGroups()
         })
       } else {
+        const preferredStatusTarget = scrollRef.current
+          ? getPointerDropStatusTarget({
+              container: scrollRef.current,
+              x: event.clientX,
+              y: event.clientY
+            })
+          : { status: null, isPinDrop: false }
+        if (
+          shouldPreferSidebarStatusDropTarget({
+            sourceGroupKey: drag.sourceGroupKey,
+            target: preferredStatusTarget,
+            workspaceStatuses
+          })
+        ) {
+          const statusDrop = preferredStatusTarget.status
+            ? computeWorktreeStatusDrop({
+                pointerY: event.clientY,
+                status: preferredStatusTarget.status,
+                draggedIds: drag.draggedIds
+              })
+            : null
+          if (preferredStatusTarget.isPinDrop) {
+            onPinWorktrees(drag.draggedIds)
+          } else if (preferredStatusTarget.status) {
+            if (statusDrop) {
+              onMoveWorktreesToStatusAtIndex({
+                worktreeIds: drag.draggedIds,
+                status: preferredStatusTarget.status,
+                dropIndex: statusDrop.dropIndex,
+                groups: worktreeDragGroups
+              })
+            } else {
+              onMoveWorktreesToStatus(drag.draggedIds, preferredStatusTarget.status)
+            }
+          }
+          clearWorktreeDrag()
+          return
+        }
         const drop = computeWorktreeDrop(event.clientY)
         if (drop) {
           onReorderWorktrees({
@@ -1958,12 +2067,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
             })
           })
         } else if (scrollRef.current) {
-          const container = scrollRef.current
-          const currentTarget = getPointerDropStatusTarget({
-            container,
-            x: event.clientX,
-            y: event.clientY
-          })
+          const currentTarget = preferredStatusTarget
           const currentPreview = currentTarget.status
             ? computeWorktreeStatusDrop({
                 pointerY: event.clientY,
@@ -2027,7 +2131,8 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
     scheduleWorktreePointerDragFrame,
     shouldShowWorkspaceBoardDropIndicator,
     worktreeDragGroups,
-    worktreeDragUnitGroups
+    worktreeDragUnitGroups,
+    workspaceStatuses
   ])
 
   useEffect(() => {
