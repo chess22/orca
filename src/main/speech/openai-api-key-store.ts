@@ -41,6 +41,8 @@ function readLegacyJsonStoredOpenAiKey(): StoredOpenAiKey | null {
 }
 
 export function hasOpenAiSpeechApiKey(): boolean {
+  // Why: Settings and model-state refresh call this on startup; checking file
+  // existence avoids decrypting safeStorage and triggering macOS keychain prompts.
   return existsSync(getOpenAiKeyPath())
 }
 
