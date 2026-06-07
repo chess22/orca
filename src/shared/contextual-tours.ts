@@ -110,6 +110,12 @@ export const CONTEXTUAL_TOURS = [
         title: 'Mark design feedback in place',
         body: 'Annotate elements and send those notes to an agent.',
         targetSelector: '[data-contextual-tour-target="browser-annotation-control"]'
+      },
+      {
+        title: 'Stay logged in',
+        body: 'Bring your existing logins into Orca to stay signed in immediately.',
+        targetSelector: '[data-contextual-tour-target="browser-import-cookies-control"]',
+        preferredPlacement: 'left'
       }
     ]
   },

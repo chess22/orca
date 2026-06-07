@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, Ellipsis, Import, Monitor, Plus, Settings } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -58,6 +58,9 @@ export function BrowserToolbarMenu({
   const fetchDetectedBrowsers = useAppStore((s) => s.fetchDetectedBrowsers)
   const browserSessionImportState = useAppStore((s) => s.browserSessionImportState)
   const setBrowserPageViewportPreset = useAppStore((s) => s.setBrowserPageViewportPreset)
+  const browserCookieTourStepActive = useAppStore(
+    (s) => s.activeContextualTourId === 'browser' && s.activeContextualTourStepIndex === 2
+  )
 
   const applyViewportPreset = (nextId: BrowserViewportPresetId | null): void => {
     setBrowserPageViewportPreset(browserPageId, nextId)
@@ -72,7 +75,21 @@ export function BrowserToolbarMenu({
   const [pendingSwitchProfileId, setPendingSwitchProfileId] = useState<string | null | undefined>(
     undefined
   )
+  const [menuOpen, setMenuOpen] = useState(false)
   const mountedRef = useMountedRef()
+
+  useEffect(() => {
+    // Why: step 3 anchors on Import Cookies inside this menu, so open it when
+    // the browser tour reaches the final step and close it when leaving.
+    setMenuOpen(browserCookieTourStepActive)
+  }, [browserCookieTourStepActive])
+
+  const handleMenuOpenChange = (open: boolean): void => {
+    if (browserCookieTourStepActive && !open) {
+      return
+    }
+    setMenuOpen(open)
+  }
 
   const effectiveProfileId = currentProfileId ?? 'default'
 
@@ -165,7 +182,7 @@ export function BrowserToolbarMenu({
 
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu open={menuOpen} onOpenChange={handleMenuOpenChange}>
         <DropdownMenuTrigger asChild>
           <Button size="icon" variant="ghost" className="h-8 w-8" title="Browser menu">
             <Ellipsis className="size-4" />
@@ -211,7 +228,10 @@ export function BrowserToolbarMenu({
               }
             }}
           >
-            <DropdownMenuSubTrigger disabled={browserSessionImportState?.status === 'importing'}>
+            <DropdownMenuSubTrigger
+              disabled={browserSessionImportState?.status === 'importing'}
+              data-contextual-tour-target="browser-import-cookies-control"
+            >
               <Import className="mr-2 size-3.5" />
               Import Cookies
             </DropdownMenuSubTrigger>
