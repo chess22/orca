@@ -346,6 +346,7 @@ export default function TabGroupPanel({
       <div
         ref={setBodyDropRef}
         className="relative flex-1 min-h-0 overflow-hidden"
+        data-tab-group-body-id={groupId}
         style={bodyAnchorStyle}
       >
         {/* Why: this empty anchor lets the agent-sessions tour read as a

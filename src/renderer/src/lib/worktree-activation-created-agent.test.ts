@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Worktree } from '../../../shared/types'
+import { getDefaultSettings } from '../../../shared/constants'
 import { useAppStore } from '@/store'
 import { activateAndRevealWorktree } from './worktree-activation'
 
@@ -318,5 +319,65 @@ describe('activateAndRevealWorktree created agent reopen', () => {
       params: { worktree: `id:${worktree.id}` },
       timeoutMs: 15_000
     })
+  })
+
+  it('does not echo host-originated runtime activation events back to the host', async () => {
+    const worktree = makeWorktree()
+    const callRuntimeEnvironment = vi.fn().mockResolvedValue({
+      ok: true,
+      result: { repoId: worktree.repoId, worktreeId: worktree.id, activated: true }
+    })
+    ;(globalThis as { __ORCA_WEB_CLIENT__?: boolean }).__ORCA_WEB_CLIENT__ = true
+    vi.stubGlobal('window', {
+      api: {
+        runtimeEnvironments: {
+          call: callRuntimeEnvironment
+        }
+      }
+    })
+
+    useAppStore.setState({
+      repos: [
+        {
+          id: 'repo-1',
+          path: '/workspace/repo',
+          displayName: 'repo',
+          badgeColor: '#000000',
+          addedAt: 0
+        }
+      ],
+      worktreesByRepo: { 'repo-1': [worktree] },
+      activeRepoId: 'repo-1',
+      activeView: 'terminal',
+      tabsByWorktree: {},
+      unifiedTabsByWorktree: {},
+      groupsByWorktree: {},
+      layoutByWorktree: {},
+      activeGroupIdByWorktree: {},
+      openFiles: [],
+      browserTabsByWorktree: {},
+      activeFileIdByWorktree: {},
+      activeBrowserTabIdByWorktree: {},
+      activeTabTypeByWorktree: {},
+      activeTabIdByWorktree: {},
+      tabBarOrderByWorktree: {},
+      settings: {
+        ...getDefaultSettings('/workspace/.orca-workspaces'),
+        agentCmdOverrides: {},
+        activeRuntimeEnvironmentId: 'web-runtime-1',
+        setupScriptLaunchMode: 'new-tab'
+      },
+      markWorktreeVisited: vi.fn(),
+      recordWorktreeVisit: vi.fn(),
+      refreshGitHubForWorktreeIfStale: vi.fn(),
+      revealWorktreeInSidebar: vi.fn()
+    })
+
+    const result = activateAndRevealWorktree(worktree.id, { notifyHostRuntime: false })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(result).toEqual({ primaryTabId: null })
+    expect(useAppStore.getState().activeWorktreeId).toBe(worktree.id)
+    expect(callRuntimeEnvironment).not.toHaveBeenCalled()
   })
 })

@@ -147,6 +147,7 @@ export function activateAndRevealWorktree(
     defaultTabs?: WorktreeDefaultTabsLaunch
     issueCommand?: IssueCommandLaunch
     sidebarRevealBehavior?: PendingSidebarWorktreeReveal['behavior']
+    notifyHostRuntime?: boolean
   }
 ): ActivateAndRevealResult | false {
   const state = useAppStore.getState()
@@ -178,7 +179,10 @@ export function activateAndRevealWorktree(
   // 3. Core activation: sets activeWorktreeId, restores per-worktree state,
   // clears unread, bumps dead PTY generations, triggers GitHub refresh
   state.setActiveWorktree(worktreeId)
-  if (isWebRuntimeSessionActive(useAppStore.getState().settings?.activeRuntimeEnvironmentId)) {
+  if (
+    opts?.notifyHostRuntime !== false &&
+    isWebRuntimeSessionActive(useAppStore.getState().settings?.activeRuntimeEnvironmentId)
+  ) {
     // Why: paired web clients own only local selection state. The desktop host
     // must also activate the worktree so hidden renderer-owned terminal panes
     // mount and publish session surfaces back to the web client.

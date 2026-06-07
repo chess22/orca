@@ -193,9 +193,7 @@ function stageWebRuntimeBrowserTab(args: {
 }
 
 function selectWebRuntimeSessionWorktree(worktreeId: string): void {
-  useAppStore.setState((state) =>
-    state.activeWorktreeId === worktreeId ? state : { activeWorktreeId: worktreeId }
-  )
+  useAppStore.getState().setActiveWorktree(worktreeId)
 }
 
 function findLocalBrowserPageForRemotePage(

@@ -1115,6 +1115,53 @@ export default function TerminalPane({
   })
 
   useEffect(() => {
+    if (
+      !(globalThis as { __ORCA_WEB_CLIENT__?: boolean }).__ORCA_WEB_CLIENT__ ||
+      !isVisible ||
+      !isActive
+    ) {
+      return
+    }
+
+    const cleanupCallbacks: (() => void)[] = []
+    const fitAndForward = (): void => {
+      const manager = managerRef.current
+      if (!manager) {
+        return
+      }
+      for (const pane of manager.getPanes()) {
+        safeFit(pane)
+        const transport = paneTransportsRef.current.get(pane.id)
+        if (transport?.isConnected()) {
+          transport.resize(pane.terminal.cols, pane.terminal.rows)
+        }
+      }
+    }
+    const scheduleFrame = (): void => {
+      const frameId = requestAnimationFrame(fitAndForward)
+      cleanupCallbacks.push(() => cancelAnimationFrame(frameId))
+    }
+    const scheduleTimer = (delayMs: number): void => {
+      const timerId = window.setTimeout(fitAndForward, delayMs)
+      cleanupCallbacks.push(() => window.clearTimeout(timerId))
+    }
+
+    // Why: web-restored terminals can fit before the remote PTY transport is
+    // ready, then become xterm no-ops. Forward the settled cols explicitly.
+    scheduleFrame()
+    scheduleTimer(50)
+    scheduleTimer(150)
+    scheduleTimer(400)
+    scheduleTimer(900)
+
+    return () => {
+      for (const cleanup of cleanupCallbacks) {
+        cleanup()
+      }
+    }
+  }, [isActive, isVisible])
+
+  useEffect(() => {
     const container = containerRef.current
     if (!container) {
       return
