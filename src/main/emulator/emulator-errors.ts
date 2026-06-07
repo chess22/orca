@@ -13,4 +13,5 @@ export type EmulatorErrorCode =
   | 'emulator_device_not_found'
   | 'emulator_helper_failed'
   | 'emulator_not_macos'
+  | 'emulator_disabled'
   | 'emulator_error'

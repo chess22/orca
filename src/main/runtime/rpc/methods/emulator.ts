@@ -61,7 +61,7 @@ const ExecParams = z.object({
 })
 
 const AttachParams = z.object({
-  device: z.string(),
+  device: z.string().optional(),
   worktree: z.string().optional(),
   focus: z.boolean().optional()
 })
@@ -133,6 +133,11 @@ export const EMULATOR_METHODS: RpcMethod[] = [
     name: 'emulator.listSimulators',
     params: z.object({ worktree: z.string().optional() }).partial(),
     handler: async (params, { runtime }) => runtime.emulatorListSimulators(params)
+  }),
+  defineMethod({
+    name: 'emulator.availability',
+    params: z.object({ worktree: z.string().optional() }).partial(),
+    handler: async (params, { runtime }) => runtime.emulatorAvailability(params)
   }),
   defineMethod({
     name: 'emulator.unregisterActive',

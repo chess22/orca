@@ -9,6 +9,7 @@ const mockStoreState = vi.hoisted(() => ({
   dropUnifiedTab: vi.fn(),
   focusGroup: vi.fn(),
   groupsByWorktree: {} as Record<string, { id: string }[]>,
+  settings: { mobileEmulatorEnabled: true },
   setActiveTab: vi.fn(),
   setActiveTabType: vi.fn(),
   unifiedTabsByWorktree: {} as Record<
@@ -32,6 +33,7 @@ describe('ensureSimulatorTab', () => {
     mockStoreState.activeGroupIdByWorktree = { 'wt-1': 'group-1' }
     mockStoreState.activeWorktreeId = 'wt-1'
     mockStoreState.groupsByWorktree = { 'wt-1': [{ id: 'group-1' }] }
+    mockStoreState.settings = { mobileEmulatorEnabled: true }
     mockStoreState.unifiedTabsByWorktree = {
       'wt-1': [{ id: 'sim-1', groupId: 'group-1', contentType: 'simulator' }]
     }
@@ -134,5 +136,15 @@ describe('ensureSimulatorTab', () => {
     expect(mockStoreState.activateTab).not.toHaveBeenCalled()
     expect(mockStoreState.focusGroup).not.toHaveBeenCalled()
     expect(mockStoreState.setActiveTabType).not.toHaveBeenCalled()
+  })
+
+  it('does not create or focus a simulator tab when disabled in settings', async () => {
+    mockStoreState.settings = { mobileEmulatorEnabled: false }
+    const { ensureSimulatorTab } = await import('./ensure-simulator-tab')
+
+    expect(ensureSimulatorTab('wt-1')).toBeNull()
+
+    expect(mockStoreState.activateTab).not.toHaveBeenCalled()
+    expect(mockStoreState.createUnifiedTab).not.toHaveBeenCalled()
   })
 })

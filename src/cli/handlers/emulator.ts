@@ -1,6 +1,6 @@
 import type { CommandHandler } from '../dispatch'
 import { printResult } from '../format'
-import { getRequiredFiniteNumber, getRequiredStringFlag } from '../flags'
+import { getOptionalStringFlag, getRequiredFiniteNumber, getRequiredStringFlag } from '../flags'
 import { getEmulatorCommandTarget } from '../selectors'
 import { RuntimeClientError } from '../runtime-client'
 
@@ -82,13 +82,13 @@ export const EMULATOR_HANDLERS: Record<string, CommandHandler> = {
   },
   'emulator attach': async ({ flags, client, cwd, json }) => {
     const target = await getEmulatorCommandTarget(flags, cwd, client)
-    const device = getRequiredStringFlag(flags, 'device')
+    const device = getOptionalStringFlag(flags, 'device')
     const focus = flags.get('focus') === true
     const res = await client.call('emulator.attach', { device, worktree: target.worktree, focus })
     printResult(res, json, (r: unknown) => {
       const result = r as EmulatorAttachResult
       const info = result.info ?? result
-      const udid = info?.deviceUdid || device
+      const udid = info?.deviceUdid || device || 'default emulator'
       const stream = info?.streamUrl
       return `Attached to ${udid}${stream ? ` (preview: ${stream})` : ''}`
     })

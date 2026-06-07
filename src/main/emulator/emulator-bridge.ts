@@ -51,6 +51,10 @@ export class EmulatorBridge {
     return this.execServeSim(['--list', '-q'], { json: true })
   }
 
+  async checkServeSimAvailable(): Promise<void> {
+    await this.execServeSim(['--help'], { timeoutMs: 10_000 })
+  }
+
   registerActiveEmulator(
     worktreeId: string,
     info: EmulatorSessionInfo,

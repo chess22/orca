@@ -1,16 +1,23 @@
 import type { BrowserWindow } from 'electron'
 import type { EmulatorBridge } from '../emulator/emulator-bridge'
 import { EmulatorError } from '../emulator/emulator-errors'
+import {
+  inspectEmulatorAvailability,
+  pickDefaultSimulatorDevice,
+  type EmulatorAvailability
+} from '../emulator/emulator-availability'
 import { serveSimStateWatcher } from '../emulator/serve-sim-state-watcher'
 import type { EmulatorGesturePoint } from '../emulator/emulator-gesture-sender'
 import type { EmulatorSessionInfo } from '../emulator/emulator-types'
 import type { SimulatorDevice } from '../emulator/simctl-simulator-devices'
+import type { GlobalSettings } from '../../shared/types'
 
 // Why: dedicated file for "one surface" separation (emulator), parallel to orca-runtime-browser.ts. Keeps OrcaRuntimeService focused; emulator routing easy to scan. No max-lines disable (split further if grows; per AGENTS + plan Phase 3).
 export type RuntimeEmulatorCommandHost = {
   getEmulatorBridge(): EmulatorBridge | null
   resolveWorktreeSelector(selector: string): Promise<{ id: string }>
   getAuthoritativeWindow(): BrowserWindow
+  getSettings(): Pick<GlobalSettings, 'mobileEmulatorEnabled' | 'mobileEmulatorDefaultDeviceUdid'>
 }
 
 export class RuntimeEmulatorCommands {
@@ -120,16 +127,30 @@ export class RuntimeEmulatorCommands {
   }
 
   async emulatorAttach(params: {
-    device: string
+    device?: string
     worktree?: string
     focus?: boolean
   }): Promise<{ attached: boolean; info?: EmulatorSessionInfo }> {
+    const settings = this.host.getSettings()
+    if (settings.mobileEmulatorEnabled === false) {
+      throw new EmulatorError('emulator_disabled', 'Mobile Emulator is disabled in Settings.')
+    }
     const bridge = this.requireEmulatorBridge()
+    let device = params.device ?? settings.mobileEmulatorDefaultDeviceUdid ?? undefined
+    if (!device) {
+      device = pickDefaultSimulatorDevice(await bridge.listSimulators())?.udid
+    }
+    if (!device) {
+      throw new EmulatorError(
+        'emulator_device_not_found',
+        'No emulator device specified. Choose a default device in Settings > Mobile Emulator or pass a device.'
+      )
+    }
     const worktreeId = params.worktree
       ? (await this.host.resolveWorktreeSelector(params.worktree)).id
       : undefined
     if (worktreeId) {
-      const reusable = await bridge.getReusableActiveForWorktree(worktreeId, params.device)
+      const reusable = await bridge.getReusableActiveForWorktree(worktreeId, device)
       if (reusable) {
         // Why: renderer remounts should reconnect to the existing stream, not
         // kill it and create the stream-disconnected reload loop users see.
@@ -147,7 +168,7 @@ export class RuntimeEmulatorCommands {
         serveSimStateWatcher.unmarkOrcaManaged(stoppedUdid)
       }
     }
-    const info = await bridge.startHelperForDevice(params.device)
+    const info = await bridge.startHelperForDevice(device)
     if (worktreeId) {
       bridge.registerActiveEmulator(worktreeId, info, { managed: true })
       serveSimStateWatcher.markOrcaManaged(info)
@@ -183,6 +204,10 @@ export class RuntimeEmulatorCommands {
     // (simulators are host-local, not per-worktree).
     const bridge = this.requireEmulatorBridge()
     return bridge.listSimulators()
+  }
+
+  async emulatorAvailability(_params: { worktree?: string } = {}): Promise<EmulatorAvailability> {
+    return inspectEmulatorAvailability(this.requireEmulatorBridge())
   }
 
   async emulatorKill(params: {

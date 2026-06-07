@@ -553,6 +553,8 @@ type RuntimeStore = {
     gitlabProjects?: GlobalSettings['gitlabProjects']
     experimentalWorktreeSymlinks?: boolean
     mobileAutoRestoreFitMs?: number | null
+    mobileEmulatorEnabled?: boolean
+    mobileEmulatorDefaultDeviceUdid?: string | null
     voice?: VoiceSettings
   }
   // Why: narrow to `unknown` return so test mocks can return void without
@@ -13812,7 +13814,8 @@ export class OrcaRuntimeService {
   private readonly emulatorCommands = new RuntimeEmulatorCommands({
     getEmulatorBridge: () => this.emulatorBridge,
     resolveWorktreeSelector: (selector) => this.resolveWorktreeSelector(selector),
-    getAuthoritativeWindow: () => this.getAuthoritativeWindow()
+    getAuthoritativeWindow: () => this.getAuthoritativeWindow(),
+    getSettings: () => this.requireStore().getSettings()
   })
 
   browserSnapshot: RuntimeBrowserCommands['browserSnapshot'] =
@@ -14247,6 +14250,8 @@ export class OrcaRuntimeService {
     this.emulatorCommands.emulatorShutdown.bind(this.emulatorCommands)
   emulatorListSimulators: RuntimeEmulatorCommands['emulatorListSimulators'] =
     this.emulatorCommands.emulatorListSimulators.bind(this.emulatorCommands)
+  emulatorAvailability: RuntimeEmulatorCommands['emulatorAvailability'] =
+    this.emulatorCommands.emulatorAvailability.bind(this.emulatorCommands)
   emulatorUnregisterActive: RuntimeEmulatorCommands['emulatorUnregisterActive'] =
     this.emulatorCommands.emulatorUnregisterActive.bind(this.emulatorCommands)
 

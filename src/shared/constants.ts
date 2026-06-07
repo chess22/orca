@@ -294,6 +294,8 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     terminalMacOptionAsAltMigrated: false,
     terminalJISYenToBackslash: false,
     experimentalMobile: false,
+    mobileEmulatorEnabled: true,
+    mobileEmulatorDefaultDeviceUdid: null,
     // Why: indefinite hold by default — the desktop "Restore" banner is the
     // explicit return-to-desktop-size action, no wall-clock guess.
     // See docs/mobile-fit-hold.md.

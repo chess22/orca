@@ -63,7 +63,8 @@ export function useTabGroupWorkspaceModel({
       openFiles: state.openFiles,
       browserTabs: state.browserTabsByWorktree[worktreeId] ?? EMPTY_BROWSER_TABS,
       expandedPaneByTabId: state.expandedPaneByTabId,
-      generatedTabTitlesEnabled: state.settings?.tabAutoGenerateTitle === true
+      generatedTabTitlesEnabled: state.settings?.tabAutoGenerateTitle === true,
+      mobileEmulatorEnabled: state.settings?.mobileEmulatorEnabled !== false
     }))
   )
 
@@ -571,15 +572,17 @@ export function useTabGroupWorkspaceModel({
       newBrowserTab: () => {
         void openNewBrowserTabInActiveWorkspace(groupId)
       },
-      newSimulatorTab: () => {
-        // Why: mobile simulators are most useful beside the current tab group.
-        // Re-open focuses the existing worktree simulator instead of spawning duplicates.
-        ensureSimulatorTab(worktreeId, {
-          placement: 'rightSplit',
-          targetGroupId: groupId,
-          surfacePane: true
-        })
-      },
+      newSimulatorTab: worktreeState.mobileEmulatorEnabled
+        ? () => {
+            // Why: mobile simulators are most useful beside the current tab group.
+            // Re-open focuses the existing worktree simulator instead of spawning duplicates.
+            ensureSimulatorTab(worktreeId, {
+              placement: 'rightSplit',
+              targetGroupId: groupId,
+              surfacePane: true
+            })
+          }
+        : undefined,
       openEntry: async (args: TabCreateEntryArgs) => {
         await openTabBarEntry(args)
       },

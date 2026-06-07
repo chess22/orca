@@ -210,6 +210,7 @@ function Terminal(): React.JSX.Element | null {
   const terminalShortcutPolicy = useAppStore(
     (s) => s.settings?.terminalShortcutPolicy ?? 'orca-first'
   )
+  const mobileEmulatorEnabled = useAppStore((s) => s.settings?.mobileEmulatorEnabled !== false)
   const setActiveTabType = useAppStore((s) => s.setActiveTabType)
   const setActiveFile = useAppStore((s) => s.setActiveFile)
   const closeFile = useAppStore((s) => s.closeFile)
@@ -1319,7 +1320,7 @@ function Terminal(): React.JSX.Element | null {
       }
 
       // Cmd/Ctrl+Shift+E — new mobile emulator tab (macOS only)
-      if (!e.repeat && matchShortcut('tab.newSimulator')) {
+      if (!e.repeat && mobileEmulatorEnabled && matchShortcut('tab.newSimulator')) {
         e.preventDefault()
         notifyTerminalCapture('tab.newSimulator')
         if (!floatingWorkspaceFocused) {
@@ -1501,6 +1502,7 @@ function Terminal(): React.JSX.Element | null {
     closeBrowserTab,
     handleCloseFile,
     keybindings,
+    mobileEmulatorEnabled,
     terminalShortcutPolicy
   ])
 
@@ -1643,7 +1645,7 @@ function Terminal(): React.JSX.Element | null {
             onNewTerminalTab={() => handleNewTab()}
             onNewTerminalWithShell={handleNewTab}
             onNewBrowserTab={handleNewBrowserTab}
-            onNewSimulatorTab={handleNewSimulatorTab}
+            onNewSimulatorTab={mobileEmulatorEnabled ? handleNewSimulatorTab : undefined}
             onOpenEntry={handleOpenEntry}
             onNewFileTab={handleNewFile}
             onSetCustomTitle={setTabCustomTitle}

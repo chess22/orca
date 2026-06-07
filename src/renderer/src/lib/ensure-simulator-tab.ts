@@ -19,6 +19,9 @@ export function ensureSimulatorTab(
     return null
   }
   const store = useAppStore.getState()
+  if (store.settings?.mobileEmulatorEnabled === false) {
+    return null
+  }
   const sourceGroupId =
     options?.targetGroupId ??
     store.activeGroupIdByWorktree[worktreeId] ??

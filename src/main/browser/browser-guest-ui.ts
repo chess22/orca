@@ -17,6 +17,7 @@ import { keybindingMatchesAction, type KeybindingOverrides } from '../../shared/
 
 type ResolveRenderer = (browserTabId: string) => Electron.WebContents | null
 type ShouldForwardDictationShortcut = () => boolean
+type IsMobileEmulatorEnabled = () => boolean
 
 function isControlKeyRelease(input: Electron.Input): boolean {
   return input.type === 'keyUp' && (input.code === 'ControlLeft' || input.code === 'ControlRight')
@@ -221,10 +222,17 @@ export function setupGuestShortcutForwarding(args: {
   guest: Electron.WebContents
   resolveRenderer: ResolveRenderer
   shouldForwardDictationShortcut?: ShouldForwardDictationShortcut
+  isMobileEmulatorEnabled?: IsMobileEmulatorEnabled
   getKeybindings?: () => KeybindingOverrides | undefined
 }): () => void {
-  const { browserTabId, guest, resolveRenderer, shouldForwardDictationShortcut, getKeybindings } =
-    args
+  const {
+    browserTabId,
+    guest,
+    resolveRenderer,
+    shouldForwardDictationShortcut,
+    isMobileEmulatorEnabled,
+    getKeybindings
+  } = args
   let ctrlTabSwitching = false
   const handler = (event: Electron.Event, input: Electron.Input): void => {
     const keybindings = getKeybindings?.()
@@ -343,6 +351,7 @@ export function setupGuestShortcutForwarding(args: {
       renderer.send('ui:newBrowserTab')
     } else if (
       process.platform === 'darwin' &&
+      (isMobileEmulatorEnabled?.() ?? true) &&
       keybindingMatchesAction('tab.newSimulator', input, process.platform, keybindings)
     ) {
       renderer.send('ui:newSimulatorTab')

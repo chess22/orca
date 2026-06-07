@@ -11,7 +11,7 @@ export const EMULATOR_COMMAND_SPECS: CommandSpec[] = [
   {
     path: ['emulator', 'attach'],
     summary: 'Attach/start helper for a device and make it active for the worktree',
-    usage: 'orca emulator attach <device> [--worktree <selector>] [--focus] [--json]',
+    usage: 'orca emulator attach [device] [--worktree <selector>] [--focus] [--json]',
     allowedFlags: [...GLOBAL_FLAGS, 'worktree', 'focus', 'device'],
     positionalArgs: ['device']
   },

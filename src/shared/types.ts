@@ -2236,6 +2236,11 @@ export type GlobalSettings = {
    *  key to a backslash, matching the common terminal expectation for that key. */
   terminalJISYenToBackslash: boolean
   experimentalMobile: boolean
+  /** Why: the iOS Simulator feature is default-on for capable macOS hosts, but
+   *  users need a durable off switch that hides UI affordances and blocks CLI attach. */
+  mobileEmulatorEnabled?: boolean
+  /** Preferred iOS Simulator UDID for UI auto-attach and agent CLI attach. */
+  mobileEmulatorDefaultDeviceUdid?: string | null
   /** Auto-restore window for a phone-fit PTY after the last mobile
    *  subscriber leaves. `null` (default) holds the PTY at phone size
    *  indefinitely; the desktop "Restore" banner remains the explicit

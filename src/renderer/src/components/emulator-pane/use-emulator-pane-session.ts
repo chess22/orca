@@ -11,6 +11,10 @@ import {
 } from './emulator-pane-types'
 import { markSimulatorDeviceBooted, markSimulatorDeviceShutdown } from './emulator-device-state'
 import { useEmulatorPaneControls } from './use-emulator-pane-controls'
+import {
+  EMULATOR_LOCAL_SHUTDOWN_EVENT,
+  useEmulatorPaneSessionEvents
+} from './use-emulator-pane-session-events'
 
 type UseEmulatorPaneSessionArgs = {
   worktreeId: string
@@ -18,15 +22,16 @@ type UseEmulatorPaneSessionArgs = {
   autoAttachOnMount: boolean
 }
 
-const EMULATOR_LOCAL_SHUTDOWN_EVENT = 'orca:emulator-shutdown'
-
 export function useEmulatorPaneSession({
   worktreeId,
   tabId,
   autoAttachOnMount
 }: UseEmulatorPaneSessionArgs) {
   const [devices, setDevices] = useState<SimulatorDeviceRow[]>([])
-  const [selectedUdid, setSelectedUdid] = useState<string | null>(null)
+  const configuredDefaultUdid = useAppStore(
+    (state) => state.settings?.mobileEmulatorDefaultDeviceUdid ?? null
+  )
+  const [selectedUdid, setSelectedUdid] = useState<string | null>(configuredDefaultUdid)
   const [session, setSession] = useState<EmulatorPaneSession | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -124,7 +129,7 @@ export function useEmulatorPaneSession({
         if (list.length === 0) {
           list = (await refreshDevices()) ?? []
         }
-        let target = deviceTarget || selectedUdid
+        let target = deviceTarget || selectedUdid || configuredDefaultUdid || undefined
         if (!target && list.length > 0) {
           const chosen = pickDefaultDevice(list)
           if (chosen) {
@@ -174,8 +179,23 @@ export function useEmulatorPaneSession({
         }
       }
     },
-    [applySession, devices, loading, refreshDevices, selectedUdid, tabId, worktreeId]
+    [
+      applySession,
+      configuredDefaultUdid,
+      devices,
+      loading,
+      refreshDevices,
+      selectedUdid,
+      tabId,
+      worktreeId
+    ]
   )
+
+  useEffect(() => {
+    if (!selectedUdid && configuredDefaultUdid) {
+      setSelectedUdid(configuredDefaultUdid)
+    }
+  }, [configuredDefaultUdid, selectedUdid])
 
   const shutdown = useCallback(
     async (deviceTarget?: string) => {
@@ -237,39 +257,12 @@ export function useEmulatorPaneSession({
     void attach()
   }, [attach, autoAttachOnMount, loading, session])
 
-  useEffect(() => {
-    const onAuto = (ev: Event) => {
-      const detail = (ev as CustomEvent).detail as {
-        worktreeId?: string
-        info?: EmulatorPaneSession['info']
-      }
-      if (detail?.worktreeId && detail.worktreeId !== worktreeId) {
-        return
-      }
-      if (!detail?.info?.streamUrl && !detail?.info?.wsUrl) {
-        return
-      }
-      applySession(detail.info, true)
-      void refreshDevices(detail.info.deviceUdid || detail.info.device)
-    }
-    window.addEventListener('orca:emulator-auto-attach', onAuto)
-    return () => window.removeEventListener('orca:emulator-auto-attach', onAuto)
-  }, [applySession, refreshDevices, worktreeId])
-
-  useEffect(() => {
-    const onShutdown = (ev: Event) => {
-      const detail = (ev as CustomEvent).detail as {
-        worktreeId?: string
-        deviceUdid?: string | null
-      }
-      if (detail?.worktreeId && detail.worktreeId !== worktreeId) {
-        return
-      }
-      clearSessionAfterShutdown(detail?.deviceUdid)
-    }
-    window.addEventListener(EMULATOR_LOCAL_SHUTDOWN_EVENT, onShutdown)
-    return () => window.removeEventListener(EMULATOR_LOCAL_SHUTDOWN_EVENT, onShutdown)
-  }, [clearSessionAfterShutdown, worktreeId])
+  useEmulatorPaneSessionEvents({
+    worktreeId,
+    applySession,
+    refreshDevices,
+    clearSessionAfterShutdown
+  })
 
   const selectedDevice = devices.find((d) => d.udid === selectedUdid) ?? null
   const sessionDisplayName = session?.info?.displayName
