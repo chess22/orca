@@ -3820,7 +3820,8 @@ export default function SessionScreen() {
                     void forceReconnectHost(hostId)
                   }
                 }}
-                accessibilityLabel="Reconnect to desktop"
+                accessibilityRole={showConnectionRetry ? 'button' : undefined}
+                accessibilityLabel={showConnectionRetry ? 'Reconnect to desktop' : undefined}
               >
                 <StatusDot state={connState} />
                 <Text style={styles.sessionMetaText} numberOfLines={1}>

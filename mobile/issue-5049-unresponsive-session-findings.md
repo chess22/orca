@@ -82,5 +82,11 @@ alive but ignores input, recoverable only by an app restart:
   mode is real, a foreground nudge reconnect attempt would also fail; the existing
   `[net]` logs (wsCount / msSinceLast\*) are designed to confirm or rule it out from
   device logs.
-- No NetInfo-based reconnect-on-network-change; AppState foreground nudge covers
-  the reported cases without a new dependency.
+
+## Follow-up audit (same PR)
+
+- `connection-revival-triggers.ts` (via `expo-network`) extends the foreground
+  nudge to network restoration and Wi-Fi → cellular handoffs.
+- Files and source-control screens' Retry buttons now revive the transport
+  (`forceReconnect`) when disconnected instead of pointlessly re-sending the
+  request into a parked connection.

@@ -19,8 +19,8 @@ import {
   useState,
   type ReactNode
 } from 'react'
-import { AppState } from 'react-native'
 import { connect, type RpcClient } from './rpc-client'
+import { subscribeConnectionRevivalTriggers } from './connection-revival-triggers'
 import { loadHosts } from './host-store'
 import type { ConnectionState, HostProfile } from './types'
 
@@ -321,20 +321,15 @@ export function RpcClientProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // Why: Android/iOS suspend JS timers and can silently drop sockets while
-  // the app is backgrounded; the reconnect loop may even park at its
-  // give-up cap before the user returns. Nudge every live client on
-  // foreground so sessions recover without an app restart (issue #5049).
+  // Why: nudge every live client when the OS signals the link may be back
+  // (foreground, network restored/switched) so sessions recover without an
+  // app restart (issue #5049).
   useEffect(() => {
-    const sub = AppState.addEventListener('change', (next) => {
-      if (next !== 'active') {
-        return
-      }
+    return subscribeConnectionRevivalTriggers(() => {
       for (const entry of storeRef.current.values()) {
         entry.client.notifyForeground()
       }
     })
-    return () => sub.remove()
   }, [])
 
   const value = useMemo<ContextValue>(

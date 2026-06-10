@@ -10,6 +10,7 @@
 //   ORCA_MOBILE_LIVE_REPRO_FULL=1 ... (adds the 8-minute parked-loop case)
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { randomBytes } from 'node:crypto'
+import type { AddressInfo } from 'node:net'
 import nacl from 'tweetnacl'
 import { WebSocketServer, type WebSocket as ServerSocket } from 'ws'
 import { connect, type RpcClient } from './rpc-client'
@@ -25,7 +26,6 @@ const RUN_LIVE =
   process.env.ORCA_MOBILE_LIVE_REPRO === '1' || !!process.env.ORCA_MOBILE_LIVE_REPRO_FULL
 const RUN_FULL = process.env.ORCA_MOBILE_LIVE_REPRO_FULL === '1'
 
-const PORT = 6799
 const AUTH_TOKEN = 'repro-device-token'
 
 const serverKeyPair = nacl.box.keyPair()
@@ -55,8 +55,11 @@ function e2eeDecrypt(encrypted: string, sharedKey: Uint8Array): string | null {
   return plaintext ? new TextDecoder().decode(plaintext) : null
 }
 
-function startServer(): WebSocketServer {
-  const wss = new WebSocketServer({ port: PORT })
+// Why: port 0 lets the OS assign a free port so the opt-in harness can't
+// fail with EADDRINUSE; the full scenario restarts on the captured port
+// because the client keeps reconnecting to its original URL.
+function startServer(port = 0): Promise<WebSocketServer> {
+  const wss = new WebSocketServer({ port })
   wss.on('connection', (ws: ServerSocket) => {
     let sharedKey: Uint8Array | null = null
     let authenticated = false
@@ -89,7 +92,11 @@ function startServer(): WebSocketServer {
       )
     })
   })
-  return wss
+  return new Promise((resolve) => wss.once('listening', () => resolve(wss)))
+}
+
+function serverPort(wss: WebSocketServer): number {
+  return (wss.address() as AddressInfo).port
 }
 
 function stopServer(wss: WebSocketServer): Promise<void> {
@@ -134,8 +141,8 @@ describe.runIf(RUN_LIVE)('live foreground recovery (issue #5049)', () => {
     'reaps a half-open link via the foreground probe and recovers',
     { timeout: 60_000 },
     async () => {
-      wss = startServer()
-      client = connect(`ws://127.0.0.1:${PORT}`, AUTH_TOKEN, serverPublicKeyB64)
+      wss = await startServer()
+      client = connect(`ws://127.0.0.1:${serverPort(wss)}`, AUTH_TOKEN, serverPublicKeyB64)
       const c = client
       await waitFor('initial connect', 10_000, () => c.getState() === 'connected')
       expect((await c.sendRequest('status.get')).ok).toBe(true)
@@ -163,8 +170,9 @@ describe.runIf(RUN_LIVE)('live foreground recovery (issue #5049)', () => {
     'repro: parked retry loop stays stuck until the foreground nudge',
     { timeout: 600_000 },
     async () => {
-      wss = startServer()
-      client = connect(`ws://127.0.0.1:${PORT}`, AUTH_TOKEN, serverPublicKeyB64)
+      wss = await startServer()
+      const port = serverPort(wss)
+      client = connect(`ws://127.0.0.1:${port}`, AUTH_TOKEN, serverPublicKeyB64)
       const c = client
       await waitFor('initial connect', 10_000, () => c.getState() === 'connected')
 
@@ -177,7 +185,7 @@ describe.runIf(RUN_LIVE)('live foreground recovery (issue #5049)', () => {
       await sleep(65_000)
       expect(c.getState()).toBe('reconnecting')
 
-      wss = startServer()
+      wss = await startServer(port)
       // Pre-fix behavior: even with the server back, a parked loop never
       // recovers — the user had to restart the app.
       await sleep(70_000)
