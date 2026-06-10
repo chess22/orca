@@ -106,7 +106,7 @@ describe('useCreateRepo default-checkout handoff', () => {
     const repo = makeRepo()
     mocks.createRepo.mockResolvedValue({ repo })
     mocks.fetchWorktrees.mockResolvedValue(true)
-    const { useCreateRepo } = await import('./AddRepoCreateStep')
+    const { useCreateRepo } = await import('./useCreateRepo')
 
     const result = useCreateRepo(mocks.fetchWorktrees, vi.fn(), mocks.onGitRepoReady)
     await result.handleCreate()
@@ -126,7 +126,7 @@ describe('useCreateRepo default-checkout handoff', () => {
     const repo = makeRepo()
     mocks.createRepo.mockResolvedValue({ repo })
     mocks.fetchWorktrees.mockResolvedValue(false)
-    const { useCreateRepo } = await import('./AddRepoCreateStep')
+    const { useCreateRepo } = await import('./useCreateRepo')
 
     const result = useCreateRepo(mocks.fetchWorktrees, vi.fn(), mocks.onGitRepoReady)
     await result.handleCreate()
@@ -150,7 +150,7 @@ describe('useCreateRepo default-checkout handoff', () => {
       mocks.storeState.worktreesByRepo = { [repoId]: [worktree] }
       return true
     })
-    const { useCreateRepo } = await import('./AddRepoCreateStep')
+    const { useCreateRepo } = await import('./useCreateRepo')
 
     const result = useCreateRepo(mocks.fetchWorktrees, closeModal, mocks.onGitRepoReady)
     await result.handleCreate()

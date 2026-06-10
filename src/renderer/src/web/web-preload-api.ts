@@ -464,9 +464,13 @@ function createWebPreloadApi(): Partial<PreloadApi> {
         Promise.resolve({
           ok: false,
           status: null,
-          error: translate("auto.web.web.preload.api.fb290366b2", "Unavailable on web.")
+          error: translate('auto.web.web.preload.api.fb290366b2', 'Unavailable on web.')
         }),
-      copyLatestDiagnostics: () => Promise.resolve({ ok: false, error: translate("auto.web.web.preload.api.fb290366b2", "Unavailable on web.") })
+      copyLatestDiagnostics: () =>
+        Promise.resolve({
+          ok: false,
+          error: translate('auto.web.web.preload.api.fb290366b2', 'Unavailable on web.')
+        })
     },
     diagnostics: {
       getStatus: () =>
@@ -641,7 +645,13 @@ function normalizeStoredWebOverrides(
     return {}
   }
   if (!isJsonObject(value)) {
-    diagnostics.push({ severity: 'error', section, message: translate("auto.web.web.preload.api.d2e43e426a", "{{value0}} must be an object.", { value0: section }) })
+    diagnostics.push({
+      severity: 'error',
+      section,
+      message: translate('auto.web.web.preload.api.d2e43e426a', '{{value0}} must be an object.', {
+        value0: section
+      })
+    })
     return {}
   }
 
@@ -652,7 +662,11 @@ function normalizeStoredWebOverrides(
         severity: 'warning',
         section,
         actionId,
-        message: translate("auto.web.web.preload.api.36761d9604", "Unknown keybinding action \"{{value0}}\" was ignored.", { value0: actionId })
+        message: translate(
+          'auto.web.web.preload.api.36761d9604',
+          'Unknown keybinding action "{{value0}}" was ignored.',
+          { value0: actionId }
+        )
       })
       continue
     }
@@ -664,7 +678,11 @@ function normalizeStoredWebOverrides(
         severity: 'error',
         section,
         actionId,
-        message: translate("auto.web.web.preload.api.10898045f3", "Shortcut for \"{{value0}}\" was ignored: Use a string array.", { value0: actionId })
+        message: translate(
+          'auto.web.web.preload.api.10898045f3',
+          'Shortcut for "{{value0}}" was ignored: Use a string array.',
+          { value0: actionId }
+        )
       })
       continue
     }
@@ -675,7 +693,11 @@ function normalizeStoredWebOverrides(
         severity: 'error',
         section,
         actionId,
-        message: translate("auto.web.web.preload.api.10898045f3", "Shortcut for \"{{value0}}\" was ignored: {{value1}}", { value0: actionId, value1: error })
+        message: translate(
+          'auto.web.web.preload.api.10898045f3',
+          'Shortcut for "{{value0}}" was ignored: {{value1}}',
+          { value0: actionId, value1: error }
+        )
       })
       continue
     }
@@ -695,7 +717,10 @@ function normalizeWebPlatformOverrides(
     diagnostics.push({
       severity: 'error',
       section: 'platforms',
-      message: translate("auto.web.web.preload.api.0a69fcd8bc", "platforms must be an object with darwin, linux, or win32 sections.")
+      message: translate(
+        'auto.web.web.preload.api.0a69fcd8bc',
+        'platforms must be an object with darwin, linux, or win32 sections.'
+      )
     })
     return {}
   }
@@ -706,7 +731,11 @@ function normalizeWebPlatformOverrides(
       diagnostics.push({
         severity: 'warning',
         section: `platforms.${platform}`,
-        message: translate("auto.web.web.preload.api.32f15bdb0f", "Unknown platform \"{{value0}}\" was ignored.", { value0: platform })
+        message: translate(
+          'auto.web.web.preload.api.32f15bdb0f',
+          'Unknown platform "{{value0}}" was ignored.',
+          { value0: platform }
+        )
       })
       continue
     }
@@ -743,9 +772,15 @@ function removeConflictingWebOverrides(
     }
     diagnostics.push({
       severity: 'error',
-      message: translate("auto.web.web.preload.api.52bee9d8a0", "Conflicting custom shortcuts were ignored: {{value0}}.", { value0: Array.from(conflictingOverrides)
-        .map((actionId) => actionId)
-        .join(', ') })
+      message: translate(
+        'auto.web.web.preload.api.52bee9d8a0',
+        'Conflicting custom shortcuts were ignored: {{value0}}.',
+        {
+          value0: Array.from(conflictingOverrides)
+            .map((actionId) => actionId)
+            .join(', ')
+        }
+      )
     })
   }
   return next
@@ -977,6 +1012,8 @@ function createReposApi(): NonNullable<Partial<PreloadApi>['repos']> {
       invalidateRuntimeWorktreeCaches()
       return callRuntimeResult('repo.create', { parentPath, name, kind })
     },
+    isGitAvailable: async () =>
+      (await callRuntimeResult<{ available: boolean }>('repo.gitAvailable')).available,
     onCloneProgress: () => noopUnsubscribe,
     getGitUsername: () => Promise.resolve(''),
     getBaseRefDefault: async ({ repoId }) =>
@@ -1371,16 +1408,25 @@ function createGitApi(): NonNullable<Partial<PreloadApi>['git']> {
     },
     generateCommitMessage: async () => ({
       success: false,
-      error: translate("auto.web.web.preload.api.9fc90740b6", "Commit message generation is unavailable in the web client.")
+      error: translate(
+        'auto.web.web.preload.api.9fc90740b6',
+        'Commit message generation is unavailable in the web client.'
+      )
     }),
     discoverCommitMessageModels: async () => ({
       success: false,
-      error: translate("auto.web.web.preload.api.e57c82d276", "Commit message model discovery is unavailable in the web client.")
+      error: translate(
+        'auto.web.web.preload.api.e57c82d276',
+        'Commit message model discovery is unavailable in the web client.'
+      )
     }),
     cancelGenerateCommitMessage: () => Promise.resolve(),
     generatePullRequestFields: async () => ({
       success: false,
-      error: translate("auto.web.web.preload.api.b8a1618172", "Pull request detail generation is unavailable in the web client.")
+      error: translate(
+        'auto.web.web.preload.api.b8a1618172',
+        'Pull request detail generation is unavailable in the web client.'
+      )
     }),
     cancelGeneratePullRequestFields: () => Promise.resolve(),
     stage: async ({ worktreePath, filePath }) => mutateGitPath('git.stage', worktreePath, filePath),
@@ -1431,17 +1477,38 @@ function createBrowserApi(): NonNullable<Partial<PreloadApi>['browser']> {
       Promise.resolve({ ok: false, reason: 'Downloads are handled by the server browser.' }),
     cancelDownload: () => Promise.resolve(false),
     setGrabMode: () =>
-      Promise.resolve({ ok: false, error: translate("auto.web.web.preload.api.31bea294d5", "Grab mode is unavailable in the web client.") }),
+      Promise.resolve({
+        ok: false,
+        error: translate(
+          'auto.web.web.preload.api.31bea294d5',
+          'Grab mode is unavailable in the web client.'
+        )
+      }),
     awaitGrabSelection: () =>
-      Promise.resolve({ ok: false, error: translate("auto.web.web.preload.api.31bea294d5", "Grab mode is unavailable in the web client.") }),
+      Promise.resolve({
+        ok: false,
+        error: translate(
+          'auto.web.web.preload.api.31bea294d5',
+          'Grab mode is unavailable in the web client.'
+        )
+      }),
     cancelGrab: () => Promise.resolve(false),
     captureSelectionScreenshot: () =>
       Promise.resolve({
         ok: false,
-        error: translate("auto.web.web.preload.api.8dfcb7a351", "Selection screenshots are unavailable in the web client.")
+        error: translate(
+          'auto.web.web.preload.api.8dfcb7a351',
+          'Selection screenshots are unavailable in the web client.'
+        )
       }),
     extractHoverPayload: () =>
-      Promise.resolve({ ok: false, error: translate("auto.web.web.preload.api.275a776357", "Hover extraction is unavailable in the web client.") }),
+      Promise.resolve({
+        ok: false,
+        error: translate(
+          'auto.web.web.preload.api.275a776357',
+          'Hover extraction is unavailable in the web client.'
+        )
+      }),
     onGrabModeToggle: () => noopUnsubscribe,
     onGrabActionShortcut: () => noopUnsubscribe,
     sessionListProfiles: () => Promise.resolve([]),
@@ -1451,7 +1518,10 @@ function createBrowserApi(): NonNullable<Partial<PreloadApi>['browser']> {
       Promise.resolve({
         ok: false,
         summary: null,
-        error: translate("auto.web.web.preload.api.67ec964791", "Cookie import is unavailable in the web client.")
+        error: translate(
+          'auto.web.web.preload.api.67ec964791',
+          'Cookie import is unavailable in the web client.'
+        )
       }),
     sessionResolvePartition: () => Promise.resolve(null),
     sessionDetectBrowsers: () => Promise.resolve([]),
@@ -1459,7 +1529,10 @@ function createBrowserApi(): NonNullable<Partial<PreloadApi>['browser']> {
       Promise.resolve({
         ok: false,
         summary: null,
-        error: translate("auto.web.web.preload.api.67ec964791", "Cookie import is unavailable in the web client.")
+        error: translate(
+          'auto.web.web.preload.api.67ec964791',
+          'Cookie import is unavailable in the web client.'
+        )
       }),
     sessionClearDefaultCookies: () => Promise.resolve(false),
     notifyActiveTabChanged: () => Promise.resolve(false)
@@ -1570,7 +1643,10 @@ function createGitHubApi(): WebGitHubApi {
     rateLimit: (args) =>
       route<WebGitHubResult<'rateLimit'>>(GITHUB_WEB_RPC_METHODS.rateLimit, args),
     diagnoseAuth: () =>
-      Promise.resolve({ ok: false, message: translate("auto.web.web.preload.api.31bfe8ae1a", "Unavailable in the web client.") } as never),
+      Promise.resolve({
+        ok: false,
+        message: translate('auto.web.web.preload.api.31bfe8ae1a', 'Unavailable in the web client.')
+      } as never),
     listAccessibleProjects: () =>
       route<WebGitHubResult<'listAccessibleProjects'>>(
         GITHUB_WEB_RPC_METHODS.listAccessibleProjects
@@ -2234,7 +2310,10 @@ function createSshApi(): NonNullable<Partial<PreloadApi>['ssh']> {
     getState: () => Promise.resolve(null),
     needsPassphrasePrompt: () => Promise.resolve(false),
     testConnection: () =>
-      Promise.resolve({ success: false, error: translate("auto.web.web.preload.api.31bfe8ae1a", "Unavailable in the web client.") }),
+      Promise.resolve({
+        success: false,
+        error: translate('auto.web.web.preload.api.31bfe8ae1a', 'Unavailable in the web client.')
+      }),
     onStateChanged: () => noopUnsubscribe,
     addPortForward: () =>
       Promise.reject(new Error('SSH port forwarding is unavailable in the web client.')),

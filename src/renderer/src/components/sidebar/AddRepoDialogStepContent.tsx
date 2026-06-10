@@ -8,6 +8,7 @@ import { AddRepoNestedImportStep } from './AddRepoNestedImportStep'
 import type { AddRepoDialogStep } from './add-repo-dialog-types'
 import type { NestedRepoScanResult } from '../../../../shared/types'
 import type { SshConnectionState, SshTarget } from '../../../../shared/ssh-types'
+import type { GitAvailability } from './create-project-defaults'
 
 type AddRepoDialogStepContentProps = {
   step: AddRepoDialogStep
@@ -40,6 +41,9 @@ type AddRepoDialogStepContentProps = {
   createKind: 'git' | 'folder'
   createError: string | null
   isCreating: boolean
+  createDefaultParent: string
+  createGitAvailability: GitAvailability
+  createRuntimeParentStatus: 'idle' | 'checking' | 'failed'
   onBrowse: () => void
   onOpenCloneStep: () => void
   onOpenCreateStep: () => void
@@ -98,6 +102,9 @@ export function AddRepoDialogStepContent({
   createKind,
   createError,
   isCreating,
+  createDefaultParent,
+  createGitAvailability,
+  createRuntimeParentStatus,
   onBrowse,
   onOpenCloneStep,
   onOpenCreateStep,
@@ -219,6 +226,9 @@ export function AddRepoDialogStepContent({
         createKind={createKind}
         createError={createError}
         isCreating={isCreating}
+        defaultParent={createDefaultParent}
+        gitAvailability={createGitAvailability}
+        runtimeParentStatus={createRuntimeParentStatus}
         manualParentEntry={isRuntimeEnvironmentActive}
         runtimeEnvironmentId={activeRuntimeEnvironmentId}
         onNameChange={onCreateNameChange}

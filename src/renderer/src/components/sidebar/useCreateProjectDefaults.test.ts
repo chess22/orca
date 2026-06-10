@@ -1,0 +1,163 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as ReactModule from 'react'
+
+const mocks = vi.hoisted(() => ({
+  stateValues: [] as unknown[],
+  stateIndex: 0,
+  browseRuntimeServerDirectory: vi.fn(),
+  callRuntimeRpc: vi.fn(),
+  isGitAvailable: vi.fn()
+}))
+
+vi.mock('react', async (importOriginal) => {
+  const actual = await importOriginal<typeof ReactModule>()
+  return {
+    ...actual,
+    useCallback: <T extends (...args: never[]) => unknown>(fn: T) => fn,
+    useRef: <T>(value: T) => ({ current: value }),
+    useEffect: (effect: () => void | (() => void)) => {
+      void effect()
+    },
+    useState: <T>(initial: T) => {
+      const index = mocks.stateIndex++
+      if (!(index in mocks.stateValues)) {
+        mocks.stateValues[index] = initial
+      }
+      const setter = (value: T) => {
+        mocks.stateValues[index] = value
+      }
+      return [mocks.stateValues[index] as T, setter]
+    }
+  }
+})
+
+vi.mock('@/runtime/runtime-server-directory-browser', () => ({
+  browseRuntimeServerDirectory: mocks.browseRuntimeServerDirectory
+}))
+
+vi.mock('@/runtime/runtime-rpc-client', () => ({
+  callRuntimeRpc: mocks.callRuntimeRpc
+}))
+
+import { useCreateProjectDefaults } from './useCreateProjectDefaults'
+
+// State order inside the hook: [defaultParent, gitAvailability, runtimeParentStatus].
+const DEFAULT_PARENT_STATE = 0
+const GIT_AVAILABILITY_STATE = 1
+const RUNTIME_PARENT_STATUS_STATE = 2
+
+function flushAsync(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+function useHarness(overrides: Partial<Parameters<typeof useCreateProjectDefaults>[0]> = {}) {
+  mocks.stateIndex = 0
+  const setCreateParent = vi.fn()
+  const setCreateKind = vi.fn()
+  const result = useCreateProjectDefaults({
+    step: 'create',
+    activeRuntimeEnvironmentId: null,
+    workspaceDir: '/Users/alice/orca/workspaces',
+    createParent: '',
+    setCreateParent,
+    setCreateKind,
+    ...overrides
+  })
+  return { result, setCreateParent, setCreateKind }
+}
+
+describe('useCreateProjectDefaults', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.stateValues = []
+    mocks.stateIndex = 0
+    vi.stubGlobal('window', {
+      api: { repos: { isGitAvailable: mocks.isGitAvailable } }
+    })
+  })
+
+  it('auto-fills the local default parent and defaults to git when available', async () => {
+    mocks.isGitAvailable.mockResolvedValue(true)
+
+    const { setCreateParent, setCreateKind } = useHarness()
+    await flushAsync()
+
+    expect(setCreateParent).toHaveBeenCalledWith('/Users/alice/orca/projects')
+    expect(mocks.stateValues[DEFAULT_PARENT_STATE]).toBe('/Users/alice/orca/projects')
+    expect(mocks.stateValues[GIT_AVAILABILITY_STATE]).toBe('available')
+    expect(setCreateKind).toHaveBeenCalledWith('git')
+    expect(mocks.callRuntimeRpc).not.toHaveBeenCalled()
+  })
+
+  it('defaults to folder with a visible fallback when Git is unavailable', async () => {
+    mocks.isGitAvailable.mockResolvedValue(false)
+
+    const { setCreateKind } = useHarness()
+    await flushAsync()
+
+    expect(mocks.stateValues[GIT_AVAILABILITY_STATE]).toBe('unavailable')
+    expect(setCreateKind).toHaveBeenCalledWith('folder')
+  })
+
+  it('reports unknown availability and keeps the kind when the Git probe fails', async () => {
+    mocks.isGitAvailable.mockRejectedValue(new Error('probe failed'))
+
+    const { setCreateKind } = useHarness()
+    await flushAsync()
+
+    expect(mocks.stateValues[GIT_AVAILABILITY_STATE]).toBe('unknown')
+    expect(setCreateKind).not.toHaveBeenCalled()
+  })
+
+  it('does not overwrite a parent the user already chose', async () => {
+    mocks.isGitAvailable.mockResolvedValue(true)
+
+    const { setCreateParent } = useHarness({ createParent: '/tmp/custom' })
+    await flushAsync()
+
+    expect(setCreateParent).not.toHaveBeenCalled()
+  })
+
+  it('resolves the runtime default parent from the host home directory', async () => {
+    mocks.browseRuntimeServerDirectory.mockResolvedValue({ resolvedPath: '/home/alice' })
+    mocks.callRuntimeRpc.mockResolvedValue({ available: true })
+
+    const { setCreateParent, setCreateKind } = useHarness({ activeRuntimeEnvironmentId: 'env-1' })
+    await flushAsync()
+
+    expect(mocks.browseRuntimeServerDirectory).toHaveBeenCalledWith('env-1', '~')
+    expect(setCreateParent).toHaveBeenCalledWith('/home/alice/orca/projects')
+    expect(mocks.stateValues[DEFAULT_PARENT_STATE]).toBe('/home/alice/orca/projects')
+    expect(mocks.stateValues[RUNTIME_PARENT_STATUS_STATE]).toBe('idle')
+    // Why: runtime Git availability must be probed on the host, not the client.
+    expect(mocks.callRuntimeRpc).toHaveBeenCalledWith(
+      { kind: 'environment', environmentId: 'env-1' },
+      'repo.gitAvailable',
+      undefined,
+      { timeoutMs: 3000 }
+    )
+    expect(mocks.isGitAvailable).not.toHaveBeenCalled()
+    expect(setCreateKind).toHaveBeenCalledWith('git')
+  })
+
+  it('marks the runtime parent lookup failed without filling a parent', async () => {
+    mocks.browseRuntimeServerDirectory.mockRejectedValue(new Error('disconnected'))
+    mocks.callRuntimeRpc.mockResolvedValue({ available: true })
+
+    const { setCreateParent } = useHarness({ activeRuntimeEnvironmentId: 'env-1' })
+    await flushAsync()
+
+    expect(mocks.stateValues[RUNTIME_PARENT_STATUS_STATE]).toBe('failed')
+    expect(setCreateParent).not.toHaveBeenCalled()
+  })
+
+  it('does nothing outside the create step', async () => {
+    const { setCreateParent, setCreateKind } = useHarness({ step: 'add' })
+    await flushAsync()
+
+    expect(setCreateParent).not.toHaveBeenCalled()
+    expect(setCreateKind).not.toHaveBeenCalled()
+    expect(mocks.isGitAvailable).not.toHaveBeenCalled()
+    expect(mocks.browseRuntimeServerDirectory).not.toHaveBeenCalled()
+  })
+})

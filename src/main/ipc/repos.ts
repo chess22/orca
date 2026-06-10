@@ -118,6 +118,7 @@ type CompletedNestedRepoScan = {
 }
 const completedNestedRepoScans = new Map<string, CompletedNestedRepoScan>()
 const MAX_COMPLETED_NESTED_SCAN_RESULTS = 50
+const GIT_AVAILABILITY_TIMEOUT_MS = 1500
 
 const ProjectGroupCreateArgs = z.object({
   name: z.string().min(1),
@@ -258,6 +259,18 @@ async function cleanupOwnedCloneTarget(metadata: ActiveCloneMetadata): Promise<v
     return
   }
   await cleanupClaimedCloneTarget(metadata.path, metadata.claimedTarget)
+}
+
+async function isGitAvailable(): Promise<boolean> {
+  try {
+    await gitExecFileAsync(['--version'], {
+      cwd: process.cwd(),
+      timeout: GIT_AVAILABILITY_TIMEOUT_MS
+    })
+    return true
+  } catch {
+    return false
+  }
 }
 
 function markCloneAbortCleanupPending(metadata: ActiveCloneMetadata): void {
@@ -444,6 +457,7 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
   ipcMain.removeHandler('repos:pickDirectory')
   ipcMain.removeHandler('repos:clone')
   ipcMain.removeHandler('repos:cloneAbort')
+  ipcMain.removeHandler('repos:isGitAvailable')
   ipcMain.removeHandler('repos:getGitUsername')
   ipcMain.removeHandler('repos:getBaseRefDefault')
   ipcMain.removeHandler('repos:searchBaseRefs')
@@ -457,6 +471,8 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
   ipcMain.handle('repos:list', () => {
     return store.getRepos()
   })
+
+  ipcMain.handle('repos:isGitAvailable', () => isGitAvailable())
 
   ipcMain.handle('projectGroups:list', () => store.getProjectGroups())
 
