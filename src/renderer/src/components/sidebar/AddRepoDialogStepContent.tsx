@@ -29,6 +29,7 @@ type AddRepoDialogStepContentProps = {
   isCloning: boolean
   sshTargets: (SshTarget & { state?: SshConnectionState })[]
   selectedTargetId: string | null
+  lockSshTargetSelection?: boolean
   remotePath: string
   remoteError: string | null
   isAddingRemote: boolean
@@ -95,6 +96,7 @@ export function AddRepoDialogStepContent({
   isCloning,
   sshTargets,
   selectedTargetId,
+  lockSshTargetSelection = false,
   remotePath,
   remoteError,
   isAddingRemote,
@@ -183,6 +185,7 @@ export function AddRepoDialogStepContent({
       <RemoteStep
         sshTargets={sshTargets}
         selectedTargetId={selectedTargetId}
+        lockSshTargetSelection={lockSshTargetSelection}
         remotePath={remotePath}
         remoteError={remoteError}
         isAddingRemote={isAddingRemote}

@@ -11,6 +11,7 @@ import { translate } from '@/i18n/i18n'
 type RemoteStepProps = {
   sshTargets: (SshTarget & { state?: SshConnectionState })[]
   selectedTargetId: string | null
+  lockSshTargetSelection?: boolean
   remotePath: string
   remoteError: string | null
   isAddingRemote: boolean
@@ -26,6 +27,7 @@ type RemoteStepProps = {
 export function RemoteStep({
   sshTargets,
   selectedTargetId,
+  lockSshTargetSelection = false,
   remotePath,
   remoteError,
   isAddingRemote,
@@ -38,6 +40,12 @@ export function RemoteStep({
   onStopNestedScan
 }: RemoteStepProps): React.JSX.Element {
   const [browsing, setBrowsing] = useState(false)
+  const selectedTarget = selectedTargetId
+    ? sshTargets.find((target) => target.id === selectedTargetId)
+    : null
+  const selectedTargetLabel =
+    selectedTarget?.label ||
+    (selectedTarget ? `${selectedTarget.username}@${selectedTarget.host}` : selectedTargetId)
 
   if (browsing && selectedTargetId) {
     return (
@@ -76,53 +84,61 @@ export function RemoteStep({
           {translate('auto.components.sidebar.AddRepoRemoteStep.91b93a90a4', 'Open remote project')}
         </DialogTitle>
         <DialogDescription>
-          {translate(
-            'auto.components.sidebar.AddRepoRemoteStep.80557be85a',
-            'Choose a connected SSH target and enter the path to a Git repository.'
-          )}
+          {lockSshTargetSelection
+            ? translate(
+                'auto.components.sidebar.AddRepoRemoteStep.lockedDescription',
+                'Enter the path to a Git repository on {{value0}}.',
+                { value0: selectedTargetLabel ?? 'this SSH target' }
+              )
+            : translate(
+                'auto.components.sidebar.AddRepoRemoteStep.80557be85a',
+                'Choose a connected SSH target and enter the path to a Git repository.'
+              )}
         </DialogDescription>
       </DialogHeader>
 
       <div className="space-y-3 pt-1">
-        <div className="space-y-1">
-          <label className="text-[11px] font-medium text-muted-foreground">
-            {translate('auto.components.sidebar.AddRepoRemoteStep.44637f43bd', 'SSH target')}
-          </label>
-          {sshTargets.length === 0 ? (
-            <div className="space-y-1.5 py-1">
-              <p className="text-xs text-muted-foreground">
-                {translate(
-                  'auto.components.sidebar.AddRepoRemoteStep.df6fbcf880',
-                  'No SSH targets configured.'
-                )}
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={onOpenSshSettings}
-              >
-                <Settings className="size-3.5" />
-                {translate(
-                  'auto.components.sidebar.AddRepoRemoteStep.0416bde073',
-                  'Add in Settings'
-                )}
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1 scrollbar-sleek">
-              {sshTargets.map((target) => (
-                <SshTargetRow
-                  key={target.id}
-                  target={target}
-                  isSelected={selectedTargetId === target.id}
-                  onSelect={onSelectTarget}
-                  onConnect={onConnectTarget}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+        {!lockSshTargetSelection ? (
+          <div className="space-y-1">
+            <label className="text-[11px] font-medium text-muted-foreground">
+              {translate('auto.components.sidebar.AddRepoRemoteStep.44637f43bd', 'SSH target')}
+            </label>
+            {sshTargets.length === 0 ? (
+              <div className="space-y-1.5 py-1">
+                <p className="text-xs text-muted-foreground">
+                  {translate(
+                    'auto.components.sidebar.AddRepoRemoteStep.df6fbcf880',
+                    'No SSH targets configured.'
+                  )}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={onOpenSshSettings}
+                >
+                  <Settings className="size-3.5" />
+                  {translate(
+                    'auto.components.sidebar.AddRepoRemoteStep.0416bde073',
+                    'Add in Settings'
+                  )}
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1 scrollbar-sleek">
+                {sshTargets.map((target) => (
+                  <SshTargetRow
+                    key={target.id}
+                    target={target}
+                    isSelected={selectedTargetId === target.id}
+                    onSelect={onSelectTarget}
+                    onConnect={onConnectTarget}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        ) : null}
 
         <div className="space-y-1">
           <label className="text-[11px] font-medium text-muted-foreground">

@@ -3101,7 +3101,8 @@
           "007651bdf9": "디렉터리로 이동한 후 선택을 클릭하여 선택합니다.",
           "dd3ff65486": "원격 파일 시스템 찾아보기",
           "36d427bb66": "원격 프로젝트 추가",
-          "35831a7312": "첨가..."
+          "35831a7312": "첨가...",
+          "lockedDescription": "Enter the path to a Git repository on {{value0}}."
         },
         "AddRepoServerStartStep": {
           "ae990c86a0": "옵션 추가로 돌아가기",

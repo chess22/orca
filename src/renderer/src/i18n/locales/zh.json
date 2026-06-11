@@ -3101,7 +3101,8 @@
           "007651bdf9": "导航到目录并单击“选择”以选择它。",
           "dd3ff65486": "浏览远程文件系统",
           "36d427bb66": "添加远程项目",
-          "35831a7312": "添加..."
+          "35831a7312": "添加...",
+          "lockedDescription": "Enter the path to a Git repository on {{value0}}."
         },
         "AddRepoServerStartStep": {
           "ae990c86a0": "返回添加选项",

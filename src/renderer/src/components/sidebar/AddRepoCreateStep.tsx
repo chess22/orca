@@ -61,7 +61,9 @@ export function CreateStep({
   const radioGroupRef = useRef<HTMLDivElement>(null)
   const radioFocusFrameRef = useRef<number | null>(null)
   const [browsingParent, setBrowsingParent] = useState(false)
-  const [advancedOpen, setAdvancedOpen] = useState(false)
+  // Why: SSH hosts need a typed remote path; hiding that field behind the
+  // collapsed defaults makes the create flow look impossible.
+  const [advancedOpen, setAdvancedOpen] = useState(manualParentEntry)
 
   const cancelRadioFocusFrame = useCallback((): void => {
     if (radioFocusFrameRef.current === null) {

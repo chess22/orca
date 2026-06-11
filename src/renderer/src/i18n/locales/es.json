@@ -3114,7 +3114,8 @@
           "007651bdf9": "Navegue hasta un directorio y haga clic en Seleccionar para elegirlo.",
           "dd3ff65486": "Explorar el sistema de archivos remoto",
           "36d427bb66": "Agregar proyecto remoto",
-          "35831a7312": "Añadiendo..."
+          "35831a7312": "Añadiendo...",
+          "lockedDescription": "Enter the path to a Git repository on {{value0}}."
         },
         "AddRepoServerStartStep": {
           "ae990c86a0": "Volver para agregar opciones",

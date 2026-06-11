@@ -140,7 +140,7 @@ describe('AddRepoDialogStepContent nested imports', () => {
       activeRuntimeEnvironmentId: null
     })
 
-    expect(html).toContain('Start a new project')
+    expect(html).toContain('Create a new project')
     expect(html).toContain('placeholder="/home/user/projects"')
     expect(html).not.toContain('Choose parent folder')
   })
@@ -154,5 +154,48 @@ describe('AddRepoDialogStepContent nested imports', () => {
 
     expect(html).toContain('Clone from URL')
     expect(html).toContain('aria-label="Browse server filesystem"')
+  })
+
+  it('hides the SSH target chooser after a host was already selected', () => {
+    const html = renderStepContent({
+      step: 'remote',
+      lockSshTargetSelection: true,
+      selectedTargetId: 'openclaw-2',
+      sshTargets: [
+        {
+          id: 'github',
+          label: 'github.com',
+          host: 'github.com',
+          port: 22,
+          username: 'git',
+          state: {
+            targetId: 'github',
+            status: 'connected',
+            error: null,
+            reconnectAttempt: 0
+          }
+        },
+        {
+          id: 'openclaw-2',
+          label: 'openclaw 2',
+          host: 'openclaw.example.com',
+          port: 22,
+          username: 'dev',
+          state: {
+            targetId: 'openclaw-2',
+            status: 'connected',
+            error: null,
+            reconnectAttempt: 0
+          }
+        }
+      ]
+    })
+
+    expect(html).toContain('Open remote project')
+    expect(html).toContain('openclaw 2')
+    expect(html).toContain('Remote path')
+    expect(html).not.toContain('SSH target')
+    expect(html).not.toContain('github.com')
+    expect(html).not.toContain('Connect')
   })
 })

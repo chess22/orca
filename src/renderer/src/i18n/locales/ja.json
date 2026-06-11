@@ -3101,7 +3101,8 @@
           "007651bdf9": "ディレクトリに移動し、「選択」をクリックして選択します。",
           "dd3ff65486": "リモートファイルシステムを参照する",
           "36d427bb66": "リモートプロジェクトを追加",
-          "35831a7312": "追加中..."
+          "35831a7312": "追加中...",
+          "lockedDescription": "Enter the path to a Git repository on {{value0}}."
         },
         "AddRepoServerStartStep": {
           "ae990c86a0": "オプションの追加に戻る",

@@ -3120,7 +3120,8 @@
           "007651bdf9": "Navigate to a directory and click Select to choose it.",
           "dd3ff65486": "Browse remote filesystem",
           "36d427bb66": "Add remote project",
-          "35831a7312": "Adding..."
+          "35831a7312": "Adding...",
+          "lockedDescription": "Enter the path to a Git repository on {{value0}}."
         },
         "AddRepoServerStartStep": {
           "ae990c86a0": "Back to add options",
