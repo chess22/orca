@@ -135,5 +135,22 @@ describe('locale-translation-policy ja round 5', () => {
         locale: 'ja'
       })
     ).toBe('commits')
+    expect(
+      repairTranslatedValue({
+        key: 'auto.components.mobile.slides.WorktreeListSlide.22971156df',
+        enValue: 'Repo',
+        localeValue: 'リポ',
+        locale: 'ja'
+      })
+    ).toBe('Repo')
+    expect(
+      repairTranslatedValue({
+        key: 'auto.components.sidebar.add.repo.local.start.actions.fb4fc5380e',
+        enValue: 'Local project, Git repo, or folder with many repos',
+        localeValue:
+          'ローカル プロジェクト、Git リポジトリ、または多数のリポジトリを含むフォルダー',
+        locale: 'ja'
+      })
+    ).toBe('ローカルプロジェクト、Git repo、または多数の repos を含むフォルダー')
   })
 })

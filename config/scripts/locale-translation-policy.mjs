@@ -50,6 +50,8 @@ export const NEVER_TRANSLATE_VALUES = new Set([
   'Pi',
   'PostHog',
   'Qwen Code',
+  'Repo',
+  'Repos',
   'Rovo Dev',
   'Commit',
   'Commits',
@@ -66,6 +68,8 @@ export const NEVER_TRANSLATE_VALUES = new Set([
   'gemini',
   'claude',
   'markdown',
+  'repo',
+  'repos',
   'terminal',
   'terminals',
   'gh',
@@ -110,6 +114,10 @@ export const BRAND_MISTRANSLATIONS = {
     commits: ['커밋'],
     Markdown: ['마크다운', '가격 인하'],
     markdown: ['마크다운', '가격 인하'],
+    Repo: ['저장소', '레포'],
+    Repos: ['저장소', '레포'],
+    repo: ['저장소', '레포'],
+    repos: ['저장소', '레포'],
     Terminal: ['터미널'],
     Terminals: ['터미널'],
     terminal: ['터미널'],
@@ -144,6 +152,10 @@ export const BRAND_MISTRANSLATIONS = {
     commits: ['提交'],
     Markdown: ['降价'],
     markdown: ['降价'],
+    Repo: ['存储库', '仓库', '回购协议', '回购'],
+    Repos: ['存储库', '仓库', '回购协议', '回购'],
+    repo: ['存储库', '仓库', '回购协议', '回购'],
+    repos: ['存储库', '仓库', '回购协议', '回购'],
     Terminal: ['终端', '端子'],
     Terminals: ['终端', '端子'],
     terminal: ['终端', '端子'],
@@ -178,6 +190,10 @@ export const BRAND_MISTRANSLATIONS = {
     commits: ['コミット'],
     Markdown: ['マークダウン'],
     markdown: ['マークダウン'],
+    Repo: ['リポジトリ', 'リポ'],
+    Repos: ['リポジトリ', 'リポ'],
+    repo: ['リポジトリ', 'リポ'],
+    repos: ['リポジトリ', 'リポ'],
     Terminal: ['ターミナル', '端子'],
     Terminals: ['ターミナル', '端子'],
     terminal: ['ターミナル', '端子'],
@@ -204,7 +220,11 @@ export const BRAND_MISTRANSLATIONS = {
     commit: ['confirmación', 'confirmar', 'comprometerse', 'compromiso'],
     commits: ['confirmaciones', 'compromisos'],
     Markdown: ['Reducción', 'reducción', 'Rebaja', 'rebaja', 'rebajas'],
-    markdown: ['reducción', 'rebaja', 'rebajas']
+    markdown: ['reducción', 'rebaja', 'rebajas'],
+    Repo: ['Repositorio', 'repositorio'],
+    Repos: ['Repositorios', 'repositorios'],
+    repo: ['repositorio'],
+    repos: ['repositorios']
   }
 }
 
@@ -226,6 +246,10 @@ const CJK_LATIN_SPACED_TERMS = [
   'agent',
   'Markdown',
   'markdown',
+  'Repos',
+  'Repo',
+  'repos',
+  'repo',
   'Commits',
   'Commit',
   'commits',
@@ -256,6 +280,17 @@ export function shouldPreserveEnglishValue(enValue, key = '') {
   return NEVER_TRANSLATE_VALUES.has(enValue)
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function includesPreservedLatinTerm(value, term) {
+  if (!/^[A-Za-z_]+$/.test(term)) {
+    return value.includes(term)
+  }
+  return new RegExp(`(^|[^A-Za-z_])${escapeRegExp(term)}($|[^A-Za-z_])`).test(value)
+}
+
 function applyBrandMistranslationFixes(enValue, localeValue, locale) {
   let result = localeValue
   const mistranslations = BRAND_MISTRANSLATIONS[locale] ?? {}
@@ -266,7 +301,7 @@ function applyBrandMistranslationFixes(enValue, localeValue, locale) {
     if (!enValue.includes(brand)) {
       continue
     }
-    if (result.includes(brand)) {
+    if (includesPreservedLatinTerm(result, brand)) {
       continue
     }
     for (const wrong of wrongForms) {

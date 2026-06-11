@@ -44,5 +44,21 @@ describe('locale-translation-policy es round 5', () => {
         locale: 'es'
       })
     ).toBe('mensaje de Commit')
+    expect(
+      repairTranslatedValue({
+        key: 'auto.components.workspace.cleanup.WorkspaceCleanupDialog.0b1766738a',
+        enValue: 'Repo',
+        localeValue: 'repositorio',
+        locale: 'es'
+      })
+    ).toBe('Repo')
+    expect(
+      repairTranslatedValue({
+        key: 'auto.components.sidebar.add.repo.local.start.actions.fb4fc5380e',
+        enValue: 'Local project, Git repo, or folder with many repos',
+        localeValue: 'Proyecto local, repositorio de Git o carpeta con muchos repositorios',
+        locale: 'es'
+      })
+    ).toBe('Proyecto local, repo de Git o carpeta con muchos repos')
   })
 })

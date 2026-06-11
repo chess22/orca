@@ -117,5 +117,21 @@ describe('locale-translation-policy ko round 5', () => {
         locale: 'ko'
       })
     ).toBe('푸시되지 않은 commits')
+    expect(
+      repairTranslatedValue({
+        key: 'auto.components.workspace.cleanup.WorkspaceCleanupDialog.0b1766738a',
+        enValue: 'Repo',
+        localeValue: '레포',
+        locale: 'ko'
+      })
+    ).toBe('Repo')
+    expect(
+      repairTranslatedValue({
+        key: 'auto.components.sidebar.add.repo.local.start.actions.fb4fc5380e',
+        enValue: 'Local project, Git repo, or folder with many repos',
+        localeValue: '로컬 프로젝트, Git 저장소 또는 저장소가 많은 폴더',
+        locale: 'ko'
+      })
+    ).toBe('로컬 프로젝트, Git repo 또는 repos가 많은 폴더')
   })
 })

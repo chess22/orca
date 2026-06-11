@@ -187,6 +187,15 @@ export const ZH_VALUE_OVERRIDES = {
     '每个已连接的 Linear 工作区都有一个由活动运行时存储的密钥。全权限密钥可覆盖密钥所有者可访问的所有团队；受限密钥可随时更换。',
   'Show Linear in the Tasks source picker and sidebar shortcuts.':
     '在任务源选择器和侧边栏快捷方式中显示 Linear。',
+  'Local project, Git repo, or folder with many repos':
+    '本地项目、Git repo 或包含多个 repos 的文件夹',
+  'Staged Changes': '已暂存的更改',
+  Changes: '更改',
+  'Untracked Files': '未跟踪文件',
+  'Split Up': '向上拆分',
+  'Split Down': '向下拆分',
+  'Split Left': '向左拆分',
+  'Split Right': '向右拆分',
   'Split Terminal Down': '向下拆分 Terminal',
   'Split Terminal Right': '向右拆分 Terminal',
   'Optional account switching for Claude while preserving shared chat context.':

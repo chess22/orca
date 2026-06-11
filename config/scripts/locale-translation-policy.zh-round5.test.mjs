@@ -217,4 +217,23 @@ describe('locale-translation-policy zh round 5', () => {
       })
     ).toBe('no_proxy')
   })
+
+  it('keeps repo terminology in English', () => {
+    expect(
+      repairTranslatedValue({
+        key: 'auto.components.workspace.cleanup.WorkspaceCleanupDialog.0b1766738a',
+        enValue: 'Repo',
+        localeValue: '回购协议',
+        locale: 'zh'
+      })
+    ).toBe('Repo')
+    expect(
+      repairTranslatedValue({
+        key: 'auto.components.sidebar.add.repo.local.start.actions.fb4fc5380e',
+        enValue: 'Local project, Git repo, or folder with many repos',
+        localeValue: '本地项目、Git 存储库或包含多个存储库的文件夹',
+        locale: 'zh'
+      })
+    ).toBe('本地项目、Git repo 或包含多个 repos 的文件夹')
+  })
 })
