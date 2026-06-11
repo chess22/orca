@@ -764,7 +764,7 @@ export default function ChecksPanel(): React.JSX.Element {
             connectionId: context.connectionId
           },
           {
-            base: stripBaseRef(seed.base.trim()),
+            base: stripBaseRef((seed.base ?? '').trim()),
             title: seed.title,
             body: seed.body,
             draft: seed.draft

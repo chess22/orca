@@ -1,10 +1,17 @@
 import type { HostedReviewCreationEligibility } from '../../../../shared/hosted-review'
+import { normalizeHostedReviewBaseRef } from '../../../../shared/hosted-review-refs'
 
 export function resolveChecksPanelHostedReviewBaseRef(input: {
   worktreeBaseRef?: string | null
   repoBaseRef?: string | null
 }): string | null {
-  return input.worktreeBaseRef?.trim() || input.repoBaseRef?.trim() || null
+  const worktreeBaseRef = normalizeChecksPanelHostedReviewBaseRef(input.worktreeBaseRef)
+  return worktreeBaseRef || normalizeChecksPanelHostedReviewBaseRef(input.repoBaseRef)
+}
+
+function normalizeChecksPanelHostedReviewBaseRef(ref: string | null | undefined): string | null {
+  const normalizedRef = ref ? normalizeHostedReviewBaseRef(ref) : ''
+  return normalizedRef || null
 }
 
 export function shouldOpenChecksPanelCreateComposer(input: {

@@ -22,6 +22,42 @@ describe('resolveChecksPanelHostedReviewBaseRef', () => {
       })
     ).toBe('main')
   })
+
+  it('returns null when both inputs are null', () => {
+    expect(
+      resolveChecksPanelHostedReviewBaseRef({
+        worktreeBaseRef: null,
+        repoBaseRef: null
+      })
+    ).toBe(null)
+  })
+
+  it('returns null when worktree base ref is whitespace-only', () => {
+    expect(
+      resolveChecksPanelHostedReviewBaseRef({
+        worktreeBaseRef: '   ',
+        repoBaseRef: null
+      })
+    ).toBe(null)
+  })
+
+  it('strips origin prefix from the worktree base ref', () => {
+    expect(
+      resolveChecksPanelHostedReviewBaseRef({
+        worktreeBaseRef: 'origin/main',
+        repoBaseRef: 'develop'
+      })
+    ).toBe('main')
+  })
+
+  it('strips upstream prefix from the repo base ref', () => {
+    expect(
+      resolveChecksPanelHostedReviewBaseRef({
+        worktreeBaseRef: null,
+        repoBaseRef: 'upstream/develop'
+      })
+    ).toBe('develop')
+  })
 })
 
 describe('shouldOpenChecksPanelCreateComposer', () => {
@@ -57,5 +93,56 @@ describe('shouldOpenChecksPanelCreateComposer', () => {
         }
       })
     ).toBe(true)
+  })
+
+  it('does not open when an active review exists', () => {
+    expect(
+      shouldOpenChecksPanelCreateComposer({
+        activeReview: { provider: 'github', number: 123 },
+        isFolder: false,
+        branch: 'feature/test',
+        hostedReviewCreation: {
+          provider: 'github',
+          review: null,
+          canCreate: true,
+          blockedReason: null,
+          nextAction: null
+        }
+      })
+    ).toBe(false)
+  })
+
+  it('does not open for folder repos', () => {
+    expect(
+      shouldOpenChecksPanelCreateComposer({
+        activeReview: null,
+        isFolder: true,
+        branch: 'feature/test',
+        hostedReviewCreation: {
+          provider: 'github',
+          review: null,
+          canCreate: true,
+          blockedReason: null,
+          nextAction: null
+        }
+      })
+    ).toBe(false)
+  })
+
+  it('does not open when branch is empty', () => {
+    expect(
+      shouldOpenChecksPanelCreateComposer({
+        activeReview: null,
+        isFolder: false,
+        branch: '',
+        hostedReviewCreation: {
+          provider: 'github',
+          review: null,
+          canCreate: true,
+          blockedReason: null,
+          nextAction: null
+        }
+      })
+    ).toBe(false)
   })
 })
