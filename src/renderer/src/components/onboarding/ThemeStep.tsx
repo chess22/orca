@@ -4,12 +4,12 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { track } from '@/lib/telemetry'
 import { useMountedRef } from '@/hooks/useMountedRef'
+import { GhosttyDiscoveryRow } from './GhosttyDiscoveryRow'
 import type {
   DiscoveryStatusEmitted,
   GhosttyImportPreview,
   GlobalSettings
 } from '../../../../shared/types'
-import { GhosttyDiscoveryRow } from './ThemeStepGhosttyDiscoveryRow'
 import { translate } from '@/i18n/i18n'
 
 type ThemeStepProps = {

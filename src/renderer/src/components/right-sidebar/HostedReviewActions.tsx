@@ -19,9 +19,12 @@ import type { PRInfo, Repo, Worktree } from '../../../../shared/types'
 import type { GitHubPRMergeMethod } from '../../../../shared/types'
 import { resolveGitHubPRMergeMethods } from '../../../../shared/github-pr-merge-methods'
 import { runWorktreeDelete } from '../sidebar/delete-worktree-flow'
-import { HostedReviewDeleteWorkspaceButton } from './HostedReviewDeleteWorkspaceButton'
-import { HostedReviewReopenButton } from './HostedReviewReopenButton'
 import { presentGitLabMRMergeState } from './gitlab-mr-merge-state'
+import {
+  ClosedReviewActions,
+  HostedReviewActionError,
+  MergedReviewActions
+} from './HostedReviewStateActions'
 import { translate } from '@/i18n/i18n'
 
 type HostedReviewActionInfo = Pick<
@@ -371,30 +374,27 @@ export default function HostedReviewActions({
             </DropdownMenu>
           </div>
         </TooltipProvider>
-        {actionError && <div className="text-[10px] text-rose-500 break-words">{actionError}</div>}
+        <HostedReviewActionError message={actionError} />
       </div>
     )
   }
 
   if (review.state === 'closed') {
     return (
-      <div className="space-y-1.5">
-        <HostedReviewReopenButton
-          label={shortLabel}
-          reopening={stateUpdating === 'open'}
-          disabled={isUpdatingReviewState}
-          onReopen={() => void handleReopenReview()}
-        />
-        {actionError && <div className="text-[10px] text-rose-500 break-words">{actionError}</div>}
-      </div>
+      <ClosedReviewActions
+        shortLabel={shortLabel}
+        stateUpdating={stateUpdating}
+        actionError={actionError}
+        onReopenReview={() => void handleReopenReview()}
+      />
     )
   }
 
   if (review.state === 'merged') {
     return (
-      <HostedReviewDeleteWorkspaceButton
-        deleting={isDeletingWorktree}
-        onDelete={handleDeleteWorktree}
+      <MergedReviewActions
+        isDeletingWorktree={isDeletingWorktree}
+        onDeleteWorktree={handleDeleteWorktree}
       />
     )
   }
