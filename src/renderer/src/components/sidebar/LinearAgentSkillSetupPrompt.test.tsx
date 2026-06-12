@@ -4,7 +4,10 @@ import { act, type ComponentProps, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { CliInstallStatus } from '../../../../shared/cli-install-types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { LinearAgentSkillSetupPrompt } from './LinearAgentSkillSetupPrompt'
+import {
+  LinearAgentSkillSetupPrompt,
+  _linearAgentSkillSetupPromptInternalsForTests
+} from './LinearAgentSkillSetupPrompt'
 
 const HOST_DISMISS_STORAGE_KEY = 'orca.linearTicketsSkill.setupDismissed.host'
 const FEDORA_DISMISS_STORAGE_KEY = 'orca.linearTicketsSkill.setupDismissed.wsl.Fedora'
@@ -121,6 +124,7 @@ describe('LinearAgentSkillSetupPrompt', () => {
     mocks.ensureWslCli.mockClear()
     mocks.panelProps.length = 0
     window.localStorage.clear()
+    _linearAgentSkillSetupPromptInternalsForTests.resetSessionSnoozes()
     Object.defineProperty(window, 'api', {
       configurable: true,
       value: {
@@ -142,6 +146,7 @@ describe('LinearAgentSkillSetupPrompt', () => {
     container?.remove()
     container = null
     window.localStorage.clear()
+    _linearAgentSkillSetupPromptInternalsForTests.resetSessionSnoozes()
     Reflect.deleteProperty(window, 'api')
   })
 
@@ -188,7 +193,7 @@ describe('LinearAgentSkillSetupPrompt', () => {
     expect(rendered.textContent).not.toContain('Set up Linear agent skill')
   })
 
-  it('keeps remote dismissal session-local and uses remote-safe copy', async () => {
+  it('persists remote dismissal and uses remote-safe copy', async () => {
     const rendered = await renderPrompt({
       linked: true,
       remote: true,
@@ -220,7 +225,7 @@ describe('LinearAgentSkillSetupPrompt', () => {
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(window.localStorage.getItem(HOST_DISMISS_STORAGE_KEY)).toBeNull()
+    expect(window.localStorage.getItem(HOST_DISMISS_STORAGE_KEY)).toBe('1')
     expect(rendered.textContent).not.toContain('Set up Linear agent skill')
   })
 
@@ -346,5 +351,39 @@ describe('LinearAgentSkillSetupPrompt', () => {
     expect(mocks.ensureCli).toHaveBeenCalledWith(
       expect.objectContaining({ onStatusChange: expect.any(Function) })
     )
+  })
+
+  it('auto-opens as a modal-only prompt and session-snoozes when closed', async () => {
+    await renderPrompt({ linked: true, remote: false, surface: 'modal' })
+
+    expect(container?.textContent).not.toContain('Set up Linear agent skill')
+    expect(document.body.textContent).toContain('Install Linear ticket access')
+    expect(document.body.textContent).toContain(
+      'Install the Linear skill so agents can read linked Linear tickets through the Orca CLI.'
+    )
+
+    const notNowButton = Array.from(document.body.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Not now'
+    )
+    await act(async () => {
+      notNowButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(window.localStorage.getItem(HOST_DISMISS_STORAGE_KEY)).toBeNull()
+    expect(document.body.textContent).not.toContain('Install Linear ticket access')
+  })
+
+  it('permanently dismisses the modal-only prompt when requested', async () => {
+    await renderPrompt({ linked: true, remote: false, surface: 'modal' })
+
+    const dismissButton = Array.from(document.body.querySelectorAll('button')).find(
+      (button) => button.textContent === "Don't show again"
+    )
+    await act(async () => {
+      dismissButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(window.localStorage.getItem(HOST_DISMISS_STORAGE_KEY)).toBe('1')
+    expect(document.body.textContent).not.toContain('Install Linear ticket access')
   })
 })

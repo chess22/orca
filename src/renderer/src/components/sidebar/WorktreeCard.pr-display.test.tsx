@@ -235,7 +235,7 @@ describe('WorktreeCard linked PR display', () => {
       <WorktreeCard
         worktree={makeWorktree({ linkedLinearIssue: 'ENG-123' })}
         repo={makeRepo()}
-        isActive={false}
+        isActive
       />
     )
 
