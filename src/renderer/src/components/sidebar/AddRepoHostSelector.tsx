@@ -18,17 +18,6 @@ type AddRepoHostSelectorProps = {
   onSelectHost: (hostId: ExecutionHostId) => void
 }
 
-function getHostKindLabel(host: SidebarHostOption): string {
-  switch (host.kind) {
-    case 'local':
-      return translate('auto.components.sidebar.AddRepoHostSelector.local', 'Local')
-    case 'ssh':
-      return translate('auto.components.sidebar.AddRepoHostSelector.ssh', 'SSH')
-    case 'runtime':
-      return translate('auto.components.sidebar.AddRepoHostSelector.runtime', 'Server')
-  }
-}
-
 function getHostStatusDetail(host: SidebarHostOption): string {
   if (host.compatibility?.kind === 'blocked') {
     return describeRuntimeCompatBlock(host.compatibility)
@@ -112,9 +101,6 @@ export function AddRepoHostSelector({
                     <span className="min-w-0 flex-1">
                       <span className="flex min-w-0 items-center gap-2">
                         <span className="truncate font-medium">{host.label}</span>
-                        <span className="shrink-0 rounded-sm border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                          {getHostKindLabel(host)}
-                        </span>
                       </span>
                       <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
                         {getHostStatusDetail(host)}
