@@ -22,7 +22,6 @@ import CacheTimer, { usePromptCacheCountdownStartedAt } from './CacheTimer'
 import WorktreeContextMenu from './WorktreeContextMenu'
 import { SshDisconnectedDialog } from './SshDisconnectedDialog'
 import { AutoRenameFailedDialog } from './AutoRenameFailedDialog'
-import { LinearAgentSkillSetupPrompt } from './LinearAgentSkillSetupPrompt'
 import WorktreeCardAgents from './WorktreeCardAgents'
 import { WorktreeCardStatusSlot } from './WorktreeCardStatusSlot'
 import { cn } from '@/lib/utils'
@@ -183,7 +182,6 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const fetchLinearIssue = useAppStore((s) => s.fetchLinearIssue)
   const cardProps = useAppStore((s) => s.worktreeCardProperties)
   const compactCards = settings?.compactWorktreeCards === true
-  const activeRuntimeEnvironmentId = settings?.activeRuntimeEnvironmentId?.trim() || null
   const handleEditIssue = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
@@ -1254,14 +1252,6 @@ const WorktreeCard = React.memo(function WorktreeCard({
             </span>
           </div>
         )}
-
-        {!compactCards && worktree.linkedLinearIssue ? (
-          <LinearAgentSkillSetupPrompt
-            linked
-            remote={Boolean(repo?.connectionId || activeRuntimeEnvironmentId)}
-            settings={settings}
-          />
-        ) : null}
 
         {/* Why: inline agent list. Gated on the 'inline-agents' card
              property so users can hide it. Layout coupling: this block
