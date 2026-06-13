@@ -84,11 +84,14 @@ function getProjectDetail(
   const selectedSource = getSelectedSource(group, selected)
   const hostLabel = getRepoHostLabel?.(selectedSource)?.trim()
   if (group.sources.length > 1) {
-    // Why: the checked nested row already names the active source host; the
-    // project row should stay a project summary, not repeat the same label.
-    return translate('auto.components.task.project.source.combobox.hostCount', '{{value0}} hosts', {
-      value0: String(group.sources.length)
-    })
+    const hostCount = translate(
+      'auto.components.task.project.source.combobox.hostCount',
+      '{{value0}} hosts',
+      {
+        value0: String(group.sources.length)
+      }
+    )
+    return hostLabel ? `${hostLabel} · ${hostCount}` : hostCount
   }
   return hostLabel ? `${hostLabel} · ${selectedSource.path}` : selectedSource.path
 }
