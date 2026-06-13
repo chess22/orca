@@ -1631,7 +1631,8 @@ function SourceControlInner(): React.JSX.Element {
             worktreePath,
             true,
             connectionId,
-            activeWorktree?.pushTarget
+            activeWorktree?.pushTarget,
+            { runtimeTargetSettings: activeRepoSettings }
           )
           return
         }
@@ -1643,7 +1644,9 @@ function SourceControlInner(): React.JSX.Element {
             false,
             connectionId,
             activeWorktree?.pushTarget,
-            forceWithLease ? { forceWithLease: true } : undefined
+            forceWithLease
+              ? { forceWithLease: true, runtimeTargetSettings: activeRepoSettings }
+              : { runtimeTargetSettings: activeRepoSettings }
           )
           return
         }
@@ -1654,12 +1657,20 @@ function SourceControlInner(): React.JSX.Element {
             false,
             connectionId,
             activeWorktree?.pushTarget,
-            { forceWithLease: true }
+            { forceWithLease: true, runtimeTargetSettings: activeRepoSettings }
           )
           return
         }
         if (kind === 'pull') {
-          await pullBranch(activeWorktreeId, worktreePath, connectionId, activeWorktree?.pushTarget)
+          await pullBranch(
+            activeWorktreeId,
+            worktreePath,
+            connectionId,
+            activeWorktree?.pushTarget,
+            {
+              runtimeTargetSettings: activeRepoSettings
+            }
+          )
           return
         }
         if (kind === 'fast_forward') {
@@ -1667,7 +1678,8 @@ function SourceControlInner(): React.JSX.Element {
             activeWorktreeId,
             worktreePath,
             connectionId,
-            activeWorktree?.pushTarget
+            activeWorktree?.pushTarget,
+            { runtimeTargetSettings: activeRepoSettings }
           )
           return
         }
@@ -1676,7 +1688,10 @@ function SourceControlInner(): React.JSX.Element {
             activeWorktreeId,
             worktreePath,
             connectionId,
-            activeWorktree?.pushTarget
+            activeWorktree?.pushTarget,
+            {
+              runtimeTargetSettings: activeRepoSettings
+            }
           )
           return
         }
@@ -1689,11 +1704,14 @@ function SourceControlInner(): React.JSX.Element {
             worktreePath,
             effectiveBaseRef,
             connectionId,
-            activeWorktree?.pushTarget
+            activeWorktree?.pushTarget,
+            { runtimeTargetSettings: activeRepoSettings }
           )
           return
         }
-        await syncBranch(activeWorktreeId, worktreePath, connectionId, activeWorktree?.pushTarget)
+        await syncBranch(activeWorktreeId, worktreePath, connectionId, activeWorktree?.pushTarget, {
+          runtimeTargetSettings: activeRepoSettings
+        })
         setRemoteActionErrors((prev) => ({ ...prev, [activeWorktreeId]: null }))
       } catch (error) {
         // Why: remote action failures are surfaced by editor-slice actions to keep
@@ -1716,6 +1734,7 @@ function SourceControlInner(): React.JSX.Element {
       }
     },
     [
+      activeRepoSettings,
       activeWorktree?.pushTarget,
       activeWorktreeId,
       fetchBranch,
@@ -3159,9 +3178,11 @@ function SourceControlInner(): React.JSX.Element {
       activeWorktreeId,
       worktreePath,
       connectionId,
-      activeWorktree?.pushTarget
+      activeWorktree?.pushTarget,
+      { runtimeTargetSettings: activeRepoSettings }
     )
   }, [
+    activeRepoSettings,
     activeWorktree?.pushTarget,
     activeWorktreeId,
     fetchUpstreamStatus,
