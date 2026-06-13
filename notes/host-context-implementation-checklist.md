@@ -34,8 +34,8 @@ Done means: a new agent can read the shared types and understand exactly where w
 - [~] Update GitHub cache keys to include provider identity and source host/runtime identity so two hosts with different GitHub accounts cannot collide.
 - [x] Update GitLab IPC/preload/main handlers to accept explicit project/source context instead of path-only selectors.
 - [~] Guard or retire GitLab path-only fallbacks where they can mutate or fetch from the wrong host.
-- [~] Update Linear routing to use an explicit source account/workspace context instead of settings.activeRuntimeEnvironmentId.
-- [~] Update Jira routing to use an explicit source account/site/project context instead of settings.activeRuntimeEnvironmentId.
+- [x] Update Linear routing to use an explicit source account/workspace context instead of settings.activeRuntimeEnvironmentId.
+- [x] Update Jira routing to use an explicit source account/site/project context instead of settings.activeRuntimeEnvironmentId.
 - [~] Add provider diagnostics that show which host/account/site a task source is using.
 - [~] Add error states for unavailable source hosts, missing provider auth, unsupported provider on host, and version-skewed remote servers.
 
@@ -226,3 +226,4 @@ Done means: reviewers and future agents can understand the vision, implementatio
 - [x] 2026-06-12: Completed source-context unit coverage by adding GitLab/Linear/Jira provider identity cache-scope serialization tests and rerunning shared source-context, GitHub source/cache routing, UI open-task, and task-navigation history suites (6 files / 261 tests) plus targeted oxlint.
 - [x] 2026-06-12: Reconciled Add Project host-selection tests with the disabled-host UX: disconnected SSH hosts and blocked runtime hosts remain visible but disabled, the hook falls back to Local Mac instead of selecting a disconnected SSH host, and selection handlers ignore unavailable hosts; verified Add Project host selector/selection/dialog, sidebar host options, and execution-host registry tests (5 files / 34 tests) plus targeted oxlint.
 - [x] 2026-06-12: Re-verified project-first drag/reorder behavior across workspace manual order, drag units, workspace-board pointer drops, host-section order/rows, repo reorder host splitting, and project-header drag helpers; 9 files / 62 tests passed plus targeted oxlint.
+- [x] 2026-06-12: Routed Linear and Jira Tasks reads, create flows, list/detail mutations, comments, metadata, and New Workspace handoff through explicit account-backed `TaskSourceContext` while preserving legacy focused-runtime cache keys for old callers; verified with Linear/Jira source-routing regressions, focused Linear/Jira slice tests (2 files / 48 tests), targeted oxlint, `git diff --check`, and full `pnpm run typecheck`.

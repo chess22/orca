@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { create } from 'zustand'
 import type { AppState } from '../types'
 import type { JiraConnectionStatus, JiraIssue, JiraViewer } from '../../../../shared/types'
+import type { TaskSourceContext } from '../../../../shared/task-source-context'
 import { credentialDecryptionMessage } from '../../../../shared/integration-credential-errors'
 import { createJiraSlice } from './jira'
 
@@ -72,6 +73,19 @@ function issue(key: string): JiraIssue {
   }
 }
 
+function jiraSourceContext(environmentId: string, siteId = 'site-1'): TaskSourceContext {
+  return {
+    kind: 'task-source',
+    provider: 'jira',
+    projectId: 'logical-project',
+    hostId: `runtime:${environmentId}`,
+    providerIdentity: {
+      provider: 'jira',
+      siteId
+    }
+  }
+}
+
 describe('createJiraSlice runtime context', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -115,6 +129,25 @@ describe('createJiraSlice runtime context', () => {
     localIssue.resolve({ ...issue('ORC-1'), title: 'Local issue' })
     await localRequest
     expect(store.getState().jiraIssueCache['selected::ORC-1']?.data?.title).toBe('Remote issue')
+  })
+
+  it('routes explicit source reads through their source context when focused runtime changes', async () => {
+    const store = createTestStore()
+    store.setState({
+      jiraStatus: { connected: true, viewer: null, selectedSiteId: 'site-1' }
+    })
+    const sourceContext = jiraSourceContext('source-runtime')
+    const sourceResult = deferred<JiraIssue[]>()
+    jiraListIssues.mockReturnValueOnce(sourceResult.promise)
+
+    const request = store.getState().listJiraIssues('assigned', 30, { sourceContext })
+    store.setState({ settings: { activeRuntimeEnvironmentId: 'focused-runtime' } as never })
+
+    sourceResult.resolve([{ ...issue('ALP-1'), title: 'Source issue' }])
+    await expect(request).resolves.toMatchObject([{ key: 'ALP-1', title: 'Source issue' }])
+    expect(jiraListIssues).toHaveBeenCalledWith(sourceContext, 'assigned', 30, 'site-1')
+    expect(Object.values(store.getState().jiraSearchCache)).toHaveLength(1)
+    expect(store.getState().jiraSearchCache['site-1::list::assigned::30']).toBeUndefined()
   })
 
   it('returns a failed Jira connect result when the active runtime changes before completion', async () => {

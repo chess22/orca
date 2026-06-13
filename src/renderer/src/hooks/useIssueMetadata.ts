@@ -6,15 +6,16 @@ import { callRuntimeRpc, getActiveRuntimeTarget } from '@/runtime/runtime-rpc-cl
 import {
   linearTeamLabels,
   linearTeamMembers,
-  linearTeamStates
+  linearTeamStates,
+  type RuntimeLinearSettings
 } from '@/runtime/runtime-linear-client'
 import type {
   GitHubAssignableUser,
-  GlobalSettings,
   LinearWorkflowState,
   LinearLabel,
   LinearMember
 } from '../../../shared/types'
+import { getTaskSourceRuntimeSettings } from '../../../shared/task-source-context'
 import {
   clearMetadataRequestStore,
   createMetadataRequestStore,
@@ -193,10 +194,12 @@ const linearMemberStore = createMetadataRequestStore<LinearMember[]>()
 
 function linearMetadataCacheKey(
   teamId: string,
-  settings: Pick<GlobalSettings, 'activeRuntimeEnvironmentId'> | null | undefined,
+  settings: RuntimeLinearSettings,
   workspaceId?: string | null
 ): string {
-  const target = getActiveRuntimeTarget(settings)
+  const runtimeSettings =
+    settings && 'kind' in settings ? getTaskSourceRuntimeSettings(settings) : settings
+  const target = getActiveRuntimeTarget(runtimeSettings)
   const workspaceKey = workspaceId ?? 'selected'
   return target.kind === 'environment'
     ? `runtime:${target.environmentId}:${workspaceKey}:${teamId}`
@@ -216,7 +219,7 @@ export function clearGitHubMetadataCache(): void {
 
 export function useTeamStates(
   teamId: string | null,
-  settings?: Pick<GlobalSettings, 'activeRuntimeEnvironmentId'> | null,
+  settings?: RuntimeLinearSettings,
   workspaceId?: string | null
 ): MetadataState<LinearWorkflowState[]> {
   const [state, setState] = useState<MetadataState<LinearWorkflowState[]>>({
@@ -278,7 +281,7 @@ export function useTeamStates(
 
 export function useTeamLabels(
   teamId: string | null,
-  settings?: Pick<GlobalSettings, 'activeRuntimeEnvironmentId'> | null,
+  settings?: RuntimeLinearSettings,
   workspaceId?: string | null
 ): MetadataState<LinearLabel[]> {
   const [state, setState] = useState<MetadataState<LinearLabel[]>>({
@@ -338,7 +341,7 @@ export function useTeamLabels(
 
 export function useTeamMembers(
   teamId: string | null,
-  settings?: Pick<GlobalSettings, 'activeRuntimeEnvironmentId'> | null,
+  settings?: RuntimeLinearSettings,
   workspaceId?: string | null
 ): MetadataState<LinearMember[]> {
   const [state, setState] = useState<MetadataState<LinearMember[]>>({

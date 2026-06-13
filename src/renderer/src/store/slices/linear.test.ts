@@ -12,6 +12,7 @@ import type {
   LinearTeam,
   LinearViewer
 } from '../../../../shared/types'
+import type { TaskSourceContext } from '../../../../shared/task-source-context'
 import { credentialDecryptionMessage } from '../../../../shared/integration-credential-errors'
 import { createLinearSlice } from './linear'
 
@@ -86,6 +87,22 @@ function team(id: string): LinearTeam {
 
 function project(id: string): LinearProjectSummary {
   return { id, name: id, workspaceId: 'workspace-1', workspaceName: 'Workspace' }
+}
+
+function linearSourceContext(
+  environmentId: string,
+  workspaceId = 'workspace-1'
+): TaskSourceContext {
+  return {
+    kind: 'task-source',
+    provider: 'linear',
+    projectId: 'logical-project',
+    hostId: `runtime:${environmentId}`,
+    providerIdentity: {
+      provider: 'linear',
+      workspaceId
+    }
+  }
 }
 
 function deferred<T>() {
@@ -750,6 +767,31 @@ describe('createLinearSlice caching', () => {
 
     expect(linearListTeams).toHaveBeenCalledTimes(1)
     expect(store.getState().getCachedLinearTeams('workspace-1')).toMatchObject([{ id: 'team-1' }])
+  })
+
+  it('routes explicit source reads through their source context when focused runtime changes', async () => {
+    const store = createTestStore()
+    store.setState({
+      linearStatus: { connected: true, viewer: null, selectedWorkspaceId: 'workspace-1' }
+    })
+    const sourceContext = linearSourceContext('source-runtime')
+    const sourceResult = deferred<LinearCollectionResult<LinearIssue>>()
+    linearListIssues.mockReturnValueOnce(sourceResult.promise)
+
+    const request = store.getState().listLinearIssues('all', 36, { sourceContext })
+    store.setState({ settings: { activeRuntimeEnvironmentId: 'focused-runtime' } as never })
+
+    sourceResult.resolve({ items: [issue('LIN-SOURCE')] })
+    await expect(request).resolves.toMatchObject({ items: [{ id: 'LIN-SOURCE' }] })
+    expect(linearListIssues).toHaveBeenCalledWith(sourceContext, 'all', 36, 'workspace-1')
+    expect(
+      store
+        .getState()
+        .getCachedLinearIssues({ kind: 'list', filter: 'all', limit: 36 }, { sourceContext })
+    ).toMatchObject({ items: [{ id: 'LIN-SOURCE' }] })
+    expect(
+      store.getState().getCachedLinearIssues({ kind: 'list', filter: 'all', limit: 36 })
+    ).toBeNull()
   })
 
   it('patches issue-cache entries keyed by workspace-qualified ids', () => {
