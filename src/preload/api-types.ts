@@ -1314,10 +1314,15 @@ export type PreloadApi = {
         sourceContext?: TaskSourceContext | null
       }
     ) => Promise<GitHubCommentResult>
-    listLabels: (args: { repoPath: string; repoId?: string }) => Promise<string[]>
+    listLabels: (args: {
+      repoPath: string
+      repoId?: string
+      sourceContext?: TaskSourceContext | null
+    }) => Promise<string[]>
     listAssignableUsers: (args: {
       repoPath: string
       repoId?: string
+      sourceContext?: TaskSourceContext | null
     }) => Promise<GitHubAssignableUser[]>
     /**
      * Subscribe to local-mutation broadcasts. Used by the work-item-drawer

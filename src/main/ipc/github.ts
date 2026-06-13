@@ -939,12 +939,12 @@ export function registerGitHubHandlers(store: Store, stats: StatsCollector): voi
     }
   )
 
-  ipcMain.handle('gh:listLabels', (_event, args: { repoPath: string }) => {
+  ipcMain.handle('gh:listLabels', (_event, args: RepoScopedArgs) => {
     const repo = assertRegisteredRepo(args, store)
     return listLabels(repo.path, repo.issueSourcePreference, repoConnectionId(repo))
   })
 
-  ipcMain.handle('gh:listAssignableUsers', (_event, args: { repoPath: string }) => {
+  ipcMain.handle('gh:listAssignableUsers', (_event, args: RepoScopedArgs) => {
     const repo = assertRegisteredRepo(args, store)
     return listAssignableUsers(repo.path, repo.issueSourcePreference, repoConnectionId(repo))
   })
