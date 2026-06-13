@@ -41,7 +41,7 @@ function getProjectProviderIdentity(
     : null
 }
 
-function getProjectIdentityKey(repo: Pick<Repo, 'id' | 'upstream' | 'repoIcon'>): string {
+export function getProjectIdentityKey(repo: Pick<Repo, 'id' | 'upstream' | 'repoIcon'>): string {
   const identity = getProjectProviderIdentity(repo)
   if (!identity) {
     return `repo:${repo.id}`

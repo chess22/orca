@@ -1,4 +1,5 @@
 import { getRepoExecutionHostId, LOCAL_EXECUTION_HOST_ID } from '../../../shared/execution-host'
+import { getProjectIdentityKey } from '../../../shared/project-host-setup-projection'
 import type { Repo } from '../../../shared/types'
 
 export function getDefaultTaskRepoSelection(repos: readonly Repo[]): Set<string> {
@@ -51,9 +52,7 @@ export function normalizeTaskRepoSelection(
 }
 
 export function getTaskRepoProjectKey(repo: Repo): string {
-  const owner = typeof repo.upstream?.owner === 'string' ? repo.upstream.owner.trim() : ''
-  const name = typeof repo.upstream?.repo === 'string' ? repo.upstream.repo.trim() : ''
-  return owner && name ? `github:${owner.toLowerCase()}/${name.toLowerCase()}` : `repo:${repo.id}`
+  return getProjectIdentityKey(repo)
 }
 
 function compareTaskProjectPickerCandidate(

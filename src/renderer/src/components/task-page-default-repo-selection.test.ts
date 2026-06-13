@@ -64,6 +64,34 @@ describe('getDefaultTaskRepoSelection', () => {
 
     expect([...selection].sort()).toEqual(['local-app', 'ssh-app'])
   })
+
+  it('uses GitHub repo icon metadata to identify legacy duplicate projects', () => {
+    const selection = getDefaultTaskRepoSelection([
+      repo({
+        id: 'local-claude-swap',
+        displayName: 'claude-swap',
+        repoIcon: {
+          type: 'image',
+          src: 'https://github.com/stablyai.png?size=64',
+          source: 'github',
+          label: 'stablyai/claude-swap'
+        }
+      }),
+      repo({
+        id: 'ssh-claude-swap',
+        displayName: 'claude-swap',
+        connectionId: 'builder',
+        repoIcon: {
+          type: 'image',
+          src: 'https://github.com/stablyai.png?size=64',
+          source: 'github',
+          label: 'StablyAI/claude-swap'
+        }
+      })
+    ])
+
+    expect([...selection]).toEqual(['local-claude-swap'])
+  })
 })
 
 describe('getTaskProjectPickerRepos', () => {
@@ -104,6 +132,34 @@ describe('getTaskProjectPickerRepos', () => {
     )
 
     expect(pickerRepos.map((candidate) => candidate.id)).toEqual(['ssh-orca'])
+  })
+
+  it('collapses legacy local and SSH rows that share a GitHub repo icon identity', () => {
+    const pickerRepos = getTaskProjectPickerRepos([
+      repo({
+        id: 'local-claude-swap',
+        displayName: 'claude-swap',
+        repoIcon: {
+          type: 'image',
+          src: 'https://github.com/stablyai.png?size=64',
+          source: 'github',
+          label: 'stablyai/claude-swap'
+        }
+      }),
+      repo({
+        id: 'ssh-claude-swap',
+        displayName: 'claude-swap',
+        connectionId: 'builder',
+        repoIcon: {
+          type: 'image',
+          src: 'https://github.com/stablyai.png?size=64',
+          source: 'github',
+          label: 'StablyAI/claude-swap'
+        }
+      })
+    ])
+
+    expect(pickerRepos.map((candidate) => candidate.id)).toEqual(['local-claude-swap'])
   })
 })
 
