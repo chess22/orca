@@ -3616,8 +3616,8 @@
           "395e541d5d": "状态",
           "34f03eb0de": "董事会设置",
           "26cbc92150": "工作区板设置",
-          "87d24a0c2f": "Sync task status from workspace board",
-          "4c2eaa78cc": "Moving a linked workspace updates its task status when a matching workflow state exists."
+          "87d24a0c2f": "Sync board and issue status",
+          "4c2eaa78cc": "Moving a linked workspace updates its Linear issue status when a matching workflow state exists."
         },
         "WorkspaceKanbanStatusLane": {
           "8ad104642b": "空的",

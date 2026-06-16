@@ -3635,8 +3635,8 @@
           "395e541d5d": "Estados",
           "34f03eb0de": "Configuración del tablero",
           "26cbc92150": "Configuración del tablero del espacio de trabajo",
-          "87d24a0c2f": "Sync task status from workspace board",
-          "4c2eaa78cc": "Moving a linked workspace updates its task status when a matching workflow state exists."
+          "87d24a0c2f": "Sync board and issue status",
+          "4c2eaa78cc": "Moving a linked workspace updates its Linear issue status when a matching workflow state exists."
         },
         "WorkspaceKanbanStatusLane": {
           "8ad104642b": "Vacío",

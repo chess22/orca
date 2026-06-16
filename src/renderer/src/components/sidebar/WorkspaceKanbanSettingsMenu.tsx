@@ -85,13 +85,13 @@ export default function WorkspaceKanbanSettingsMenu({
               <span className="block text-[12px] font-medium leading-4 text-foreground">
                 {translate(
                   'auto.components.sidebar.WorkspaceKanbanSettingsMenu.87d24a0c2f',
-                  'Sync task status from workspace board'
+                  'Sync board and issue status'
                 )}
               </span>
               <span className="block text-[11px] leading-4 text-muted-foreground">
                 {translate(
                   'auto.components.sidebar.WorkspaceKanbanSettingsMenu.4c2eaa78cc',
-                  'Moving a linked workspace updates its task status when a matching workflow state exists.'
+                  'Moving a linked workspace updates its Linear issue status when a matching workflow state exists.'
                 )}
               </span>
             </span>
@@ -102,7 +102,7 @@ export default function WorkspaceKanbanSettingsMenu({
               }
               ariaLabel={translate(
                 'auto.components.sidebar.WorkspaceKanbanSettingsMenu.87d24a0c2f',
-                'Sync task status from workspace board'
+                'Sync board and issue status'
               )}
             />
           </div>

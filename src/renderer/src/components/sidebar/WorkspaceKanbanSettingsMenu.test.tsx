@@ -62,7 +62,7 @@ describe('WorkspaceKanbanSettingsMenu', () => {
     renderMenu(onChange)
 
     const toggle = document.querySelector<HTMLButtonElement>(
-      'button[role="switch"][aria-label="Sync task status from workspace board"]'
+      'button[role="switch"][aria-label="Sync board and issue status"]'
     )
     expect(toggle).not.toBeNull()
     expect(toggle?.getAttribute('aria-checked')).toBe('false')
