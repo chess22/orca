@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/headless'
 import { SerializeAddon } from '@xterm/addon-serialize'
 import { extractLastOscTitle } from '../../shared/agent-detection'
 import { TerminalMouseModeMirror } from './terminal-mouse-mode-mirror'
+import { parseFileUriPath } from './osc7-file-uri'
 import type { TerminalSnapshot, TerminalModes } from './types'
 
 export type HeadlessEmulatorOptions = {
@@ -46,34 +47,6 @@ const DEFAULT_SCROLLBACK = 5000
 // (main must not import renderer modules).
 const CONPTY_DA1_RESPONSE = '\x1b[?61;4c'
 const OSC_SCAN_TAIL_LIMIT = 4096
-
-function parseFileUriPath(uri: string): string | null {
-  try {
-    const url = new URL(uri)
-    if (url.protocol !== 'file:') {
-      return null
-    }
-
-    const decodedPath = decodeURIComponent(url.pathname)
-    if (process.platform !== 'win32') {
-      return decodedPath
-    }
-
-    // Why: Windows OSC-7 cwd updates can describe both drive-letter paths
-    // (`file:///C:/repo`) and UNC shares (`file://server/share/repo`). Use the
-    // hostname when present so live cwd tracking, snapshots, and restore all
-    // round-trip to a native Windows path instead of dropping the server name.
-    if (url.hostname) {
-      return `\\\\${url.hostname}${decodedPath.replace(/\//g, '\\')}`
-    }
-    if (/^\/[A-Za-z]:/.test(decodedPath)) {
-      return decodedPath.slice(1)
-    }
-    return decodedPath.replace(/\//g, '\\')
-  } catch {
-    return null
-  }
-}
 
 export class HeadlessEmulator {
   private terminal: Terminal
@@ -167,31 +140,11 @@ export class HeadlessEmulator {
       return Promise.resolve()
     }
 
-    const oscInput = this.oscScanTail + data
-    this.oscScanTail = this.extractOscScanTail(oscInput)
-    this.scanOsc7(oscInput)
-    const lastTitle = extractLastOscTitle(oscInput)
-    if (lastTitle !== null) {
-      this.lastTitle = lastTitle
-    }
     const forwardQueryReplies = opts.forwardQueryReplies === true
-    const writeSync = (this.terminal as TerminalWithSynchronousWrite)._core?.writeSync
-    if (typeof writeSync === 'function') {
-      if (forwardQueryReplies) {
-        this.queryReplyForwardingDepth += 1
-      }
-      try {
-        // Why: hidden renderer restore snapshots are requested immediately after
-        // PTY bursts; queued headless writes can snapshot half-cleared TUI rows.
-        writeSync.call((this.terminal as TerminalWithSynchronousWrite)._core, data)
-      } finally {
-        if (forwardQueryReplies) {
-          this.queryReplyForwardingDepth -= 1
-        }
-      }
-      this.mouseModes.scan(data)
+    if (this.tryWriteSync(data, { forwardQueryReplies })) {
       return Promise.resolve()
     }
+    this.scanInputForOscState(data)
     // Why the sentinel: xterm parses queued writes asynchronously, so opening
     // the window at enqueue time would leak it over earlier queued unflagged
     // chunks (seed/hydration bytes parsing while depth > 0). Write callbacks
@@ -214,6 +167,50 @@ export class HeadlessEmulator {
         resolve()
       })
     })
+  }
+
+  /** Synchronous write used by cold-restore log replay, where a snapshot is
+   *  taken immediately after the last record and queued async writes would
+   *  serialize a half-applied stream. Returns false when xterm's synchronous
+   *  write path is unavailable — callers must then abandon the replay. */
+  writeSync(data: string): boolean {
+    if (this.disposed) {
+      return false
+    }
+    return this.tryWriteSync(data)
+  }
+
+  private tryWriteSync(data: string, opts: HeadlessEmulatorWriteOptions = {}): boolean {
+    const writeSync = (this.terminal as TerminalWithSynchronousWrite)._core?.writeSync
+    if (typeof writeSync !== 'function') {
+      return false
+    }
+    this.scanInputForOscState(data)
+    const forwardQueryReplies = opts.forwardQueryReplies === true
+    if (forwardQueryReplies) {
+      this.queryReplyForwardingDepth += 1
+    }
+    // Why: hidden renderer restore snapshots are requested immediately after
+    // PTY bursts; queued headless writes can snapshot half-cleared TUI rows.
+    try {
+      writeSync.call((this.terminal as TerminalWithSynchronousWrite)._core, data)
+    } finally {
+      if (forwardQueryReplies) {
+        this.queryReplyForwardingDepth -= 1
+      }
+    }
+    this.mouseModes.scan(data)
+    return true
+  }
+
+  private scanInputForOscState(data: string): void {
+    const oscInput = this.oscScanTail + data
+    this.oscScanTail = this.extractOscScanTail(oscInput)
+    this.scanOsc7(oscInput)
+    const lastTitle = extractLastOscTitle(oscInput)
+    if (lastTitle !== null) {
+      this.lastTitle = lastTitle
+    }
   }
 
   resize(cols: number, rows: number): void {
