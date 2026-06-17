@@ -78,6 +78,7 @@ export function useEditorPanelContentState({
   const diffContentsRef = useRef(diffContents)
   diffContentsRef.current = diffContents
   const fileLoadRetryAttemptsRef = useRef<Record<string, number>>({})
+  const lastProcessedFileContentReloadNonceRef = useRef<Record<string, number>>({})
   const openFilesRef = useRef(openFiles)
   openFilesRef.current = openFiles
   const editorViewModeRef = useRef(editorViewMode)
@@ -401,6 +402,14 @@ export function useEditorPanelContentState({
     ) {
       return
     }
+    // Why: the nonce persists once bumped and is never reset, while this effect
+    // also re-fires on tab re-activation (activeFile?.id changes). Track the
+    // last nonce we actually reloaded for each file so re-activating an already
+    // reloaded tab doesn't drop cached content and refetch on every switch.
+    if (lastProcessedFileContentReloadNonceRef.current[current.id] === nonce) {
+      return
+    }
+    lastProcessedFileContentReloadNonceRef.current[current.id] = nonce
     setFileContents((prev) => {
       if (!prev[current.id]) {
         return prev

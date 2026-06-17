@@ -126,4 +126,40 @@ describe('useEditorPanelContentState', () => {
       })
     )
   })
+
+  it('does not refetch a clean file on tab re-activation while the reload nonce stays non-zero', async () => {
+    // Terminal-link opens leave a persistent non-zero fileContentReloadNonce on
+    // an already-open clean tab. Switching to another tab and back must not drop
+    // cached content and refetch — the nonce hasn't changed since the reload.
+    const fileX = createOpenFile({ id: '/repo/x.ts', filePath: '/repo/x.ts', relativePath: 'x.ts' })
+    const fileY = createOpenFile({ id: '/repo/y.ts', filePath: '/repo/y.ts', relativePath: 'y.ts' })
+    mocks.readRuntimeFileContent.mockResolvedValue({ content: 'x content', isBinary: false })
+
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+
+    // Open X with the nonce already bumped (as a terminal-link reopen leaves it).
+    const reloadedX = { ...fileX, fileContentReloadNonce: 1 }
+    await act(async () => {
+      root?.render(<HookProbe activeFile={reloadedX} openFiles={[reloadedX, fileY]} />)
+    })
+    await vi.waitFor(() => expect(latestFileContents[fileX.id]?.content).toBe('x content'))
+    const callsAfterFirstReload = mocks.readRuntimeFileContent.mock.calls.length
+
+    // Switch to Y, then back to X — the nonce on X is unchanged.
+    await act(async () => {
+      root?.render(<HookProbe activeFile={fileY} openFiles={[reloadedX, fileY]} />)
+    })
+    await act(async () => {
+      root?.render(<HookProbe activeFile={reloadedX} openFiles={[reloadedX, fileY]} />)
+    })
+
+    // X's content must stay cached; no extra read should fire for X.
+    expect(latestFileContents[fileX.id]?.content).toBe('x content')
+    const xReadCalls = mocks.readRuntimeFileContent.mock.calls.filter(
+      ([args]) => (args as { filePath?: string })?.filePath === '/repo/x.ts'
+    ).length
+    expect(xReadCalls).toBe(callsAfterFirstReload)
+  })
 })
