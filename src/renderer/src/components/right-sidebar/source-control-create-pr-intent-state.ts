@@ -75,27 +75,11 @@ export function resolveCreatePrIntentEligibility({
 }
 
 export function resolveVisibleCreatePrHeaderAction({
-  createPrHeaderAction,
-  directCreatePrAction,
-  isCreatePrIntentInFlight,
-  primaryActionKind,
-  hasBranchChanges = true
+  createPrHeaderAction
 }: {
   createPrHeaderAction: PrimaryAction | null
-  directCreatePrAction: PrimaryAction | null
-  isCreatePrIntentInFlight: boolean
-  primaryActionKind: PrimaryAction['kind']
-  hasBranchChanges?: boolean
 }): PrimaryAction | null {
-  // Why: empty-branch Create PR lives in the centered empty state, not the header.
-  if (directCreatePrAction && !hasBranchChanges) {
-    return null
-  }
-  // Why: CommitArea already mirrors in-flight Create PR intent on the primary;
-  // keeping a second spinning header button stacks redundant spinners once
-  // message generation also shows one.
-  if (isCreatePrIntentInFlight && primaryActionKind === 'create_pr_intent') {
-    return null
-  }
+  // Why: keep a stable header anchor; disable Create PR when the branch is not
+  // ready instead of hiding it and shifting the toolbar layout.
   return createPrHeaderAction
 }

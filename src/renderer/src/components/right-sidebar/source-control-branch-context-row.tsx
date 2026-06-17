@@ -141,11 +141,13 @@ export function SourceControlBranchContextRow({
           title={changeBaseTitle}
         />
       </div>
-      <span className="inline-flex shrink-0 items-center gap-1.5">
-        {stats.map((stat) => (
-          <ContextStat key={stat.key} stat={stat} />
-        ))}
-      </span>
+      {stats.length > 0 ? (
+        <span className="inline-flex shrink-0 items-center gap-1.5">
+          {stats.map((stat) => (
+            <ContextStat key={stat.key} stat={stat} />
+          ))}
+        </span>
+      ) : null}
     </div>
   )
 }

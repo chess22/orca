@@ -27,10 +27,6 @@ type SourceControlHeaderToolbarProps = {
   hostedReview: HostedReviewInfo | null
   isCreatePrIntentInFlight: boolean
   isCreatingPr: boolean
-  isDirectCreatePrInFlight?: boolean
-  showCreatePrEditDetails?: boolean
-  createPrComposerExpanded?: boolean
-  onToggleCreatePrComposer?: () => void
   onCreatePrHeaderClick: () => void
   onOpenHostedReviewInChecks: () => void
   sourceControlViewMode: SourceControlViewMode
@@ -75,13 +71,11 @@ function CreatePrHeaderButton({
   action,
   isCreatePrIntentInFlight,
   isCreatingPr,
-  isDirectCreatePrInFlight,
   onClick
 }: {
   action: PrimaryAction
   isCreatePrIntentInFlight: boolean
   isCreatingPr: boolean
-  isDirectCreatePrInFlight?: boolean
   onClick: () => void
 }): React.JSX.Element {
   return (
@@ -96,7 +90,7 @@ function CreatePrHeaderButton({
             className="h-6 shrink-0 px-2 text-[11px]"
             title={action.title}
           >
-            {isCreatePrIntentInFlight || isCreatingPr || isDirectCreatePrInFlight ? (
+            {isCreatePrIntentInFlight || isCreatingPr ? (
               <Loader2 className="size-3.5 animate-spin" />
             ) : (
               <GitPullRequestArrow className="size-3.5" aria-hidden="true" />
@@ -123,9 +117,6 @@ function renderOverflowMenu(
     | 'branchCompareRefreshDisabled'
     | 'diffCommentCount'
     | 'onExpandNotes'
-    | 'showCreatePrEditDetails'
-    | 'createPrComposerExpanded'
-    | 'onToggleCreatePrComposer'
   >
 ): React.JSX.Element {
   return <SourceControlHeaderOverflowMenu {...props} />
@@ -140,10 +131,6 @@ export function SourceControlHeaderToolbar({
   hostedReview,
   isCreatePrIntentInFlight,
   isCreatingPr,
-  isDirectCreatePrInFlight = false,
-  showCreatePrEditDetails = false,
-  createPrComposerExpanded = false,
-  onToggleCreatePrComposer,
   onCreatePrHeaderClick,
   onOpenHostedReviewInChecks,
   sourceControlViewMode,
@@ -169,10 +156,7 @@ export function SourceControlHeaderToolbar({
     onRefreshBranchCompare,
     branchCompareRefreshDisabled,
     diffCommentCount,
-    onExpandNotes,
-    showCreatePrEditDetails,
-    createPrComposerExpanded,
-    onToggleCreatePrComposer
+    onExpandNotes
   }
 
   const expandFilter = useCallback(() => {
@@ -220,31 +204,33 @@ export function SourceControlHeaderToolbar({
                 action={visibleCreatePrHeaderAction}
                 isCreatePrIntentInFlight={isCreatePrIntentInFlight}
                 isCreatingPr={isCreatingPr}
-                isDirectCreatePrInFlight={isDirectCreatePrInFlight}
                 onClick={onCreatePrHeaderClick}
               />
+            ) : (
+              <span className="min-w-0 flex-1" aria-hidden="true" />
+            )}
+            {visibleCreatePrHeaderAction && !hostedReview ? (
+              // Why: keep filter/overflow pinned right without stretching Create PR.
+              <span className="min-w-0 flex-1" aria-hidden="true" />
             ) : null}
-            <span className="min-w-0 flex-1" aria-hidden="true" />
-            <div className="flex shrink-0 items-center gap-1">
-              <button
-                type="button"
-                data-testid="source-control-filter-toggle"
-                className={cn(
-                  'relative inline-flex size-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
-                  normalizedFilter && 'bg-muted text-foreground'
-                )}
-                onClick={expandFilter}
-                aria-label={filterToggleTitle}
-                title={filterToggleTitle}
-                aria-expanded={false}
-              >
-                <Search className="size-3.5" />
-                {normalizedFilter ? (
-                  <span className="absolute right-1 top-1 size-1.5 rounded-full bg-foreground" />
-                ) : null}
-              </button>
-              {renderOverflowMenu(overflowProps)}
-            </div>
+            <button
+              type="button"
+              data-testid="source-control-filter-toggle"
+              className={cn(
+                'relative inline-flex size-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
+                normalizedFilter && 'bg-muted text-foreground'
+              )}
+              onClick={expandFilter}
+              aria-label={filterToggleTitle}
+              title={filterToggleTitle}
+              aria-expanded={false}
+            >
+              <Search className="size-3.5" />
+              {normalizedFilter ? (
+                <span className="absolute right-1 top-1 size-1.5 rounded-full bg-foreground" />
+              ) : null}
+            </button>
+            {renderOverflowMenu(overflowProps)}
           </>
         ) : (
           <>

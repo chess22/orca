@@ -102,18 +102,5 @@ export function buildSourceControlBranchContextStats({
     }
   }
 
-  if (stats.length === 0) {
-    stats.push({
-      key: 'even',
-      label: 'even',
-      title: translate(
-        'auto.components.right.sidebar.SourceControl.e9c2a5d416',
-        'Even with {{value0}}',
-        { value0: baseRef }
-      ),
-      tone: 'muted'
-    })
-  }
-
   return stats
 }

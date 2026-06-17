@@ -76,13 +76,13 @@ describe('source-control branch context stats', () => {
     expect(stats[0]?.title).toBe('3 commits ahead of origin/main')
   })
 
-  it('shows an even label when there is nothing to report', () => {
+  it('returns no stats when branch is even with base', () => {
     expect(
       buildSourceControlBranchContextStats({
         summary: { ...readySummary, commitsAhead: 0 },
         baseRef: 'origin/main',
         upstreamStatus: { hasUpstream: true, ahead: 0, behind: 0 }
-      }).map((stat) => stat.label)
-    ).toEqual(['even'])
+      })
+    ).toEqual([])
   })
 })
