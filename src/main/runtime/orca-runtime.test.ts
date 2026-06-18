@@ -14375,7 +14375,7 @@ describe('OrcaRuntimeService', () => {
       expect.objectContaining({
         code: 'LINEAGE_PARENT_CONTEXT_MISSING',
         message:
-          'Worktree created, but Orca could not validate the current directory as a parent workspace.'
+          'Worktree created, but Orca could not validate the current directory as a parent context.'
       })
     ])
   })

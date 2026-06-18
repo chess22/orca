@@ -11,6 +11,7 @@ export type CommandSpec = {
   summary: string
   usage: string
   allowedFlags: string[]
+  hiddenFlags?: string[]
   positionalArgs?: string[]
   examples?: string[]
   notes?: string[]
@@ -243,6 +244,7 @@ export function validateCommandAndFlags(specs: CommandSpec[], parsed: ParsedArgs
     if (
       !isGlobalFlag &&
       !spec.allowedFlags.includes(flag) &&
+      !spec.hiddenFlags?.includes(flag) &&
       !(flag === 'page' && supportsBrowserPageFlag(spec.path))
     ) {
       throw new RuntimeClientError(

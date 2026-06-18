@@ -11865,13 +11865,13 @@ export class OrcaRuntimeService {
       if (!worktree.instanceId || !parent.instanceId) {
         throw new RuntimeLineageError(
           'LINEAGE_PARENT_CONTEXT_MISSING',
-          'Workspace instance identity was unavailable.'
+          'Worktree instance identity was unavailable.'
         )
       }
       if (!this.store.setWorktreeLineage) {
         throw new RuntimeLineageError(
           'LINEAGE_PARENT_CONTEXT_MISSING',
-          'Workspace lineage storage was unavailable.'
+          'Worktree lineage storage was unavailable.'
         )
       }
       const createdAt = Date.now()
@@ -14050,7 +14050,7 @@ export class OrcaRuntimeService {
     const childWorktreeId = child.id
     const parentWorktreeId = parent.id
     if (childWorktreeId === parentWorktreeId) {
-      throw new RuntimeLineageError('LINEAGE_PARENT_CYCLE', 'A workspace cannot parent itself.')
+      throw new RuntimeLineageError('LINEAGE_PARENT_CYCLE', 'A worktree cannot parent itself.')
     }
     const instanceByWorktreeId = new Map(
       this.resolvedWorktreeCache?.worktrees.map((worktree) => [
@@ -14067,7 +14067,7 @@ export class OrcaRuntimeService {
       if (visited.has(cursor)) {
         throw new RuntimeLineageError(
           'LINEAGE_PARENT_CYCLE',
-          'Parent workspace would create a lineage cycle.'
+          'Parent selector would create a lineage cycle.'
         )
       }
       visited.add(cursor)
@@ -14097,13 +14097,13 @@ export class OrcaRuntimeService {
     if (input.noParent === true && (input.parentWorkspace || input.parentWorktree)) {
       throw new RuntimeLineageError(
         'LINEAGE_PARENT_CONTEXT_CONFLICT',
-        'Choose either a parent workspace flag or --no-parent, not both.'
+        'Choose either one parent selector or --no-parent.'
       )
     }
     if (input.parentWorkspace && input.parentWorktree) {
       throw new RuntimeLineageError(
         'LINEAGE_PARENT_CONTEXT_CONFLICT',
-        'Choose either --parent-workspace or --parent-worktree, not both.'
+        'Choose either one parent selector or --no-parent.'
       )
     }
 
@@ -14122,10 +14122,10 @@ export class OrcaRuntimeService {
       } catch {
         throw new RuntimeLineageError(
           'LINEAGE_PARENT_NOT_FOUND',
-          'Parent workspace was not found.',
+          'Parent selector was not found.',
           {
             nextSteps: [
-              'Pass a valid --parent-workspace selector such as folder:<id> or worktree:<id>.',
+              'Pass a valid --parent-worktree selector such as folder:<id>, worktree:<id>, id:<worktreeId>, branch:<branch>, issue:<number>, path:<absolute-path>, or active/current.',
               'Retry with --no-parent to create without lineage.'
             ]
           }
@@ -14150,10 +14150,10 @@ export class OrcaRuntimeService {
       } catch {
         throw new RuntimeLineageError(
           'LINEAGE_PARENT_NOT_FOUND',
-          'Parent workspace was not found.',
+          'Parent selector was not found.',
           {
             nextSteps: [
-              'Run `orca worktree list` and pass a valid --parent-worktree selector.',
+              'Pass a valid --parent-worktree selector such as folder:<id>, worktree:<id>, id:<worktreeId>, branch:<branch>, issue:<number>, path:<absolute-path>, or active/current.',
               'Retry with --no-parent to create without lineage.'
             ]
           }
@@ -14176,7 +14176,7 @@ export class OrcaRuntimeService {
         warnings.push({
           code: 'LINEAGE_PARENT_CONTEXT_MISSING',
           message:
-            'Worktree created, but Orca could not validate the environment parent workspace.',
+            'Worktree created, but Orca could not validate the environment parent context.',
           details: { envParentWorkspace: input.envParentWorkspace }
         })
       }
@@ -14245,7 +14245,7 @@ export class OrcaRuntimeService {
         warnings.push({
           code: 'LINEAGE_PARENT_CONTEXT_MISSING',
           message:
-            'Worktree created, but Orca could not validate the caller terminal as a parent workspace.',
+            'Worktree created, but Orca could not validate the caller terminal as a parent context.',
           details: { callerTerminalHandle: input.callerTerminalHandle }
         })
       }
@@ -14261,7 +14261,7 @@ export class OrcaRuntimeService {
         warnings.push({
           code: 'LINEAGE_PARENT_CONTEXT_MISSING',
           message:
-            'Worktree created, but Orca could not validate the current directory as a parent workspace.',
+            'Worktree created, but Orca could not validate the current directory as a parent context.',
           details: { cwdParentWorktree: input.cwdParentWorktree }
         })
       }
@@ -14285,7 +14285,7 @@ export class OrcaRuntimeService {
         warnings: [
           {
             code: 'LINEAGE_PARENT_CONTEXT_CONFLICT',
-            message: 'Worktree created, but Orca could not prove which parent workspace caused it.',
+            message: 'Worktree created, but Orca could not prove which parent context caused it.',
             details: {
               terminalParentWorkspaceKey: candidates.find((c) => c.source === 'terminal-context')
                 ?.parent.workspaceKey,
