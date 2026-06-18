@@ -931,6 +931,58 @@ describe('createIpcPtyTransport', () => {
     expect(onPtyExit).toHaveBeenCalledWith('pty-detached')
     expect(transport.getPtyId()).toBeNull()
   })
+
+  it('does not let a stale detach remove a newer pane data handler for the same PTY', async () => {
+    const { createIpcPtyTransport } = await import('./pty-transport')
+    const oldPaneData = vi.fn()
+    const newPaneData = vi.fn()
+
+    const oldTransport = createIpcPtyTransport()
+    oldTransport.attach({
+      existingPtyId: 'pty-remount',
+      callbacks: { onData: oldPaneData }
+    })
+
+    const newTransport = createIpcPtyTransport()
+    newTransport.attach({
+      existingPtyId: 'pty-remount',
+      callbacks: { onData: newPaneData }
+    })
+
+    oldTransport.detach?.()
+    onData?.({ id: 'pty-remount', data: 'still live' })
+
+    expect(oldPaneData).not.toHaveBeenCalledWith('still live')
+    expect(newPaneData).toHaveBeenCalledWith('still live')
+  })
+
+  it('keeps the newest pane bound after repeated stale detach cleanup for the same PTY', async () => {
+    const { createIpcPtyTransport } = await import('./pty-transport')
+    const transports: ReturnType<typeof createIpcPtyTransport>[] = []
+    const paneDataHandlers: ReturnType<typeof vi.fn>[] = []
+
+    for (let index = 0; index < 8; index += 1) {
+      const paneData = vi.fn()
+      const transport = createIpcPtyTransport()
+      transport.attach({
+        existingPtyId: 'pty-churn',
+        callbacks: { onData: paneData }
+      })
+      transports.push(transport)
+      paneDataHandlers.push(paneData)
+    }
+
+    for (const transport of transports.slice(0, -1).reverse()) {
+      transport.detach?.()
+    }
+
+    onData?.({ id: 'pty-churn', data: 'frame-after-churn' })
+
+    for (const paneData of paneDataHandlers.slice(0, -1)) {
+      expect(paneData).not.toHaveBeenCalledWith('frame-after-churn')
+    }
+    expect(paneDataHandlers.at(-1)).toHaveBeenCalledWith('frame-after-churn')
+  })
 })
 
 describe('createRemoteRuntimePtyTransport', () => {
