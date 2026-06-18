@@ -12685,7 +12685,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Codex working',
           activeLeafId: 'pane:1',
           layout: null
@@ -12694,7 +12694,7 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'pty-1'
@@ -12754,7 +12754,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Claude',
           activeLeafId: 'pane:1',
           layout: null
@@ -12763,7 +12763,7 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'pty-1'
@@ -12772,7 +12772,7 @@ describe('OrcaRuntimeService', () => {
     })
     runtime.markRendererReloading(1)
 
-    await expect(runtime.stopTerminalsForWorktree('id:repo-1::/tmp/worktree-a')).rejects.toThrow(
+    await expect(runtime.stopTerminalsForWorktree(`id:${TEST_WORKTREE_ID}`)).rejects.toThrow(
       'runtime_unavailable'
     )
     expect(killed).toBe(false)
@@ -12786,7 +12786,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Claude',
           activeLeafId: 'pane:1',
           layout: null
@@ -12795,7 +12795,7 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'pty-1'
@@ -12835,7 +12835,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Claude',
           activeLeafId: 'pane:1',
           layout: null
@@ -12844,7 +12844,7 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'pty-1'
@@ -12923,7 +12923,7 @@ describe('OrcaRuntimeService', () => {
   it('stops exactly the expected live PTYs for a worktree', async () => {
     const runtime = new OrcaRuntimeService(store)
     const stopped: string[] = []
-    const processLists = [[{ id: 'pty-1', cwd: '/tmp/worktree-a', title: 'Claude' }], []]
+    const processLists = [[{ id: 'pty-1', cwd: TEST_WORKTREE_PATH, title: 'Claude' }], []]
     runtime.setPtyController({
       write: () => true,
       kill: () => false,
@@ -12942,7 +12942,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Claude',
           activeLeafId: 'pane:1',
           layout: null
@@ -12951,7 +12951,7 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'pty-1'
@@ -12960,7 +12960,7 @@ describe('OrcaRuntimeService', () => {
     })
 
     await expect(
-      runtime.stopExactTerminalsForWorktree('id:repo-1::/tmp/worktree-a', ['pty-1'], {
+      runtime.stopExactTerminalsForWorktree(`id:${TEST_WORKTREE_ID}`, ['pty-1'], {
         keepHistory: true
       })
     ).resolves.toEqual({
@@ -12976,7 +12976,7 @@ describe('OrcaRuntimeService', () => {
     const runtime = new OrcaRuntimeService(store)
     const stopped: string[] = []
     const processLists = [
-      [{ id: 'pty-1', cwd: '/tmp/worktree-a', title: 'Claude' }],
+      [{ id: 'pty-1', cwd: TEST_WORKTREE_PATH, title: 'Claude' }],
       new Error('daemon unavailable')
     ]
     runtime.setPtyController({
@@ -13002,7 +13002,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Claude',
           activeLeafId: 'pane:1',
           layout: null
@@ -13011,7 +13011,7 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'pty-1'
@@ -13020,7 +13020,7 @@ describe('OrcaRuntimeService', () => {
     })
 
     await expect(
-      runtime.stopExactTerminalsForWorktree('id:repo-1::/tmp/worktree-a', ['pty-1'])
+      runtime.stopExactTerminalsForWorktree(`id:${TEST_WORKTREE_ID}`, ['pty-1'])
     ).resolves.toEqual({
       stopped: 1,
       stoppedPtyIds: ['pty-1'],
@@ -13043,7 +13043,7 @@ describe('OrcaRuntimeService', () => {
         return false
       },
       getForegroundProcess: async () => null,
-      listProcesses: async () => [{ id: 'pty-1', cwd: '/tmp/worktree-a', title: 'Claude' }]
+      listProcesses: async () => [{ id: 'pty-1', cwd: TEST_WORKTREE_PATH, title: 'Claude' }]
     })
 
     runtime.attachWindow(1)
@@ -13051,7 +13051,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Claude',
           activeLeafId: 'pane:1',
           layout: null
@@ -13060,7 +13060,7 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'pty-1'
@@ -13069,7 +13069,7 @@ describe('OrcaRuntimeService', () => {
     })
 
     await expect(
-      runtime.stopExactTerminalsForWorktree('id:repo-1::/tmp/worktree-a', ['pty-1'], {
+      runtime.stopExactTerminalsForWorktree(`id:${TEST_WORKTREE_ID}`, ['pty-1'], {
         keepHistory: true
       })
     ).rejects.toThrow('terminal_exact_stop_failed')
@@ -13089,8 +13089,8 @@ describe('OrcaRuntimeService', () => {
       },
       getForegroundProcess: async () => null,
       listProcesses: async () => [
-        { id: 'pty-1', cwd: '/tmp/worktree-a', title: 'Claude' },
-        { id: 'pty-shell', cwd: '/tmp/worktree-a', title: 'Shell' }
+        { id: 'pty-1', cwd: TEST_WORKTREE_PATH, title: 'Claude' },
+        { id: 'pty-shell', cwd: TEST_WORKTREE_PATH, title: 'Shell' }
       ]
     })
 
@@ -13099,14 +13099,14 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Claude',
           activeLeafId: 'pane:1',
           layout: null
         },
         {
           tabId: 'tab-2',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Shell',
           activeLeafId: 'pane:1',
           layout: null
@@ -13115,14 +13115,14 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'pty-1'
         },
         {
           tabId: 'tab-2',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 2,
           ptyId: 'pty-shell'
@@ -13131,7 +13131,7 @@ describe('OrcaRuntimeService', () => {
     })
 
     await expect(
-      runtime.stopExactTerminalsForWorktree('id:repo-1::/tmp/worktree-a', ['pty-1'])
+      runtime.stopExactTerminalsForWorktree(`id:${TEST_WORKTREE_ID}`, ['pty-1'])
     ).rejects.toThrow('terminal_stop_pty_set_mismatch')
     expect(stopped).toEqual([])
   })
@@ -13149,8 +13149,8 @@ describe('OrcaRuntimeService', () => {
       },
       getForegroundProcess: async () => null,
       listProcesses: async () => [
-        { id: 'pty-1', cwd: '/tmp/worktree-a', title: 'Claude' },
-        { id: 'pty-2', cwd: '/tmp/worktree-a', title: 'Codex' }
+        { id: 'pty-1', cwd: TEST_WORKTREE_PATH, title: 'Claude' },
+        { id: 'pty-2', cwd: TEST_WORKTREE_PATH, title: 'Codex' }
       ]
     })
 
@@ -13159,7 +13159,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Claude',
           activeLeafId: 'pane:1',
           layout: null
@@ -13168,14 +13168,14 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'pty-1'
         },
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:2',
           paneRuntimeId: 2,
           ptyId: 'pty-2'
@@ -13184,7 +13184,7 @@ describe('OrcaRuntimeService', () => {
     })
 
     await expect(
-      runtime.stopExactTerminalsForWorktree('id:repo-1::/tmp/worktree-a', ['pty-1', 'pty-2'])
+      runtime.stopExactTerminalsForWorktree(`id:${TEST_WORKTREE_ID}`, ['pty-1', 'pty-2'])
     ).rejects.toThrow('terminal_exact_stop_requires_single_pty')
     expect(stopped).toEqual([])
   })
@@ -13192,7 +13192,7 @@ describe('OrcaRuntimeService', () => {
   it('uses fresh post-stop liveness instead of stale renderer leaves', async () => {
     const runtime = new OrcaRuntimeService(store)
     const stopped: string[] = []
-    const processLists = [[{ id: 'pty-1', cwd: '/tmp/worktree-a', title: 'Claude' }], []]
+    const processLists = [[{ id: 'pty-1', cwd: TEST_WORKTREE_PATH, title: 'Claude' }], []]
     runtime.setPtyController({
       write: () => true,
       kill: () => false,
@@ -13210,7 +13210,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Claude',
           activeLeafId: 'pane:1',
           layout: null
@@ -13219,14 +13219,14 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'pty-1'
         },
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:2',
           paneRuntimeId: 2,
           ptyId: 'stale-pty'
@@ -13235,7 +13235,7 @@ describe('OrcaRuntimeService', () => {
     })
 
     await expect(
-      runtime.stopExactTerminalsForWorktree('id:repo-1::/tmp/worktree-a', ['pty-1'])
+      runtime.stopExactTerminalsForWorktree(`id:${TEST_WORKTREE_ID}`, ['pty-1'])
     ).resolves.toMatchObject({
       stoppedPtyIds: ['pty-1']
     })
@@ -13256,7 +13256,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Stale',
           activeLeafId: 'pane:1',
           layout: null
@@ -13265,7 +13265,7 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'stale-pty'
@@ -13273,7 +13273,7 @@ describe('OrcaRuntimeService', () => {
       ]
     })
 
-    const terminals = await runtime.listTerminals('id:repo-1::/tmp/worktree-a', undefined, {
+    const terminals = await runtime.listTerminals(`id:${TEST_WORKTREE_ID}`, undefined, {
       requireFreshPtyLiveness: true
     })
 
@@ -13295,7 +13295,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Split Terminal',
           activeLeafId: 'pane:2',
           layout: {
@@ -13309,14 +13309,14 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'missing-split-pty'
         },
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:2',
           paneRuntimeId: 2,
           ptyId: 'live-sibling-pty'
@@ -13324,7 +13324,7 @@ describe('OrcaRuntimeService', () => {
       ]
     })
 
-    const terminals = await runtime.listTerminals('id:repo-1::/tmp/worktree-a')
+    const terminals = await runtime.listTerminals(`id:${TEST_WORKTREE_ID}`)
 
     expect(terminals.terminals).toHaveLength(1)
     expect(terminals.terminals[0]).toMatchObject({
@@ -13350,7 +13350,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Split Terminal',
           activeLeafId: 'pane:1',
           layout: {
@@ -13364,14 +13364,14 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'missing-split-pty'
         },
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:2',
           paneRuntimeId: 2,
           ptyId: 'live-sibling-pty'
@@ -13379,7 +13379,7 @@ describe('OrcaRuntimeService', () => {
       ]
     })
 
-    const handle = await runtime.resolveActiveTerminal('id:repo-1::/tmp/worktree-a')
+    const handle = await runtime.resolveActiveTerminal(`id:${TEST_WORKTREE_ID}`)
     const shown = await runtime.showTerminal(handle)
 
     expect(shown).toMatchObject({
@@ -13411,7 +13411,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Split Terminal',
           activeLeafId: 'pane:1',
           layout: {
@@ -13425,14 +13425,14 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'missing-split-pty'
         },
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:2',
           paneRuntimeId: 2,
           ptyId: 'live-sibling-pty'
@@ -13440,7 +13440,7 @@ describe('OrcaRuntimeService', () => {
       ]
     })
 
-    const staleHandle = (await runtime.listTerminals('id:repo-1::/tmp/worktree-a')).terminals.find(
+    const staleHandle = (await runtime.listTerminals(`id:${TEST_WORKTREE_ID}`)).terminals.find(
       (terminal) => terminal.ptyId === 'missing-split-pty'
     )?.handle
 
@@ -13492,7 +13492,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Split Terminal',
           activeLeafId: 'pane:1',
           layout: {
@@ -13506,14 +13506,14 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'missing-split-pty'
         },
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:2',
           paneRuntimeId: 2,
           ptyId: 'live-sibling-pty'
@@ -13521,7 +13521,7 @@ describe('OrcaRuntimeService', () => {
       ]
     })
 
-    const staleHandle = (await runtime.listTerminals('id:repo-1::/tmp/worktree-a')).terminals.find(
+    const staleHandle = (await runtime.listTerminals(`id:${TEST_WORKTREE_ID}`)).terminals.find(
       (terminal) => terminal.ptyId === 'missing-split-pty'
     )?.handle
 
@@ -13549,7 +13549,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Terminal',
           activeLeafId: 'pane:1',
           layout: null
@@ -13558,14 +13558,14 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'live-pty'
         }
       ]
     })
-    const handle = (await runtime.listTerminals('id:repo-1::/tmp/worktree-a')).terminals[0]?.handle
+    const handle = (await runtime.listTerminals(`id:${TEST_WORKTREE_ID}`)).terminals[0]?.handle
     listProcesses.mockClear()
 
     await runtime.sendTerminal(handle!, { text: 'a' })
@@ -13587,7 +13587,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Stale Terminal',
           activeLeafId: 'pane:1',
           layout: null
@@ -13596,7 +13596,7 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'missing-pty'
@@ -13604,7 +13604,7 @@ describe('OrcaRuntimeService', () => {
       ]
     })
 
-    await expect(runtime.hasTerminalsForWorktree('id:repo-1::/tmp/worktree-a')).resolves.toBe(false)
+    await expect(runtime.hasTerminalsForWorktree(`id:${TEST_WORKTREE_ID}`)).resolves.toBe(false)
   })
 
   it('does not mark remote runtime PTYs missing from the local controller', async () => {
@@ -13620,7 +13620,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Remote Terminal',
           activeLeafId: 'pane:1',
           layout: null
@@ -13629,7 +13629,7 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'remote:web-env@@terminal-1'
@@ -13637,7 +13637,7 @@ describe('OrcaRuntimeService', () => {
       ]
     })
 
-    const terminals = await runtime.listTerminals('id:repo-1::/tmp/worktree-a')
+    const terminals = await runtime.listTerminals(`id:${TEST_WORKTREE_ID}`)
 
     expect(terminals.terminals).toHaveLength(1)
     expect(terminals.terminals[0]).toMatchObject({
@@ -13663,7 +13663,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'SSH Terminal',
           activeLeafId: 'pane:1',
           layout: null
@@ -13672,7 +13672,7 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId
@@ -13680,7 +13680,7 @@ describe('OrcaRuntimeService', () => {
       ]
     })
 
-    const terminals = await runtime.listTerminals('id:repo-1::/tmp/worktree-a')
+    const terminals = await runtime.listTerminals(`id:${TEST_WORKTREE_ID}`)
 
     expect(terminals.terminals).toHaveLength(1)
     expect(terminals.terminals[0]).toMatchObject({
@@ -13706,7 +13706,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'SSH Terminal',
           activeLeafId: 'pane:1',
           layout: null
@@ -13715,7 +13715,7 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId
@@ -13723,7 +13723,7 @@ describe('OrcaRuntimeService', () => {
       ]
     })
 
-    const terminals = await runtime.listTerminals('id:repo-1::/tmp/worktree-a')
+    const terminals = await runtime.listTerminals(`id:${TEST_WORKTREE_ID}`)
 
     expect(terminals.terminals).toEqual([])
   })
@@ -13745,7 +13745,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Flaky Terminal',
           activeLeafId: 'pane:1',
           layout: null
@@ -13754,7 +13754,7 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'flaky-pty'
@@ -13762,11 +13762,11 @@ describe('OrcaRuntimeService', () => {
       ]
     })
 
-    await expect(runtime.listTerminals('id:repo-1::/tmp/worktree-a')).resolves.toMatchObject({
+    await expect(runtime.listTerminals(`id:${TEST_WORKTREE_ID}`)).resolves.toMatchObject({
       terminals: []
     })
 
-    const terminals = await runtime.listTerminals('id:repo-1::/tmp/worktree-a')
+    const terminals = await runtime.listTerminals(`id:${TEST_WORKTREE_ID}`)
 
     expect(terminals.terminals).toHaveLength(1)
     expect(terminals.terminals[0]).toMatchObject({
@@ -13799,7 +13799,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Output Terminal',
           activeLeafId: 'pane:1',
           layout: null
@@ -13808,7 +13808,7 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'flaky-output-pty'
@@ -13816,12 +13816,12 @@ describe('OrcaRuntimeService', () => {
       ]
     })
 
-    await expect(runtime.listTerminals('id:repo-1::/tmp/worktree-a')).resolves.toMatchObject({
+    await expect(runtime.listTerminals(`id:${TEST_WORKTREE_ID}`)).resolves.toMatchObject({
       terminals: []
     })
 
     runtime.onPtyData('flaky-output-pty', 'still alive\n', 123)
-    const terminals = await runtime.listTerminals('id:repo-1::/tmp/worktree-a')
+    const terminals = await runtime.listTerminals(`id:${TEST_WORKTREE_ID}`)
 
     expect(terminals.terminals).toHaveLength(1)
     expect(terminals.terminals[0]).toMatchObject({
@@ -13845,7 +13845,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Stale Terminal',
           activeLeafId: 'pane:1',
           layout: null
@@ -13854,7 +13854,7 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'missing-agent-pty'
@@ -13862,7 +13862,7 @@ describe('OrcaRuntimeService', () => {
       ]
     })
 
-    await expect(runtime.listTerminals('id:repo-1::/tmp/worktree-a')).resolves.toMatchObject({
+    await expect(runtime.listTerminals(`id:${TEST_WORKTREE_ID}`)).resolves.toMatchObject({
       terminals: []
     })
 
@@ -13884,7 +13884,7 @@ describe('OrcaRuntimeService', () => {
       tabs: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           title: 'Split Terminal',
           activeLeafId: 'pane:1',
           layout: null
@@ -13893,14 +13893,14 @@ describe('OrcaRuntimeService', () => {
       leaves: [
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:1',
           paneRuntimeId: 1,
           ptyId: 'missing-split-pty'
         },
         {
           tabId: 'tab-1',
-          worktreeId: 'repo-1::/tmp/worktree-a',
+          worktreeId: TEST_WORKTREE_ID,
           leafId: 'pane:2',
           paneRuntimeId: 2,
           ptyId: 'live-sibling-pty'
@@ -13939,7 +13939,7 @@ describe('OrcaRuntimeService', () => {
     })
     runtime.markRendererReloading(1)
 
-    const handle = await runtime.resolveActiveTerminal('id:repo-1::/tmp/worktree-a')
+    const handle = await runtime.resolveActiveTerminal(`id:${TEST_WORKTREE_ID}`)
     const shown = await runtime.showTerminal(handle)
 
     expect(shown).toMatchObject({
@@ -13962,9 +13962,9 @@ describe('OrcaRuntimeService', () => {
       }
     })
 
-    const listPromise = runtime.listTerminals('id:repo-1::/tmp/worktree-a')
+    const listPromise = runtime.listTerminals(`id:${TEST_WORKTREE_ID}`)
     await refreshStarted.promise
-    runtime.registerPty('late-pty', 'repo-1::/tmp/worktree-a')
+    runtime.registerPty('late-pty', TEST_WORKTREE_ID)
     refreshSnapshot.resolve([])
 
     const terminals = await listPromise
@@ -13990,11 +13990,11 @@ describe('OrcaRuntimeService', () => {
         return await refreshSnapshot.promise
       }
     })
-    runtime.registerPty('reattached-pty', 'repo-1::/tmp/worktree-a')
+    runtime.registerPty('reattached-pty', TEST_WORKTREE_ID)
 
-    const listPromise = runtime.listTerminals('id:repo-1::/tmp/worktree-a')
+    const listPromise = runtime.listTerminals(`id:${TEST_WORKTREE_ID}`)
     await refreshStarted.promise
-    runtime.registerPty('reattached-pty', 'repo-1::/tmp/worktree-a')
+    runtime.registerPty('reattached-pty', TEST_WORKTREE_ID)
     refreshSnapshot.resolve([])
 
     const terminals = await listPromise
@@ -14019,7 +14019,7 @@ describe('OrcaRuntimeService', () => {
     })
 
     await expect(
-      runtime.listTerminals('id:repo-1::/tmp/worktree-a', undefined, {
+      runtime.listTerminals(`id:${TEST_WORKTREE_ID}`, undefined, {
         requireFreshPtyLiveness: true
       })
     ).rejects.toThrow('terminal_liveness_unavailable')

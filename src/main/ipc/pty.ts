@@ -2020,6 +2020,8 @@ export function registerPtyHandlers(
       ])
       return providerSessions.flat()
     },
+    // Why: runtime reconciliation only marks PTYs missing when their owning
+    // provider participated in the controller process-list snapshot.
     listProcessProviderConnectionIds: () => [null, ...sshProviders.keys()],
     serializeBuffer: (ptyId, opts) => {
       // Why: mobile xterm must start from the desktop xterm's exact screen
