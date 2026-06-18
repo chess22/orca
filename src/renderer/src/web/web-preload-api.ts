@@ -2647,6 +2647,8 @@ async function getRuntimeBackedStoredSettings(): Promise<GlobalSettings> {
       runtimeSettings.experimentalNewWorktreeCardStyle =
         result.settings.experimentalNewWorktreeCardStyle
     }
+    // Why: older runtimes may omit profile settings; absence must not erase
+    // local persisted profiles on the web client.
     if ('agentLaunchProfiles' in result.settings) {
       runtimeSettings.agentLaunchProfiles = result.settings.agentLaunchProfiles
     }
@@ -2670,6 +2672,8 @@ async function syncRuntimeBackedSettings(
   if (typeof updates.experimentalNewWorktreeCardStyle === 'boolean') {
     runtimeUpdates.experimentalNewWorktreeCardStyle = updates.experimentalNewWorktreeCardStyle
   }
+  // Why: localNext has already merged and normalized updates, keeping
+  // runtime and local profile state aligned.
   if ('agentLaunchProfiles' in updates) {
     runtimeUpdates.agentLaunchProfiles = localNext.agentLaunchProfiles
   }

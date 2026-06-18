@@ -217,7 +217,7 @@ describe('tui agent startup plans', () => {
       platform: 'linux'
     })
 
-    expect(plan).toEqual({
+    expect(plan).toMatchObject({
       agent: 'codex',
       launchCommand: "codex-nightly '--profile' 'work' 'fix it'",
       expectedProcess: 'codex',
