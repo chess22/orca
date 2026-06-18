@@ -1915,7 +1915,11 @@ describe('OrcaRuntimeService', () => {
       await vi.waitFor(() => {
         expect(gitSpy).toHaveBeenCalledWith(
           ['fetch', '--no-tags', 'origin', '+refs/heads/main:refs/remotes/origin/main'],
-          { cwd: TEST_REPO_PATH }
+          {
+            cwd: TEST_REPO_PATH,
+            useConfiguredSshCommandForNetwork: true,
+            timeout: 60_000
+          }
         )
       })
       expect(addWorktree).not.toHaveBeenCalled()

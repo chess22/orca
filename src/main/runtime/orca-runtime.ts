@@ -11535,7 +11535,12 @@ export class OrcaRuntimeService {
       }
       return gitExecFileAsync(
         ['fetch', '--no-tags', base.remote, `+refs/heads/${base.branch}:${base.ref}`],
-        { cwd: repoPath, ...gitOptions }
+        {
+          cwd: repoPath,
+          ...gitOptions,
+          useConfiguredSshCommandForNetwork: true,
+          timeout: 60_000
+        }
       )
         .then((): RemoteFetchResult => {
           this.rememberFreshFetchCompletedAt(key)
