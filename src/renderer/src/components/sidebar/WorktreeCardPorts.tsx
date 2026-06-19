@@ -14,7 +14,7 @@ import {
   killWorkspacePortForTarget,
   openWorkspacePortInBrowser,
   refreshWorkspacePortScanAfterStop,
-  shouldOpenWorkspacePortInOrcaBrowser
+  resolvePortOpenInOrcaBrowser
 } from '@/lib/workspace-port-actions'
 import { addressForPort } from '@/lib/workspace-port-urls'
 import type { WorkspacePort } from '../../../../shared/workspace-ports'
@@ -120,12 +120,17 @@ function WorktreePortRow({ port }: { port: WorkspacePort }): React.JSX.Element {
     (event: React.MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation()
       recordFeatureInteraction('ports')
+      const openInOrcaBrowser = resolvePortOpenInOrcaBrowser({
+        settings,
+        event: event.detail > 0 ? event : null,
+        isMac: navigator.userAgent.includes('Mac')
+      })
       void openWorkspacePortInBrowser({
         port,
         runtimeTarget,
         createBrowserTab,
         setRemoteBrowserPageHandle,
-        openInOrcaBrowser: shouldOpenWorkspacePortInOrcaBrowser(settings)
+        openInOrcaBrowser
       }).then((result) => {
         if (!result.ok) {
           toast.error(

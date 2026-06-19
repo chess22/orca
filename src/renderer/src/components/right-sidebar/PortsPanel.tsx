@@ -24,8 +24,8 @@ import {
   killWorkspacePortForTarget,
   openWorkspacePortInBrowser,
   refreshWorkspacePortScanAfterStop,
+  resolvePortOpenInOrcaBrowser,
   scanWorkspacePortsForTarget,
-  shouldOpenWorkspacePortInOrcaBrowser,
   workspacePortRuntimeTargetKey
 } from '@/lib/workspace-port-actions'
 import {
@@ -281,14 +281,18 @@ function LocalWorkspacePortsPanel({ isVisible }: { isVisible: boolean }): React.
   )
 
   const handleOpenPortInBrowser = useCallback(
-    async (port: WorkspacePort) => {
+    async (port: WorkspacePort, event?: React.MouseEvent<HTMLButtonElement>) => {
       const result = await openWorkspacePortInBrowser({
         port,
         activeWorktreeId: activeWorktree?.id,
         runtimeTarget,
         createBrowserTab,
         setRemoteBrowserPageHandle,
-        openInOrcaBrowser: shouldOpenWorkspacePortInOrcaBrowser(settings)
+        openInOrcaBrowser: resolvePortOpenInOrcaBrowser({
+          settings,
+          event,
+          isMac: navigator.userAgent.includes('Mac')
+        })
       })
       if (!result.ok) {
         toast.error(
@@ -453,7 +457,7 @@ function LocalPortSection({
   onToggle: () => void
   onStopPort: (port: WorkspacePort) => void
   onShowDetails: (port: WorkspacePort) => void
-  onOpenInBrowser: (port: WorkspacePort) => void
+  onOpenInBrowser: (port: WorkspacePort, event?: React.MouseEvent<HTMLButtonElement>) => void
 }): React.JSX.Element | null {
   if (ports.length === 0 && !emptyText) {
     return null
@@ -507,15 +511,18 @@ function LocalPortRow({
   port: WorkspacePort
   onStop: (port: WorkspacePort) => void
   onShowDetails: (port: WorkspacePort) => void
-  onOpenInBrowser: (port: WorkspacePort) => void
+  onOpenInBrowser: (port: WorkspacePort, event?: React.MouseEvent<HTMLButtonElement>) => void
 }): React.JSX.Element {
   const handleCopy = useCallback(() => {
     void window.api.ui.writeClipboardText(addressForPort(port))
   }, [port])
 
-  const handleOpenBrowser = useCallback(() => {
-    void onOpenInBrowser(port)
-  }, [onOpenInBrowser, port])
+  const handleOpenBrowser = useCallback(
+    (event?: React.MouseEvent<HTMLButtonElement>) => {
+      void onOpenInBrowser(port, event)
+    },
+    [onOpenInBrowser, port]
+  )
 
   const handleCopyButtonClick = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -529,7 +536,7 @@ function LocalPortRow({
 
   const handleOpenBrowserButtonClick = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
-      handleOpenBrowser()
+      handleOpenBrowser(event.detail > 0 ? event : undefined)
       if (event.detail > 0) {
         event.currentTarget.blur()
       }
@@ -672,7 +679,10 @@ function LocalPortRow({
         <ContextMenuLabel
           className={LOCAL_PORT_MENU_LABEL_CLASS}
         >{`:${port.port}`}</ContextMenuLabel>
-        <ContextMenuItem className={LOCAL_PORT_MENU_ITEM_CLASS} onSelect={handleOpenBrowser}>
+        <ContextMenuItem
+          className={LOCAL_PORT_MENU_ITEM_CLASS}
+          onSelect={() => handleOpenBrowser()}
+        >
           <ExternalLink size={13} />
           {translate('auto.components.right.sidebar.PortsPanel.b22b128b2a', 'Open in Browser')}
         </ContextMenuItem>
@@ -850,9 +860,15 @@ function SshPortsPanel(): React.JSX.Element {
   }, [])
 
   const handleOpenForwardInBrowser = useCallback(
-    (entry: PortForwardEntry) => {
+    (entry: PortForwardEntry, event?: React.MouseEvent<HTMLButtonElement>) => {
       const url = browserUrlForPortForwardEntry(entry)
-      if (!shouldOpenWorkspacePortInOrcaBrowser(settings)) {
+      if (
+        !resolvePortOpenInOrcaBrowser({
+          settings,
+          event,
+          isMac: navigator.userAgent.includes('Mac')
+        })
+      ) {
         void window.api.shell.openUrl(url)
         return
       }
@@ -935,7 +951,7 @@ function SshPortsPanel(): React.JSX.Element {
                 key={entry.id}
                 entry={entry}
                 onEdit={() => handleEdit(entry)}
-                onOpenInBrowser={() => handleOpenForwardInBrowser(entry)}
+                onOpenInBrowser={(event) => handleOpenForwardInBrowser(entry, event)}
               />
             ))}
         </div>
@@ -1015,7 +1031,7 @@ function ForwardedPortRow({
 }: {
   entry: PortForwardEntry
   onEdit: () => void
-  onOpenInBrowser: () => void
+  onOpenInBrowser: (event?: React.MouseEvent<HTMLButtonElement>) => void
 }): React.JSX.Element {
   const [removing, setRemoving] = useState(false)
   const mountedRef = useMountedRef()
@@ -1037,9 +1053,12 @@ function ForwardedPortRow({
     void window.api.ui.writeClipboardText(forwardedAddress)
   }, [forwardedAddress])
 
-  const handleOpenBrowser = useCallback(() => {
-    onOpenInBrowser()
-  }, [onOpenInBrowser])
+  const handleOpenBrowser = useCallback(
+    (event?: React.MouseEvent<HTMLButtonElement>) => {
+      onOpenInBrowser(event)
+    },
+    [onOpenInBrowser]
+  )
 
   const handleCopyButtonClick = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -1053,7 +1072,7 @@ function ForwardedPortRow({
 
   const handleOpenBrowserButtonClick = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
-      handleOpenBrowser()
+      handleOpenBrowser(event.detail > 0 ? event : undefined)
       if (event.detail > 0) {
         event.currentTarget.blur()
       }

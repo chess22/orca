@@ -10,7 +10,7 @@ import {
   killWorkspacePortForTarget,
   openWorkspacePortInBrowser,
   refreshWorkspacePortScanAfterStop,
-  shouldOpenWorkspacePortInOrcaBrowser
+  resolvePortOpenInOrcaBrowser
 } from '@/lib/workspace-port-actions'
 import type { WorkspacePortGroup } from '@/lib/workspace-port-groups'
 import { getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
@@ -90,14 +90,17 @@ export function PortRow({
     [runtimeEnvironmentId, settings]
   )
   const processLabel = port.processName ?? (port.pid ? `PID ${port.pid}` : 'Unknown process')
-  const openInOrcaBrowser = shouldOpenWorkspacePortInOrcaBrowser(settings)
-  const canOpen = !openInOrcaBrowser || port.kind === 'workspace' || Boolean(activeWorktreeId)
   const canStop = canStopWorkspacePort(port)
 
   const handleOpen = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation()
       recordFeatureInteraction('ports')
+      const openInOrcaBrowser = resolvePortOpenInOrcaBrowser({
+        settings,
+        event: event.detail > 0 ? event : null,
+        isMac: navigator.userAgent.includes('Mac')
+      })
       void openWorkspacePortInBrowser({
         port,
         activeWorktreeId,
@@ -120,10 +123,10 @@ export function PortRow({
     [
       activeWorktreeId,
       createBrowserTab,
-      openInOrcaBrowser,
       port,
       recordFeatureInteraction,
       runtimeTarget,
+      settings,
       setRemoteBrowserPageHandle
     ]
   )
@@ -224,7 +227,6 @@ export function PortRow({
                 'Open in Browser'
               )}
               onClick={handleOpen}
-              disabled={!canOpen}
             >
               <ExternalLink className="size-3" />
             </PortAction>
