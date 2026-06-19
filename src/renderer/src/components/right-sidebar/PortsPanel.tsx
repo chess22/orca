@@ -537,6 +537,8 @@ function LocalPortRow({
 
   const handleOpenBrowserButtonClick = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
+      // Why: keyboard activations have detail=0; only pointer clicks carry
+      // the modifier intent for the system-browser escape hatch.
       handleOpenBrowser(event.detail > 0 ? event : undefined)
       if (event.detail > 0) {
         event.currentTarget.blur()
@@ -1071,6 +1073,8 @@ function ForwardedPortRow({
 
   const handleOpenBrowserButtonClick = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
+      // Why: keyboard activations have detail=0; only pointer clicks carry
+      // the modifier intent for the system-browser escape hatch.
       handleOpenBrowser(event.detail > 0 ? event : undefined)
       if (event.detail > 0) {
         event.currentTarget.blur()
