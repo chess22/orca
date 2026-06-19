@@ -218,8 +218,8 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const fetchIssue = useAppStore((s) => s.fetchIssue)
   const fetchLinearIssue = useAppStore((s) => s.fetchLinearIssue)
   const cardProps = useAppStore((s) => s.worktreeCardProperties)
-  const compactCards = settings?.compactWorktreeCards === true
   const newCardStyle = settings?.experimentalNewWorktreeCardStyle === true
+  const compactCards = !newCardStyle && settings?.compactWorktreeCards === true
   const activeSurfaceIsSecondary = isActiveSurface && activeSurfaceVariant === 'secondary'
   const handleEditIssue = useCallback(
     (e: React.MouseEvent) => {
@@ -1029,9 +1029,13 @@ const WorktreeCard = React.memo(function WorktreeCard({
   // Why: pinned trees mix repos in one section; a leading repo icon keeps the
   // list scannable, so it shows regardless of groupBy's hideRepoBadge.
   const showPinnedRepoIcon = inPinnedSection && !!repo
+  // Why: the new card style retired the Compact/Detailed layout switch; repo
+  // identity uses the same compact chip as pinned cards instead of a lower pill.
+  const showRepoIdentityInTitle = newCardStyle || compactCards
   const showInlineRepoBadge =
-    compactCards && !!repo && !hideRepoBadge && !isFolder && !showPinnedRepoIcon
-  const showRepoBadgeInMetaRow = !compactCards && !!repo && !hideRepoBadge && !showPinnedRepoIcon
+    showRepoIdentityInTitle && !!repo && !hideRepoBadge && !isFolder && !showPinnedRepoIcon
+  const showRepoBadgeInMetaRow =
+    !showRepoIdentityInTitle && !!repo && !hideRepoBadge && !showPinnedRepoIcon
   const showHostContextBadge = !compactCards && !!hostContextLabel
   const showDetachedHeadInMetaRow = !compactCards && !isFolder && detachedHeadDisplay !== null
   const showBranch =
@@ -1205,7 +1209,6 @@ const WorktreeCard = React.memo(function WorktreeCard({
           className={cn(
             'flex shrink-0 justify-center',
             newCardStyle ? 'mr-1 w-5 items-center' : 'items-start pt-[2px]',
-            compactCards && newCardStyle && 'items-center pt-0',
             affiliateListMode && 'px-1'
           )}
           data-worktree-card-status-slot=""
