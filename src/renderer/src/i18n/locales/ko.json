@@ -2298,7 +2298,8 @@
             "f3eeb1de13": "복사",
             "c2f0b72b8d": "끼워 넣다",
             "925f49f210": "창 확장",
-            "df766809e0": "창 축소"
+            "df766809e0": "창 축소",
+            "copyTerminalId": "Copy Terminal ID"
           },
           "TerminalErrorToast": {
             "e4aa243f8c": "데몬 재시작",
@@ -2367,7 +2368,15 @@
               "pane": {
                 "context": {
                   "menu": {
-                    "a29b9faa01": "창 ID가 복사되었습니다."
+                    "a29b9faa01": "창 ID가 복사되었습니다.",
+                    "terminal": {
+                      "id": {
+                        "copied": "Terminal ID copied",
+                        "copy": {
+                          "failed": "Unable to copy terminal ID"
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -3782,7 +3791,7 @@
           "e091caab15": "프로젝트를 찾을 수 없습니다.",
           "439fa94d53": "업데이트",
           "579b1a8e61": "상위에서 제거",
-          "8d9cd19d09": "상위 워크스페이스 열기",
+          "8d9cd19d09": "상위 워크트리 열기",
           "d35dfeae58": "그룹에서 제거",
           "76865d827f": "그룹으로 이동",
           "503ec0f8e6": "프로젝트의 새 그룹",
@@ -3798,7 +3807,9 @@
           "8dacff1fe0": "마크 리드",
           "3baa7d6507": "핀",
           "697d0f6e1b": "고정 해제",
-          "250de158fd": "Remove Workspace"
+          "250de158fd": "Remove Workspace",
+          "changeParentWorkspace": "상위 워크트리 변경...",
+          "setParentWorkspace": "상위 워크트리 설정..."
         },
         "WorktreeList": {
           "d880ea0744": "그룹을 만들고 이 프로젝트를 그룹으로 이동하세요.",
@@ -3839,7 +3850,8 @@
           "groupDeleteFailedDesc": "Something went wrong while deleting the group. No projects were removed.",
           "7a8b9c0d1e": "Update required",
           "hostAuthNeeded": "Authentication needed",
-          "hostDisconnected": "Disconnected"
+          "hostDisconnected": "Disconnected",
+          "failedNestWorkspace": "워크스페이스를 중첩하지 못했습니다"
         },
         "WorktreeMetaDialog": {
           "3db0a2a593": "취소",
@@ -4181,6 +4193,12 @@
           "c7d8e9f0a1": "{{value0}}개 업데이트됨",
           "d8e9f0a1b2": "{{value0}}개 건너뜀",
           "e9f0a1b2c3": "{{value0}}개 실패"
+        },
+        "WorktreeParentPickerPopover": {
+          "failedSetParent": "상위 워크트리를 설정하지 못했습니다",
+          "current": "현재",
+          "searchPlaceholder": "워크트리 검색...",
+          "empty": "일치하는 적격 워크트리가 없습니다."
         }
       },
       "shared": {
@@ -4738,11 +4756,11 @@
           "agentHibernation": {
             "copy": "설정된 유휴 시간이 지난 백그라운드 agent terminals을 중지하고, 다시 열 때 지원되는 세션을 재개합니다. 안전 모델을 조정하는 동안 제공되는 실험적 기능입니다.",
             "description": "설정된 유휴 시간이 지난 백그라운드 agent terminals을 중지하고, 다시 열 때 지원되는 세션을 재개합니다.",
-            "idleMinutesDescription": "완료된 백그라운드 agent를 Orca가 최대 절전 모드로 전환하기 전에 기다릴 유휴 시간(분)입니다.",
-            "idleMinutesLabel": "최대 절전까지",
+            "idleMinutesDescription": "완료된 백그라운드 agent를 Orca가 절전 모드로 전환하기 전에 기다릴 유휴 시간(분)입니다.",
+            "idleMinutesLabel": "절전까지",
             "idleMinutesSuffix": "분",
-            "title": "Agent 최대 절전",
-            "toggleLabel": "Agent 최대 절전 전환"
+            "title": "Agent 절전",
+            "toggleLabel": "Agent 절전 전환"
           },
           "newWorktreeCardStyle": {
             "copy": "업데이트된 worktree 카드 레이아웃, 메타데이터 배치, 카드 표시 메뉴 옵션 및 상태 표시를 미리 봅니다.",
@@ -6815,11 +6833,10 @@
               "agent": "agent",
               "agents": "agents",
               "description": "설정된 유휴 시간이 지난 백그라운드 agent terminals을 중지하고, 다시 열 때 지원되는 세션을 재개합니다.",
-              "hibernate": "최대 절전",
               "minutes": "분",
               "sleep": "절전",
               "terminal": "terminal",
-              "title": "Agent 최대 절전"
+              "title": "Agent 절전"
             },
             "newWorktreeCardStyle": {
               "card": "카드",
@@ -11414,14 +11431,14 @@
           "summary": "{{value0}}개 연결됨 · PR/MR 있음 {{value1}}개 · 주의 필요 {{value2}}개 · 대기 중 {{value3}}개 · 통과 {{value4}}개 · PR 없음 {{value5}}개 · 알 수 없음 {{value6}}개",
           "showDetails": "{{value0}} PR 검사 세부 정보 표시",
           "hideDetails": "{{value0}} PR 검사 세부 정보 숨기기",
-          "reviewChecks": "Review checks",
-          "allChecksPassing": "all checks passing",
-          "oneWorktree": "1 worktree",
-          "worktreeCount": "{{value0}} worktrees",
-          "oneFailing": "1 failing",
-          "failingCount": "{{value0}} failing",
-          "onePending": "1 pending",
-          "pendingCount": "{{value0}} pending"
+          "reviewChecks": "리뷰 검사",
+          "allChecksPassing": "모든 검사 통과",
+          "oneWorktree": "1개 워크트리",
+          "worktreeCount": "{{value0}}개 워크트리",
+          "oneFailing": "1개 실패",
+          "failingCount": "{{value0}}개 실패",
+          "onePending": "1개 대기 중",
+          "pendingCount": "{{value0}}개 대기 중"
         },
         "parentPrChecks": {
           "rowSummary": {

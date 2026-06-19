@@ -1,6 +1,16 @@
 import { useEffect } from 'react'
 
-export function useMobilePageEscapeClose(onClose: () => void): void {
+function isEditableElement(target: EventTarget | null): target is HTMLElement {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
+  )
+}
+
+export function useMobilePageEscape(onClose: () => void): void {
+  // Why: mirror Automations/Tasks — Esc first exits field focus, then closes the page.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
       if (event.key !== 'Escape' || event.defaultPrevented) {
@@ -10,12 +20,7 @@ export function useMobilePageEscapeClose(onClose: () => void): void {
       if (!(target instanceof HTMLElement)) {
         return
       }
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement ||
-        target.isContentEditable
-      ) {
+      if (isEditableElement(target)) {
         event.preventDefault()
         target.blur()
         return

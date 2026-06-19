@@ -3,12 +3,16 @@ import { useAppStore } from '@/store'
 import { useAudioCapture } from '@/hooks/use-audio-capture'
 import { toast } from 'sonner'
 import { DictationIndicator } from './DictationIndicator'
-import { captureInsertionTarget, type DictationInsertionTarget } from './dictation-insertion-target'
-import { getShortcutPlatform } from '@/lib/shortcut-platform'
-import { waitForStoppedSession } from './dictation-stopped-sessions'
-import { keybindingMatchesAction } from '../../../../shared/keybindings'
+import {
+  captureInsertionTarget,
+  insertText,
+  type DictationInsertionTarget
+} from './dictation-insertion-target'
+import { formatFinalTranscriptSegment } from './dictation-final-segments'
+import { recordStoppedSession, waitForStoppedSession } from './dictation-stopped-sessions'
 import { translate } from '@/i18n/i18n'
-import { useDictationSpeechEvents } from './use-dictation-speech-events'
+import { showDictationStartErrorToast } from './dictation-start-error-toast'
+import { useHoldDictationGesture } from './use-hold-dictation-gesture'
 
 export function DictationController() {
   const dictationState = useAppStore((s) => s.dictationState)
@@ -191,37 +195,7 @@ export function DictationController() {
       }
       dictationStateRef.current = 'error'
       setDictationState('error')
-      if (message.includes('Permission') || message.includes('NotAllowed')) {
-        toast.error(
-          translate(
-            'auto.components.dictation.DictationController.2d5b9fabf9',
-            'Microphone access denied. Grant access in system settings, then restart Orca.'
-          )
-        )
-      } else if (message.includes('not ready')) {
-        toast('Speech model not ready. Download it in Settings > Voice.')
-      } else if (message.includes('Unknown model')) {
-        toast('Selected model is no longer available. Please choose another in Settings > Voice.', {
-          action: {
-            label: translate(
-              'auto.components.dictation.DictationController.bb7f599ee7',
-              'Open Settings'
-            ),
-            onClick: () => {
-              useAppStore.getState().openSettingsTarget({ pane: 'voice', repoId: null })
-              useAppStore.getState().openSettingsPage()
-            }
-          }
-        })
-      } else {
-        toast.error(
-          translate(
-            'auto.components.dictation.DictationController.55127a3706',
-            'Dictation failed: {{value0}}',
-            { value0: message }
-          )
-        )
-      }
+      showDictationStartErrorToast(message)
       dictationStateRef.current = 'idle'
       setDictationState('idle')
     }
@@ -291,100 +265,93 @@ export function DictationController() {
     stopDictation
   ])
 
-  // Why: hold mode uses renderer-side DOM events instead of the IPC path
-  // (before-input-event). When before-input-event calls preventDefault()
-  // on the keyDown, Electron suppresses ALL subsequent DOM events for that
-  // key combo — including the keyUp we need to detect release. By handling
-  // Cmd+E entirely in the renderer, both keydown and keyup fire normally.
-  // On macOS, Cmd+E doesn't produce a terminal control character (unlike
-  // Ctrl+E on Linux), so letting it through to xterm is harmless.
-  useEffect(() => {
-    const mode = settings?.voice?.dictationMode ?? 'toggle'
-    if (mode !== 'hold') {
-      return
-    }
-
-    const handleKeyDown = (e: KeyboardEvent): void => {
-      if (keybindingMatchesAction('voice.dictation', e, getShortcutPlatform(), keybindings)) {
-        if (!settings?.voice?.enabled || !settings.voice.sttModel) {
-          return
-        }
-        e.preventDefault()
-        e.stopPropagation()
-        holdGestureActiveRef.current = true
-        if (dictationStateRef.current === 'idle') {
-          void startDictation()
-        }
-      }
-    }
-
-    const handleKeyUp = (): void => {
-      if (!holdGestureActiveRef.current) {
-        return
-      }
-      if (dictationStateRef.current === 'idle' || dictationStateRef.current === 'stopping') {
-        holdGestureActiveRef.current = false
-        return
-      }
-      holdGestureActiveRef.current = false
-      void stopDictation()
-    }
-
-    const handleBlur = (): void => {
-      if (!holdGestureActiveRef.current) {
-        return
-      }
-      holdGestureActiveRef.current = false
-      if (dictationStateRef.current !== 'idle' && dictationStateRef.current !== 'stopping') {
-        insertionTargetRef.current = null
-        intentionalTargetCancellationRef.current = true
-        void stopDictation()
-      }
-    }
-
-    const handleVisibilityChange = (): void => {
-      if (document.visibilityState !== 'visible') {
-        handleBlur()
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown, true)
-    window.addEventListener('keyup', handleKeyUp, true)
-    window.addEventListener('blur', handleBlur)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    return () => {
-      handleBlur()
-      window.removeEventListener('keydown', handleKeyDown, true)
-      window.removeEventListener('keyup', handleKeyUp, true)
-      window.removeEventListener('blur', handleBlur)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-  }, [
-    settings?.voice?.dictationMode,
-    settings?.voice?.enabled,
-    settings?.voice?.sttModel,
+  useHoldDictationGesture({
+    dictationStateRef,
+    holdGestureActiveRef,
+    insertionTargetRef,
+    intentionalTargetCancellationRef,
     keybindings,
+    settings,
     startDictation,
     stopDictation
-  ])
-
-  useDictationSpeechEvents({
-    activeSessionIdRef,
-    insertionTargetRef,
-    finalTranscriptReceivedRef,
-    intentionalTargetCancellationRef,
-    insertedFinalTranscriptRef,
-    erroredSessionIdsRef,
-    stoppedSessionIdsRef,
-    stoppedResolversRef,
-    stopRequestedDuringStartRef,
-    dictationRunRef,
-    dictationStateRef,
-    setPartialTranscript,
-    setDictationState,
-    stopCapture,
-    discardBufferedAudio
   })
+
+  useEffect(() => {
+    const cleanupPartial = window.api.speech.onPartialTranscript((data) => {
+      if (data.sessionId !== activeSessionIdRef.current) {
+        return
+      }
+      setPartialTranscript(data.text)
+    })
+
+    const cleanupFinal = window.api.speech.onFinalTranscript((data) => {
+      if (data.sessionId !== activeSessionIdRef.current || !data.text) {
+        return
+      }
+      setPartialTranscript('')
+      finalTranscriptReceivedRef.current = true
+      const target = insertionTargetRef.current
+      if (target) {
+        const textToInsert = formatFinalTranscriptSegment(
+          data.text,
+          insertedFinalTranscriptRef.current
+        )
+        insertText(textToInsert, target)
+        insertedFinalTranscriptRef.current += textToInsert
+      } else if (!intentionalTargetCancellationRef.current) {
+        toast.message(
+          translate(
+            'auto.components.dictation.DictationController.7afff43472',
+            'Dictation finished, but no text field was focused.'
+          )
+        )
+      }
+    })
+
+    const cleanupStopped = window.api.speech.onStopped((data) => {
+      recordStoppedSession(data.sessionId, stoppedSessionIdsRef, stoppedResolversRef)
+    })
+
+    const cleanupError = window.api.speech.onError((data) => {
+      if (data.sessionId !== activeSessionIdRef.current) {
+        return
+      }
+      const sessionId = data.sessionId
+      erroredSessionIdsRef.current.add(sessionId)
+      dictationRunRef.current += 1
+      activeSessionIdRef.current = null
+      toast.error(
+        translate(
+          'auto.components.dictation.DictationController.de136f1199',
+          'Speech error: {{value0}}',
+          { value0: data.error }
+        )
+      )
+      dictationStateRef.current = 'stopping'
+      setDictationState('stopping')
+      stopCapture()
+      discardBufferedAudio()
+      void (async () => {
+        await window.api.speech.stopDictation(sessionId).catch(() => undefined)
+        await waitForStoppedSession(sessionId, stoppedSessionIdsRef, stoppedResolversRef)
+        insertionTargetRef.current = null
+        intentionalTargetCancellationRef.current = false
+        stopRequestedDuringStartRef.current = false
+        finalTranscriptReceivedRef.current = false
+        insertedFinalTranscriptRef.current = ''
+        dictationStateRef.current = 'idle'
+        setDictationState('idle')
+        setPartialTranscript('')
+      })()
+    })
+
+    return () => {
+      cleanupPartial()
+      cleanupFinal()
+      cleanupStopped()
+      cleanupError()
+    }
+  }, [setPartialTranscript, setDictationState, stopCapture, discardBufferedAudio])
 
   return <DictationIndicator />
 }

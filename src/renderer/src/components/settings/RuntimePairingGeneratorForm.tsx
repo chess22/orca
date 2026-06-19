@@ -7,12 +7,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { GeneratedUrlRow, UnavailableUrlRow } from './RuntimePairingGeneratedUrlRows'
 import { translate } from '@/i18n/i18n'
 
-const LOOPBACK_ADDRESS = '127.0.0.1'
-
 type RuntimePairingGeneratorFormProps = {
+  loopbackAddress: string
+  networkInterfaces: { name: string; address: string }[]
   selectedAddress: string
   customAddress: string
-  networkInterfaces: { name: string; address: string }[]
   refreshingNetworkInterfaces: boolean
   isGeneratingPairing: boolean
   webClientUrl: string | null
@@ -21,14 +20,15 @@ type RuntimePairingGeneratorFormProps = {
   onSelectedAddressChange: (address: string) => void
   onCustomAddressChange: (address: string) => void
   onRefreshNetworkInterfaces: () => void
-  onGeneratePairingUrl: () => void
-  onCopyGeneratedUrl: (target: 'web' | 'pairing', value: string) => void
+  onGenerate: () => void
+  onCopy: (target: 'web' | 'pairing', value: string) => void
 }
 
 export function RuntimePairingGeneratorForm({
+  loopbackAddress,
+  networkInterfaces,
   selectedAddress,
   customAddress,
-  networkInterfaces,
   refreshingNetworkInterfaces,
   isGeneratingPairing,
   webClientUrl,
@@ -37,8 +37,8 @@ export function RuntimePairingGeneratorForm({
   onSelectedAddressChange,
   onCustomAddressChange,
   onRefreshNetworkInterfaces,
-  onGeneratePairingUrl,
-  onCopyGeneratedUrl
+  onGenerate,
+  onCopy
 }: RuntimePairingGeneratorFormProps): React.JSX.Element {
   return (
     <>
@@ -62,12 +62,12 @@ export function RuntimePairingGeneratorForm({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={LOOPBACK_ADDRESS}>
+                  <SelectItem value={loopbackAddress}>
                     {translate(
                       'auto.components.settings.RuntimePairingUrlGenerator.de6d5cff95',
                       'This computer ('
                     )}
-                    {LOOPBACK_ADDRESS})
+                    {loopbackAddress})
                   </SelectItem>
                   {networkInterfaces.map((networkInterface, index) => (
                     <SelectItem
@@ -79,7 +79,8 @@ export function RuntimePairingGeneratorForm({
                   ))}
                 </SelectContent>
               </Select>
-              {/* Why: VPN/tailnet addresses can appear after Settings opens. */}
+              {/* Why: server sharing uses the same interface list as Mobile,
+                  and VPN/tailnet addresses can appear after Settings opens. */}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -137,7 +138,7 @@ export function RuntimePairingGeneratorForm({
             variant="outline"
             size="sm"
             className="gap-1.5"
-            onClick={onGeneratePairingUrl}
+            onClick={onGenerate}
             disabled={isGeneratingPairing}
           >
             {isGeneratingPairing ? <Loader2 className="animate-spin" /> : <RefreshCw />}
@@ -161,7 +162,7 @@ export function RuntimePairingGeneratorForm({
           )}
           value={webClientUrl}
           copied={copiedTarget === 'web'}
-          onCopy={() => onCopyGeneratedUrl('web', webClientUrl)}
+          onCopy={() => onCopy('web', webClientUrl)}
         />
       ) : runtimePairingUrl ? (
         <UnavailableUrlRow
@@ -188,7 +189,7 @@ export function RuntimePairingGeneratorForm({
           )}
           value={runtimePairingUrl}
           copied={copiedTarget === 'pairing'}
-          onCopy={() => onCopyGeneratedUrl('pairing', runtimePairingUrl)}
+          onCopy={() => onCopy('pairing', runtimePairingUrl)}
         />
       ) : null}
     </>

@@ -8,7 +8,10 @@ import { parseSparsePresetDirectories } from '@/lib/sparse-preset-draft'
 import { useMountedRef } from '@/hooks/useMountedRef'
 import type { SparsePreset } from '../../../../shared/types'
 import { translate } from '@/i18n/i18n'
-import { SparsePresetDraftForm, type SparsePresetDraft } from './SparsePresetDraftForm'
+import {
+  SparseCheckoutPresetDraftForm,
+  type SparsePresetDraft
+} from './SparseCheckoutPresetDraftForm'
 
 type SparseCheckoutPresetSelectProps = {
   repoId: string
@@ -240,12 +243,12 @@ export default function SparseCheckoutPresetSelect({
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
         {draft ? (
-          <SparsePresetDraftForm
+          <SparseCheckoutPresetDraftForm
             draft={draft}
             parsedDirectories={parsedDirectories}
             nameError={nameError}
-            canSave={canSave}
             submitting={submitting}
+            canSave={canSave}
             setNameInputNode={setNameInputNode}
             onDraftChange={setDraft}
             onCancel={() => setDraft(null)}

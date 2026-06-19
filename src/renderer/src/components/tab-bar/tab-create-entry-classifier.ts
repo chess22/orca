@@ -1,26 +1,17 @@
+import {
+  prepareQuickOpenFiles,
+  rankQuickOpenFiles,
+  type QuickOpenIndexedFile
+} from '../quick-open-search'
 import type { RuntimeFileListState } from '../quick-open-file-list'
 import { translate } from '@/i18n/i18n'
-import { findExistingFileMatches } from './tab-entry-file-matches'
-import { validateNewTabEntryRelativePath } from './tab-entry-path-validation'
+import {
+  isLikelyNewFileIntent,
+  validateNewTabEntryRelativePath
+} from './tab-create-entry-path-validation'
+import { classifyExplicitUrl, classifyHostUrl } from './tab-create-entry-url-classification'
 
-export { validateNewTabEntryRelativePath } from './tab-entry-path-validation'
-
-const HOST_FILE_EXTENSIONS = new Set([
-  'css',
-  'html',
-  'js',
-  'jsx',
-  'json',
-  'md',
-  'py',
-  'toml',
-  'ts',
-  'tsx',
-  'yaml',
-  'yml'
-])
-const LOCAL_ADDRESS_PATTERN =
-  /^(?:localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[[0-9a-f:]+\])(?::\d+)?(?:[/?#].*)?$/i
+export { validateNewTabEntryRelativePath } from './tab-create-entry-path-validation'
 
 export type TabEntryClassification =
   | { kind: 'empty'; message: string }
@@ -44,82 +35,57 @@ export type TabEntryOption = {
   id: string
 }
 
-function hasPathSeparator(query: string): boolean {
-  return /[\\/]/.test(query)
+function normalizeFileMatchQuery(query: string): string {
+  return query.trim().replace(/\\/g, '/')
 }
 
-function hasFilenameExtension(query: string): boolean {
-  return /(?:^|[\\/])[^\\/]+\.[^\\/]+$/.test(query.trim())
-}
-
-function isLikelyNewFileIntent(query: string): boolean {
-  return hasPathSeparator(query) || hasFilenameExtension(query)
-}
-
-function classifyExplicitUrl(
-  query: string
-): Extract<TabEntryClassification, { kind: 'blocked' | 'explicit-url' }> | null {
-  if (LOCAL_ADDRESS_PATTERN.test(query)) {
-    return null
-  }
-  let url: URL
-  try {
-    url = new URL(query)
-  } catch {
-    return null
-  }
-  if ((url.protocol !== 'http:' && url.protocol !== 'https:') || !url.hostname) {
-    return {
-      kind: 'blocked',
-      message: translate(
-        'auto.components.tab.bar.tab.create.entry.classifier.90eb94dc48',
-        'Enter an http:// or https:// URL.'
-      )
+function dedupeMatches(matches: ExistingFileMatch[]): ExistingFileMatch[] {
+  const seen = new Set<string>()
+  return matches.filter((match) => {
+    if (seen.has(match.relativePath)) {
+      return false
     }
-  }
-  return { kind: 'explicit-url', url: url.href }
+    seen.add(match.relativePath)
+    return true
+  })
 }
 
-function classifyLocalDevUrl(
-  query: string
-): Extract<TabEntryActionClassification, { kind: 'host-url' }> | null {
-  if (!LOCAL_ADDRESS_PATTERN.test(query)) {
-    return null
-  }
-  try {
-    const url = new URL(`http://${query}`)
-    return url.hostname ? { kind: 'host-url', url: url.href } : null
-  } catch {
-    return null
-  }
-}
+type ExistingFileMatch = Extract<TabEntryActionClassification, { kind: 'existing-file' }>
 
-function classifyHostLikeUrl(
-  query: string
-): Extract<TabEntryActionClassification, { kind: 'host-url' }> | null {
-  if (/[\\/]/.test(query) || /\s/.test(query)) {
-    return null
+function findExistingFileMatches(
+  query: string,
+  indexedFiles: readonly QuickOpenIndexedFile[],
+  limit: number
+): ExistingFileMatch[] {
+  const normalizedQuery = normalizeFileMatchQuery(query)
+  if (!normalizedQuery || limit <= 0) {
+    return []
   }
-  const extension = query.split(':')[0]?.split('.').pop()?.toLowerCase() ?? ''
-  if (HOST_FILE_EXTENSIONS.has(extension)) {
-    return null
-  }
-  const hostPort = '(?::\\d{1,5})?'
-  const localhost = new RegExp(`^localhost${hostPort}$`, 'i')
-  const ipv4 = new RegExp(`^(?:\\d{1,3}\\.){3}\\d{1,3}${hostPort}$`)
-  const domain = new RegExp(
-    `^(?=.{1,253}${hostPort}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,}${hostPort}$`,
-    'i'
+  const lowerQuery = normalizedQuery.toLowerCase()
+  const exactPathMatches = indexedFiles
+    .filter((file) => file.lowerPath === lowerQuery)
+    .map((file) => ({
+      kind: 'existing-file' as const,
+      matchKind: 'exact-path' as const,
+      relativePath: file.path
+    }))
+  const exactBasenameMatches = indexedFiles
+    .filter((file) => file.lowerFilename === lowerQuery)
+    .map((file) => ({
+      kind: 'existing-file' as const,
+      matchKind: 'exact-basename' as const,
+      relativePath: file.path
+    }))
+  const fuzzyMatches = rankQuickOpenFiles(normalizedQuery, indexedFiles, limit).map((file) => ({
+    kind: 'existing-file' as const,
+    matchKind: 'fuzzy' as const,
+    relativePath: file.path
+  }))
+
+  return dedupeMatches([...exactPathMatches, ...exactBasenameMatches, ...fuzzyMatches]).slice(
+    0,
+    limit
   )
-  if (!localhost.test(query) && !ipv4.test(query) && !domain.test(query)) {
-    return null
-  }
-  try {
-    const url = new URL(`https://${query}`)
-    return url.hostname ? { kind: 'host-url', url: url.href } : null
-  } catch {
-    return null
-  }
 }
 
 export function classifyTabEntryQuery(
@@ -186,7 +152,11 @@ export function getTabEntryOptions(
     return [{ id: 'load-error', classification: { kind: 'blocked', message: fileList.loadError } }]
   }
 
-  const existingFiles = findExistingFileMatches(trimmed, fileList.files, Math.max(limit, 1))
+  const existingFiles = findExistingFileMatches(
+    trimmed,
+    prepareQuickOpenFiles(fileList.files),
+    Math.max(limit, 1)
+  )
   const exactExistingFiles = existingFiles.filter((file) => file.matchKind !== 'fuzzy')
   const fuzzyExistingFiles = existingFiles.filter((file) => file.matchKind === 'fuzzy')
 
@@ -197,7 +167,7 @@ export function getTabEntryOptions(
     newFile = null
   }
 
-  const hostUrl = classifyLocalDevUrl(trimmed) ?? classifyHostLikeUrl(trimmed)
+  const hostUrl = classifyHostUrl(trimmed)
 
   const options: TabEntryActionClassification[] = []
   if (exactExistingFiles.length > 0) {

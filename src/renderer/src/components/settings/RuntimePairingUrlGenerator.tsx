@@ -4,8 +4,8 @@ import { useMountedRef } from '@/hooks/useMountedRef'
 import type { RuntimeAccessGrant } from '../../../../shared/runtime-access-grants'
 import { Label } from '../ui/label'
 import { RuntimeAccessGrantList } from './RuntimeAccessGrantList'
-import { RuntimePairingGeneratorForm } from './RuntimePairingGeneratorForm'
 import { translate } from '@/i18n/i18n'
+import { RuntimePairingGeneratorForm } from './RuntimePairingGeneratorForm'
 
 const LOOPBACK_ADDRESS = '127.0.0.1'
 
@@ -358,9 +358,10 @@ export function RuntimePairingUrlGenerator({
       ) : null}
       {showGeneratorForm ? (
         <RuntimePairingGeneratorForm
+          loopbackAddress={LOOPBACK_ADDRESS}
+          networkInterfaces={networkInterfaces}
           selectedAddress={selectedAddress}
           customAddress={customAddress}
-          networkInterfaces={networkInterfaces}
           refreshingNetworkInterfaces={refreshingNetworkInterfaces}
           isGeneratingPairing={isGeneratingPairing}
           webClientUrl={webClientUrl}
@@ -369,8 +370,8 @@ export function RuntimePairingUrlGenerator({
           onSelectedAddressChange={updateSelectedAddress}
           onCustomAddressChange={updateCustomAddress}
           onRefreshNetworkInterfaces={() => void loadNetworkInterfaces({ showToastOnError: true })}
-          onGeneratePairingUrl={() => void generateRuntimePairingUrl()}
-          onCopyGeneratedUrl={(target, value) => void copyGeneratedUrl(target, value)}
+          onGenerate={() => void generateRuntimePairingUrl()}
+          onCopy={(target, value) => void copyGeneratedUrl(target, value)}
         />
       ) : null}
 

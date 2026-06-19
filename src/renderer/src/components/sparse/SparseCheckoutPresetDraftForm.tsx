@@ -1,7 +1,7 @@
 import { LoaderCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { SparsePresetDirectoryParseResult } from '@/lib/sparse-preset-draft'
 import { translate } from '@/i18n/i18n'
+import type { SparsePresetDirectoryParseResult } from '@/lib/sparse-preset-draft'
 
 export type SparsePresetDraft = {
   mode: 'new' | 'edit'
@@ -10,29 +10,29 @@ export type SparsePresetDraft = {
   directoriesText: string
 }
 
-type SparsePresetDraftFormProps = {
+type SparseCheckoutPresetDraftFormProps = {
   draft: SparsePresetDraft
   parsedDirectories: SparsePresetDirectoryParseResult | null
   nameError: string | null
-  canSave: boolean
   submitting: boolean
+  canSave: boolean
   setNameInputNode: (node: HTMLInputElement | null) => void
   onDraftChange: (draft: SparsePresetDraft) => void
   onCancel: () => void
   onSave: () => void
 }
 
-export function SparsePresetDraftForm({
+export function SparseCheckoutPresetDraftForm({
   draft,
   parsedDirectories,
   nameError,
-  canSave,
   submitting,
+  canSave,
   setNameInputNode,
   onDraftChange,
   onCancel,
   onSave
-}: SparsePresetDraftFormProps): React.JSX.Element {
+}: SparseCheckoutPresetDraftFormProps): React.JSX.Element {
   return (
     <form
       onSubmit={(event) => {
