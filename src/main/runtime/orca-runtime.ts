@@ -332,6 +332,7 @@ import {
   listLabels,
   listAssignableUsers
 } from '../github/client'
+import type { GitHubPRBranchLookupOptions } from '../github/client'
 import { resolveGitHubPrStartPoint } from '../github/pr-start-point'
 import { fetchPrHeadTrackingRef } from '../github/pr-head-tracking-ref'
 import { getWorkItemDetails, getPRFileContents } from '../github/work-item-details'
@@ -9958,17 +9959,24 @@ export class OrcaRuntimeService {
     repoSelector: string,
     branch: string,
     linkedPRNumber?: number | null,
-    fallbackPRNumber?: number | null
+    fallbackPRNumber?: number | null,
+    acceptMergedFallbackPR?: boolean
   ): Promise<Awaited<ReturnType<typeof getPRForBranch>>> {
     const repo = await this.resolveRepoSelector(repoSelector)
-    const options = this.getHostedReviewExecutionOptions(repo)
+    const options: GitHubPRBranchLookupOptions = this.getHostedReviewExecutionOptions(repo) ?? {}
+    const lookupOptions = { ...options }
+    if (acceptMergedFallbackPR === true) {
+      lookupOptions.acceptMergedFallbackPR = true
+    }
+    const lookupOptionArgs: [] | [GitHubPRBranchLookupOptions] =
+      Object.keys(lookupOptions).length > 0 ? [lookupOptions] : []
     return getPRForBranch(
       repo.path,
       branch,
       linkedPRNumber ?? null,
       repo.connectionId ?? null,
       linkedPRNumber == null ? (fallbackPRNumber ?? null) : null,
-      options
+      ...lookupOptionArgs
     )
   }
 

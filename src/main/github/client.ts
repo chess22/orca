@@ -1989,6 +1989,10 @@ const PR_LOOKUP_JSON_FIELDS =
 const PR_BRANCH_LIST_JSON_FIELDS =
   'number,title,state,url,statusCheckRollup,updatedAt,isDraft,mergeable,baseRefName,headRefName,baseRefOid,headRefOid'
 
+export type GitHubPRBranchLookupOptions = HostedReviewExecutionOptions & {
+  acceptMergedFallbackPR?: boolean
+}
+
 function mapRestPRMergeable(pr: RestPullRequest): PRMergeableState {
   const mergeableState = pr.mergeable_state?.toLowerCase()
   if (mergeableState === 'dirty') {
@@ -2455,7 +2459,7 @@ export async function getPRForBranch(
   linkedPRNumber?: number | null,
   connectionId?: string | null,
   fallbackPRNumber?: number | null,
-  options: HostedReviewExecutionOptions = {}
+  options: GitHubPRBranchLookupOptions = {}
 ): Promise<PRInfo | null> {
   const outcome = await getPRForBranchOutcome(
     repoPath,
@@ -2474,7 +2478,7 @@ export async function getPRForBranchOutcome(
   linkedPRNumber?: number | null,
   connectionId?: string | null,
   fallbackPRNumber?: number | null,
-  options: HostedReviewExecutionOptions = {}
+  options: GitHubPRBranchLookupOptions = {}
 ): Promise<PRRefreshOutcome> {
   // Strip refs/heads/ prefix if present
   const branchName = branch.replace(/^refs\/heads\//, '')
@@ -2549,7 +2553,9 @@ export async function getPRForBranchOutcome(
         }
       }
     }
+    let mergedBranchLookupNumber: number | null = null
     if (data && isMergedImplicitPR(data, linkedPRNumber)) {
+      mergedBranchLookupNumber = data.number
       data = null
       dataRepo = null
       dataHeadRepo = headRepo
@@ -2566,7 +2572,18 @@ export async function getPRForBranchOutcome(
     if (!data) {
       return { kind: 'no-pr', fetchedAt: Date.now() }
     }
-    if (isMergedImplicitPR(data, linkedPRNumber)) {
+    const fallbackConfirmedMergedBranch =
+      typeof fallbackPRNumber === 'number' &&
+      mergedBranchLookupNumber === fallbackPRNumber &&
+      data.number === fallbackPRNumber
+    // Why: a currently visible PR can be merged outside Orca; when the caller
+    // marks the fallback as visible review state, keep its lifecycle fresh even
+    // if GitHub no longer reports it by branch (for example deleted heads).
+    if (
+      isMergedImplicitPR(data, linkedPRNumber) &&
+      !fallbackConfirmedMergedBranch &&
+      options.acceptMergedFallbackPR !== true
+    ) {
       return { kind: 'no-pr', fetchedAt: Date.now() }
     }
 
