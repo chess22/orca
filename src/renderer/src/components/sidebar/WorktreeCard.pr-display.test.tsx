@@ -203,8 +203,9 @@ describe('WorktreeCard linked PR display', () => {
       <WorktreeCard worktree={makeWorktree({ linkedPR: 456 })} repo={makeRepo()} isActive={false} />
     )
 
-    expect(unreadMarkup).toContain('aria-label="Mark as read"')
-    expect(unreadMarkup).toContain('PR checks: Failed · Mark read')
+    expect(unreadMarkup).not.toContain('aria-label="Mark as read"')
+    expect(unreadMarkup).toContain('PR checks: Failed')
+    expect(unreadMarkup).not.toContain('Mark read')
     expect(unreadMarkup).toContain('size-[13px] translate-x-px')
     expect(unreadMarkup).not.toContain('lucide-bell')
     expect(unreadMarkup).not.toContain('text-amber-500')
