@@ -846,9 +846,7 @@ describe('TabsSlice', () => {
       const state = store.getState()
       const moved = state.unifiedTabsByWorktree[WT].find((item) => item.id === tab.id)
       expect(moved?.groupId).toBe(targetGroupId)
-      expect(
-        state.groupsByWorktree[WT].find((group) => group.id === sourceGroupId)?.tabOrder
-      ).toEqual([])
+      expect(state.groupsByWorktree[WT].find((group) => group.id === sourceGroupId)).toBeUndefined()
       expect(
         state.groupsByWorktree[WT].find((group) => group.id === targetGroupId)?.tabOrder
       ).toEqual([tab.id])

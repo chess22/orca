@@ -254,7 +254,6 @@ describe('tab title tooltips', () => {
         onSetTabColor={vi.fn()}
         onTogglePin={vi.fn()}
         onToggleExpand={vi.fn()}
-        onSplitGroup={vi.fn()}
         dragData={makeDragData('terminal', 'terminal-1')}
       />
     )
@@ -286,7 +285,6 @@ describe('tab title tooltips', () => {
         onSetTabColor={vi.fn()}
         onTogglePin={vi.fn()}
         onToggleExpand={vi.fn()}
-        onSplitGroup={vi.fn()}
         dragData={makeDragData('terminal', 'terminal-1')}
       />
     )
@@ -309,7 +307,6 @@ describe('tab title tooltips', () => {
         onActivate={vi.fn()}
         onClose={vi.fn()}
         onCloseToRight={vi.fn()}
-        onSplitGroup={vi.fn()}
         onDuplicate={vi.fn()}
         onTogglePin={vi.fn()}
         dragData={makeDragData('browser', 'browser-1')}
@@ -340,7 +337,6 @@ describe('tab title tooltips', () => {
         onCloseAll={vi.fn()}
         onMakePermanent={vi.fn()}
         onTogglePin={vi.fn()}
-        onSplitGroup={vi.fn()}
         dragData={makeDragData('editor', 'editor-tab-1')}
       />
     )

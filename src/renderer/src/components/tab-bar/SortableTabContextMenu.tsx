@@ -1,4 +1,4 @@
-import { Columns2, Pin, PinOff, Rows2 } from 'lucide-react'
+import { Pin, PinOff } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -86,7 +86,6 @@ type SortableTabContextMenuProps = {
   onRenameOpen: () => void
   onSetTabColor: (tabId: string, color: string | null) => void
   onTogglePin: () => void
-  onSplitGroup: (direction: 'left' | 'right' | 'up' | 'down', sourceVisibleTabId: string) => void
 }
 
 export function SortableTabContextMenu({
@@ -102,8 +101,7 @@ export function SortableTabContextMenu({
   onCloseToRight,
   onRenameOpen,
   onSetTabColor,
-  onTogglePin,
-  onSplitGroup
+  onTogglePin
 }: SortableTabContextMenuProps): React.JSX.Element {
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange} modal={false}>
@@ -116,23 +114,6 @@ export function SortableTabContextMenu({
         />
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-48" sideOffset={0} align="start">
-        <DropdownMenuItem onSelect={() => onSplitGroup('up', tab.id)}>
-          <Rows2 className="mr-1.5 size-3.5" />
-          {translate('auto.components.tab.bar.SortableTabContextMenu.591f9b12c1', 'Split Up')}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onSplitGroup('down', tab.id)}>
-          <Rows2 className="mr-1.5 size-3.5" />
-          {translate('auto.components.tab.bar.SortableTabContextMenu.af80ed83c1', 'Split Down')}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onSplitGroup('left', tab.id)}>
-          <Columns2 className="mr-1.5 size-3.5" />
-          {translate('auto.components.tab.bar.SortableTabContextMenu.0ce4bae39d', 'Split Left')}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onSplitGroup('right', tab.id)}>
-          <Columns2 className="mr-1.5 size-3.5" />
-          {translate('auto.components.tab.bar.SortableTabContextMenu.21132389e9', 'Split Right')}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={onTogglePin}>
           {isPinned ? <PinOff className="mr-1.5 size-3.5" /> : <Pin className="mr-1.5 size-3.5" />}
           {isPinned

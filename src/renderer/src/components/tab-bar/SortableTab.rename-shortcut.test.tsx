@@ -175,7 +175,6 @@ async function renderSortableTab(): Promise<unknown> {
     onSetTabColor: vi.fn(),
     onTogglePin: vi.fn(),
     onToggleExpand: vi.fn(),
-    onSplitGroup: vi.fn(),
     dragData: {
       kind: 'tab',
       worktreeId: 'wt-1',

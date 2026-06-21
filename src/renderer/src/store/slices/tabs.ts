@@ -1378,18 +1378,49 @@ export const createTabsSlice: StateCreator<AppState, [], [], TabsSlice> = (set, 
         }
         return group
       })
+      let nextLayoutByWorktree = state.layoutByWorktree
+      let nextActiveGroupIdByWorktreeResolved = nextActiveGroupIdByWorktree
+      let filteredGroups = nextGroups
+      if (sourceOrder.length === 0) {
+        filteredGroups = nextGroups.filter((group) => group.id !== sourceGroup.id)
+        const collapsedState = collapseGroupLayout(
+          nextLayoutByWorktree,
+          nextActiveGroupIdByWorktreeResolved,
+          worktreeId,
+          sourceGroup.id,
+          targetGroupId
+        )
+        nextLayoutByWorktree = collapsedState.layoutByWorktree
+        nextActiveGroupIdByWorktreeResolved = collapsedState.activeGroupIdByWorktree
+      }
+      const nextGroupsByWorktree = {
+        ...state.groupsByWorktree,
+        [worktreeId]: filteredGroups
+      }
+      const nextUnifiedTabsByWorktree = {
+        ...state.unifiedTabsByWorktree,
+        [worktreeId]: (state.unifiedTabsByWorktree[worktreeId] ?? []).map((candidate) =>
+          candidate.id === tabId ? { ...candidate, groupId: targetGroupId } : candidate
+        )
+      }
       return {
-        unifiedTabsByWorktree: {
-          ...state.unifiedTabsByWorktree,
-          [worktreeId]: (state.unifiedTabsByWorktree[worktreeId] ?? []).map((candidate) =>
-            candidate.id === tabId ? { ...candidate, groupId: targetGroupId } : candidate
-          )
-        },
-        groupsByWorktree: {
-          ...state.groupsByWorktree,
-          [worktreeId]: nextGroups
-        },
-        activeGroupIdByWorktree: nextActiveGroupIdByWorktree
+        unifiedTabsByWorktree: nextUnifiedTabsByWorktree,
+        groupsByWorktree: nextGroupsByWorktree,
+        layoutByWorktree: nextLayoutByWorktree,
+        activeGroupIdByWorktree: nextActiveGroupIdByWorktreeResolved,
+        ...(state.activeWorktreeId === worktreeId
+          ? buildActiveSurfacePatch(
+              {
+                ...state,
+                unifiedTabsByWorktree: nextUnifiedTabsByWorktree,
+                groupsByWorktree: nextGroupsByWorktree,
+                layoutByWorktree: nextLayoutByWorktree,
+                activeGroupIdByWorktree: nextActiveGroupIdByWorktreeResolved
+              },
+              worktreeId,
+              targetGroupId
+            )
+          : {})
       }
     })
     if (moved && opts?.recordInteraction !== false) {

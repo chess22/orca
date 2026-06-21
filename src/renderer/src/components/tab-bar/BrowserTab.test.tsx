@@ -133,7 +133,6 @@ async function renderBrowserTab(tab: BrowserTabState): Promise<unknown> {
     onActivate: () => {},
     onClose: () => {},
     onCloseToRight: () => {},
-    onSplitGroup: () => {},
     onDuplicate: () => {},
     onTogglePin: () => {},
     dragData: {

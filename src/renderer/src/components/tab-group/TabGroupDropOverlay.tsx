@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
 import type { TabDropZone } from './useTabDragSplit'
+import { translate } from '@/i18n/i18n'
 
 function getOverlayStyle(zone: TabDropZone): CSSProperties {
   switch (zone) {
@@ -16,8 +17,30 @@ function getOverlayStyle(zone: TabDropZone): CSSProperties {
   }
 }
 
-export default function TabGroupDropOverlay({ zone }: { zone: TabDropZone }): React.JSX.Element {
+export default function TabGroupDropOverlay({
+  zone,
+  showPaneColumnLabel = false,
+  fillContainer = false
+}: {
+  zone: TabDropZone
+  showPaneColumnLabel?: boolean
+  /** When the parent already sizes the overlay to the target region. */
+  fillContainer?: boolean
+}): React.JSX.Element {
   return (
-    <div aria-hidden="true" className="tab-drop-overlay absolute" style={getOverlayStyle(zone)} />
+    <div
+      aria-hidden="true"
+      className="tab-drop-overlay absolute"
+      style={fillContainer ? { inset: 0 } : getOverlayStyle(zone)}
+    >
+      {showPaneColumnLabel && zone !== 'center' ? (
+        <span className="pointer-events-none absolute bottom-2 left-2 rounded-sm bg-blue-500/20 px-1.5 py-0.5 text-[11px] font-medium text-blue-100">
+          {translate(
+            'auto.components.tab.group.TabGroupDropOverlay.paneColumnLabel',
+            'New pane column'
+          )}
+        </span>
+      ) : null}
+    </div>
   )
 }

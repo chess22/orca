@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   resolveTabIndicatorEdges,
   resolveTabInsertion,
+  resolveTabPaneColumnSplitOverTab,
   type HoveredTabInsertion
 } from './tab-insertion'
 import type { TabDragItemData } from './useTabDragSplit'
@@ -90,19 +91,18 @@ describe('resolveTabInsertion', () => {
     expect(resolveTabInsertion(event, isTabDragData, () => null)).toBeNull()
   })
 
-  it('returns side "left" when cursor center is left of the over midpoint', () => {
+  it('returns side "left" when cursor is in the left reorder edge', () => {
     const overData = makeDragData({
       unifiedTabId: 'tab-over',
       visibleTabId: 'tab-over',
       groupId: 'group-2'
     })
-    // Over rect: left=100, width=100 → midpoint=150
+    // Over rect: left=100, width=100 → left edge ends at 130
     const event = makeDragEvent({
       activeData: makeDragData({ unifiedTabId: 'tab-active' }),
       overData,
       overRect: { left: 100, width: 100 }
     })
-    // Cursor at x=120, which is left of midpoint 150
     const result = resolveTabInsertion(event, isTabDragData, () => ({ x: 120, y: 10 }))
     expect(result).toEqual({
       groupId: 'group-2',
@@ -111,19 +111,18 @@ describe('resolveTabInsertion', () => {
     })
   })
 
-  it('returns side "right" when cursor center is right of the over midpoint', () => {
+  it('returns side "right" when cursor is in the right reorder edge', () => {
     const overData = makeDragData({
       unifiedTabId: 'tab-over',
       visibleTabId: 'tab-over',
       groupId: 'group-2'
     })
-    // Over rect: left=100, width=100 → midpoint=150
+    // Over rect: left=100, width=100 → right edge starts at 170
     const event = makeDragEvent({
       activeData: makeDragData({ unifiedTabId: 'tab-active' }),
       overData,
       overRect: { left: 100, width: 100 }
     })
-    // Cursor at x=180, which is right of midpoint 150
     const result = resolveTabInsertion(event, isTabDragData, () => ({ x: 180, y: 10 }))
     expect(result).toEqual({
       groupId: 'group-2',
@@ -132,25 +131,89 @@ describe('resolveTabInsertion', () => {
     })
   })
 
-  it('returns side "right" when cursor is exactly at the midpoint', () => {
+  it('returns null when cursor is in the center pane-column split zone within the same pane', () => {
+    const overData = makeDragData({
+      unifiedTabId: 'tab-over',
+      visibleTabId: 'tab-over',
+      groupId: 'group-1'
+    })
+    const event = makeDragEvent({
+      activeData: makeDragData({ unifiedTabId: 'tab-active', groupId: 'group-1' }),
+      overData,
+      overRect: { left: 0, width: 200 }
+    })
+    expect(resolveTabInsertion(event, isTabDragData, () => ({ x: 100, y: 10 }))).toBeNull()
+  })
+
+  it('uses midpoint insertion when dragging across split panes', () => {
     const overData = makeDragData({
       unifiedTabId: 'tab-over',
       visibleTabId: 'tab-over',
       groupId: 'group-2'
     })
-    // Over rect: left=0, width=200 → midpoint=100
     const event = makeDragEvent({
-      activeData: makeDragData({ unifiedTabId: 'tab-active' }),
+      activeData: makeDragData({ unifiedTabId: 'tab-active', groupId: 'group-1' }),
       overData,
       overRect: { left: 0, width: 200 }
     })
-    // Cursor at x=100 — exactly at midpoint, not < midpoint so → 'right'
-    const result = resolveTabInsertion(event, isTabDragData, () => ({ x: 100, y: 10 }))
-    expect(result).toEqual({
+    expect(resolveTabInsertion(event, isTabDragData, () => ({ x: 80, y: 10 }))).toEqual({
       groupId: 'group-2',
       visibleTabId: 'tab-over',
-      side: 'right'
+      side: 'left'
     })
+  })
+})
+
+describe('resolveTabPaneColumnSplitOverTab', () => {
+  it('returns a pane-column split target in the tab center zone within the same pane', () => {
+    const overData = makeDragData({
+      unifiedTabId: 'tab-over',
+      visibleTabId: 'tab-over',
+      groupId: 'group-1'
+    })
+    const event = makeDragEvent({
+      activeData: makeDragData({ unifiedTabId: 'tab-active', groupId: 'group-1' }),
+      overData,
+      overRect: { left: 0, width: 200 }
+    })
+    expect(
+      resolveTabPaneColumnSplitOverTab(event, isTabDragData, () => ({ x: 100, y: 10 }))
+    ).toEqual({
+      groupId: 'group-1',
+      zone: 'right'
+    })
+  })
+
+  it('returns null when dragging across split panes', () => {
+    const overData = makeDragData({
+      unifiedTabId: 'tab-over',
+      visibleTabId: 'tab-over',
+      groupId: 'group-2'
+    })
+    const event = makeDragEvent({
+      activeData: makeDragData({ unifiedTabId: 'tab-active', groupId: 'group-1' }),
+      overData,
+      overRect: { left: 0, width: 200 }
+    })
+    expect(
+      resolveTabPaneColumnSplitOverTab(event, isTabDragData, () => ({ x: 100, y: 10 }))
+    ).toBeNull()
+  })
+
+  it('returns null in the reorder edge zones', () => {
+    const overData = makeDragData({
+      unifiedTabId: 'tab-over',
+      visibleTabId: 'tab-over',
+      groupId: 'group-1'
+    })
+    const event = makeDragEvent({
+      activeData: makeDragData({ unifiedTabId: 'tab-active', groupId: 'group-1' }),
+      overData,
+      overRect: { left: 100, width: 100 }
+    })
+    expect(
+      resolveTabPaneColumnSplitOverTab(event, isTabDragData, () => ({ x: 120, y: 10 }))
+    ).toBeNull()
   })
 })
 

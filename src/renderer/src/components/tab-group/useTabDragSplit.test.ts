@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { TabGroup } from '../../../../shared/types'
 import type { TabDragItemData } from './useTabDragSplit'
-import { canDropTabIntoPaneBody } from './useTabDragSplit'
+import { canDropTabForPaneColumnSplit, canDropTabIntoPaneBody } from './useTabDragSplit'
 
 function makeGroup(id: string, tabOrder: string[]): TabGroup {
   return {
@@ -58,5 +58,18 @@ describe('canDropTabIntoPaneBody', () => {
         worktreeId: 'wt-1'
       })
     ).toBe(true)
+  })
+
+  it('rejects tab-on-tab pane-column splits across groups', () => {
+    expect(
+      canDropTabForPaneColumnSplit({
+        activeDrag: makeDragData('group-1'),
+        groupsByWorktree: {
+          'wt-1': [makeGroup('group-1', ['tab-1']), makeGroup('group-2', ['tab-2'])]
+        },
+        targetGroupId: 'group-2',
+        worktreeId: 'wt-1'
+      })
+    ).toBe(false)
   })
 })

@@ -166,7 +166,6 @@ async function renderMenu(): Promise<unknown> {
     onClose: vi.fn(),
     onCloseAll: vi.fn(),
     onCloseToRight: vi.fn(),
-    onSplitGroup: vi.fn(),
     onOpenMarkdownPreview: vi.fn()
   })
 }

@@ -217,7 +217,6 @@ async function renderEditorFileTab(
     onCloseAll: () => {},
     onMakePermanent,
     onTogglePin: () => {},
-    onSplitGroup: () => {},
     dragData: {
       kind: 'tab',
       worktreeId: file.worktreeId,
