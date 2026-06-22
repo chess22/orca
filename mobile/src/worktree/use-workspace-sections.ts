@@ -106,8 +106,16 @@ export function getHostScopedWorktrees(args: {
   if (args.repoSummaries.length === 0) {
     return args.displayWorktrees
   }
+  const knownRepoIds = new Set(args.repoSummaries.map((repo) => repo.id))
   const visibleRepoIds = new Set(args.visibleRepoIdsByName.values())
-  return args.displayWorktrees.filter((worktree) => visibleRepoIds.has(worktree.repoId))
+  // Why: host scoping only applies to repos repo.list actually returned. A
+  // worktree whose repoId is absent from repoSummaries (e.g. a folder
+  // workspace's synthetic `folder-workspace:<id>` repoId, which repo.list never
+  // returns) is not host-scoped and must stay visible — otherwise it vanishes
+  // from the list once repo metadata loads.
+  return args.displayWorktrees.filter(
+    (worktree) => !knownRepoIds.has(worktree.repoId) || visibleRepoIds.has(worktree.repoId)
+  )
 }
 
 export function useWorkspaceSections(args: {

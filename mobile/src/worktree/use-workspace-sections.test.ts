@@ -57,4 +57,18 @@ describe('getHostScopedWorktrees', () => {
       })
     ).toEqual([{ worktreeId: 'runtime-worktree', repoId: 'runtime-repo' }])
   })
+
+  it('keeps worktrees whose repoId is absent from repo.list (folder workspaces)', () => {
+    const folder = {
+      worktreeId: 'folder:workspace-1',
+      repoId: 'folder-workspace:group-1'
+    } as Worktree
+    expect(
+      getHostScopedWorktrees({
+        displayWorktrees: [...worktrees, folder],
+        repoSummaries: repos,
+        visibleRepoIdsByName: new Map([['runtime', 'runtime-repo']])
+      })
+    ).toEqual([{ worktreeId: 'runtime-worktree', repoId: 'runtime-repo' }, folder])
+  })
 })
