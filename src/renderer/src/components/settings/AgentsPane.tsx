@@ -18,6 +18,10 @@ import {
 } from './agent-generated-tab-title-copy'
 import { getAgentStatusHooksDescription, getAgentStatusHooksTitle } from './agent-status-hooks-copy'
 import {
+  getManagedAgentSkillBackgroundUpdatesDescription,
+  getManagedAgentSkillBackgroundUpdatesTitle
+} from './managed-agent-skill-background-updates-copy'
+import {
   SettingsBadge,
   SettingsSegmentedControl,
   SettingsSubsectionHeader,
@@ -823,6 +827,11 @@ export function AgentsPane({ settings, updateSettings }: AgentsPaneProps): React
 
       <AgentStatusHooksSetting settings={settings} updateSettings={updateSettings} />
 
+      <ManagedAgentSkillBackgroundUpdatesSetting
+        settings={settings}
+        updateSettings={updateSettings}
+      />
+
       <AgentGeneratedTabTitlesSetting settings={settings} updateSettings={updateSettings} />
 
       <AgentAwakeSetting settings={settings} updateSettings={updateSettings} />
@@ -964,6 +973,28 @@ export function AgentStatusHooksSetting({
           })
         }
         ariaLabel={getAgentStatusHooksTitle()}
+      />
+    </section>
+  )
+}
+
+export function ManagedAgentSkillBackgroundUpdatesSetting({
+  settings,
+  updateSettings
+}: AgentsPaneProps): React.JSX.Element {
+  const enabled = settings.managedAgentSkillBackgroundUpdatesEnabled !== false
+  return (
+    <section className="space-y-3">
+      <SettingsSwitchRow
+        label={getManagedAgentSkillBackgroundUpdatesTitle()}
+        description={getManagedAgentSkillBackgroundUpdatesDescription()}
+        checked={enabled}
+        onChange={() =>
+          updateSettings({
+            managedAgentSkillBackgroundUpdatesEnabled: !enabled
+          })
+        }
+        ariaLabel={getManagedAgentSkillBackgroundUpdatesTitle()}
       />
     </section>
   )

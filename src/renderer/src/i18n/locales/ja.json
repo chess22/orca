@@ -152,7 +152,9 @@
             "36761d9604": "不明なキーバインド 操作「{{value0}}」は無視されました。",
             "d2e43e426a": "{{value0}} はオブジェクトでなければなりません。",
             "fb290366b2": "ウェブでは利用できません。",
-            "76122208ca": "「{{value0}}」のショートカットは無視されました: {{value1}}"
+            "76122208ca": "「{{value0}}」のショートカットは無視されました: {{value1}}",
+            "remoteManagedSkillRuntime": "リモートランタイムはバックグラウンドでは更新されません。",
+            "remoteManagedSkillCooldown": "Orca は最近この管理対象スキルのチェックを試行したため、クールダウン中です。"
           }
         },
         "runtime": {
@@ -2322,8 +2324,7 @@
             "f3eeb1de13": "コピー",
             "c2f0b72b8d": "入れる",
             "925f49f210": "ペインを展開する",
-            "df766809e0": "ペインを折りたたむ",
-            "copyTerminalId": "Copy Terminal ID"
+            "df766809e0": "ペインを折りたたむ"
           },
           "TerminalErrorToast": {
             "e4aa243f8c": "デーモンを再起動します",
@@ -3261,6 +3262,42 @@
           "cd7893fbc1": "スキャンスキル",
           "35b9a724a0": "利用可能",
           "0c74e7ff34": "ローカル"
+        },
+        "ManagedAgentSkillSetupDialogHost": {
+          "title": "エージェントスキルの設定が必要です",
+          "panelTitle": "管理対象エージェントスキルを設定",
+          "terminalTitle": "エージェントスキルを設定",
+          "terminalAria": "エージェントスキル設定ターミナル",
+          "update": "更新",
+          "install": "インストール",
+          "recheck": "再チェック",
+          "dontShowAgain": "今後表示しない",
+          "notNow": "今はしない",
+          "linearWorktreeContext": "この Linear タスクのワークフローには Linear エージェントスキルが必要です。Orca は自動更新できませんでした。",
+          "agentOrchestrationContext": "エージェントが Orca オーケストレーションを使おうとしました。エージェントが確実に連携するには、Orca にオーケストレーションスキルが必要です。",
+          "agentComputerUseContext": "エージェントが Computer Use を使おうとしました。エージェントがアプリを確実に操作するには、Orca に Computer Use スキルが必要です。",
+          "agentOrcaCliContext": "エージェントがこのワークフローで Orca の CLI スキルを使おうとしました。このワークフローを確実に続行するには、Orca に CLI スキルが必要です。",
+          "targetRequired": "Orca はこのスキルを読み取るランタイムを解決できませんでした。",
+          "unsupportedSkill": "これは Orca 管理のエージェントスキルではありません。",
+          "repairRequiredRuntime": "Orca がスキルを検査する前に、選択したランタイムの修復が必要です。",
+          "remoteRuntime": "リモートランタイムはバックグラウンドでは更新されません。",
+          "wslRuntime": "このバージョンでは WSL スキル更新は手動です。",
+          "missingInstall": "選択したランタイムに管理対象スキルがインストールされていません。",
+          "projectInstall": "プロジェクトスコープのスキルはバックグラウンドでは更新されません。",
+          "ambiguousInstall": "Orca はこのスキルのグローバルコピーとプロジェクトスコープのコピーの両方を見つけました。",
+          "bundledOrPluginInstall": "Orca はバンドルスキルやプラグインキャッシュのスキルを変更しません。",
+          "symlinkedGlobalInstall": "シンボリックリンクされたグローバルスキルは、まだバックグラウンド更新に対して安全ではありません。",
+          "unsupportedCliContract": "このビルドには検証済みの skills CLI 更新契約が含まれていません。",
+          "expectedHashMissing": "このビルドには、この管理対象スキルの期待ハッシュが含まれていません。",
+          "lockfileMissing": "Orca はグローバル skills ロックファイルを見つけられませんでした。",
+          "lockfileMalformed": "グローバル skills ロックファイルを解析できませんでした。",
+          "lockfileUnsupportedSchema": "グローバル skills ロックファイルは対応していないスキーマバージョンを使用しています。",
+          "lockEntryMissing": "グローバル skills ロックファイルはこのスキルを追跡していません。",
+          "lockEntryUnmanagedSource": "インストール済みスキルは Orca 管理のソースとして追跡されていません。",
+          "backgroundUpdateDisabled": "スキルの自動更新がオフになっているため、この更新には手動確認が必要です。",
+          "cooldown": "Orca は最近この管理対象スキルのチェックを試行したため、クールダウン中です。",
+          "updateFailed": "管理対象スキルの更新コマンドに失敗しました。",
+          "updateTimeout": "管理対象スキルの更新コマンドがタイムアウトしました。"
         }
       },
       "sidebar": {
@@ -4268,6 +4305,18 @@
         }
       },
       "settings": {
+        "managed": {
+          "agent": {
+            "skill": {
+              "background": {
+                "updates": {
+                  "title": "検証済みの Orca スキル更新を許可",
+                  "description": "Orca に検証済みのインストールメタデータと安全な更新経路がある場合、管理対象のエージェントスキルをバックグラウンドで更新しようとできます。更新を手動で確認するにはオフにします。"
+                }
+              }
+            }
+          }
+        },
         "AccountsPane": {
           "c2d2751587": "アカウントの削除",
           "dbb9626ed1": "キャンセル",
@@ -9144,9 +9193,6 @@
                 "copyCommand": "Copy command"
               }
             }
-          },
-          "SourceControlEntryContextMenu": {
-            "a1f2c8d901": "View"
           }
         }
       },

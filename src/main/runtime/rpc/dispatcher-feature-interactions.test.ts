@@ -143,6 +143,64 @@ describe('RpcDispatcher feature interactions', () => {
     expect(runtime.recordFeatureInteraction).toHaveBeenCalledWith('agent-orchestration')
   })
 
+  it('nudges managed skills for runtime feature use without blocking responses', async () => {
+    const runtime = makeRuntime()
+    const nudgeManagedSkill = vi.fn(async () => {
+      throw new Error('setup check failed')
+    })
+    const dispatcher = new RpcDispatcher({ runtime, methods: METHODS, nudgeManagedSkill })
+
+    const response = await dispatcher.dispatch(makeRequest('computer.click'))
+    await Promise.resolve()
+
+    expect('error' in response ? response.error : undefined).toBeUndefined()
+    expect(nudgeManagedSkill).toHaveBeenCalledWith({
+      skillName: 'computer-use',
+      context: 'agent-computer-use'
+    })
+  })
+
+  it('passes the configured managed-skill discovery target to runtime nudges', async () => {
+    const runtime = makeRuntime()
+    const nudgeManagedSkill = vi.fn()
+    const dispatcher = new RpcDispatcher({
+      runtime,
+      methods: METHODS,
+      nudgeManagedSkill,
+      managedSkillDiscoveryTarget: { runtime: 'wsl', wslDistro: 'Ubuntu' }
+    })
+
+    await dispatcher.dispatch(makeRequest('orchestration.send'))
+    await Promise.resolve()
+
+    expect(nudgeManagedSkill).toHaveBeenCalledWith({
+      skillName: 'orchestration',
+      context: 'agent-orchestration',
+      discoveryTarget: { runtime: 'wsl', wslDistro: 'Ubuntu' }
+    })
+  })
+
+  it('marks runtime managed-skill nudges remote without passing host discovery targets', async () => {
+    const runtime = makeRuntime()
+    const nudgeManagedSkill = vi.fn()
+    const dispatcher = new RpcDispatcher({
+      runtime,
+      methods: METHODS,
+      nudgeManagedSkill,
+      managedSkillDiscoveryTarget: { runtime: 'host' },
+      managedSkillRemoteRuntime: true
+    })
+
+    await dispatcher.dispatch(makeRequest('orchestration.send'))
+    await Promise.resolve()
+
+    expect(nudgeManagedSkill).toHaveBeenCalledWith({
+      skillName: 'orchestration',
+      context: 'agent-orchestration',
+      remoteRuntime: true
+    })
+  })
+
   it('keeps setup and cookie import separate from actual runtime use', async () => {
     const runtime = makeRuntime()
     const dispatcher = new RpcDispatcher({ runtime, methods: METHODS })

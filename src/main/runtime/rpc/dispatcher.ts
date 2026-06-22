@@ -16,7 +16,7 @@ import {
 } from './core'
 import type { TerminalStreamFrame } from '../../../shared/terminal-stream-protocol'
 import type { FeatureInteractionId } from '../../../shared/feature-interactions'
-import { isBrowserPaneUiRuntimeRpcParams } from '../../../shared/runtime-rpc-feature-interaction-source'
+import type { SkillDiscoveryTarget } from '../../../shared/skills'
 import {
   computerErrorData,
   errorResponse,
@@ -27,19 +27,39 @@ import {
 } from './errors'
 import { ALL_RPC_METHODS } from './methods'
 import type { OrcaRuntimeService } from '../orca-runtime'
+import {
+  getManagedSkillNudgeForFeatureInteraction,
+  type RuntimeManagedSkillNudgeHandler
+} from './managed-skill-nudge'
+import { getRuntimeFeatureInteractionId } from './runtime-feature-interaction-id'
 
 export type DispatcherOptions = {
   runtime: OrcaRuntimeService
   methods?: readonly RpcAnyMethod[]
+  nudgeManagedSkill?: RuntimeManagedSkillNudgeHandler
+  managedSkillDiscoveryTarget?: SkillDiscoveryTarget
+  managedSkillRemoteRuntime?: boolean
 }
 
 export class RpcDispatcher {
   private readonly runtime: OrcaRuntimeService
   private readonly registry: RpcRegistry
+  private readonly nudgeManagedSkill: RuntimeManagedSkillNudgeHandler | undefined
+  private readonly managedSkillDiscoveryTarget: SkillDiscoveryTarget | undefined
+  private readonly managedSkillRemoteRuntime: boolean
 
-  constructor({ runtime, methods = ALL_RPC_METHODS }: DispatcherOptions) {
+  constructor({
+    runtime,
+    methods = ALL_RPC_METHODS,
+    nudgeManagedSkill,
+    managedSkillDiscoveryTarget,
+    managedSkillRemoteRuntime = false
+  }: DispatcherOptions) {
     this.runtime = runtime
     this.registry = buildRegistry(methods)
+    this.nudgeManagedSkill = nudgeManagedSkill
+    this.managedSkillDiscoveryTarget = managedSkillDiscoveryTarget
+    this.managedSkillRemoteRuntime = managedSkillRemoteRuntime
   }
 
   async dispatch(request: RpcRequest, options?: { signal?: AbortSignal }): Promise<RpcResponse> {
@@ -246,56 +266,32 @@ export class RpcDispatcher {
     }
     try {
       this.runtime.recordFeatureInteraction(id)
+      this.nudgeManagedSkillForFeatureInteraction(id)
       alreadyRecorded?.add(id)
     } catch {
       // Best-effort education state must not break runtime tools.
     }
   }
-}
 
-function getRuntimeFeatureInteractionId(
-  method: string,
-  result: unknown,
-  rawParams?: unknown
-): FeatureInteractionId | null {
-  if (method === 'browser.profileImportFromBrowser') {
-    return hasBooleanResult(result, 'ok') ? 'cookie-import' : null
+  private nudgeManagedSkillForFeatureInteraction(id: FeatureInteractionId): void {
+    const nudge = getManagedSkillNudgeForFeatureInteraction(id)
+    if (!nudge || !this.nudgeManagedSkill) {
+      return
+    }
+    try {
+      void Promise.resolve(
+        this.nudgeManagedSkill({
+          ...nudge,
+          // Why: remote runtimes must not reuse the desktop host skill target;
+          // V1 cannot safely inspect or update those installs.
+          ...(this.managedSkillRemoteRuntime ? { remoteRuntime: true } : {}),
+          ...(!this.managedSkillRemoteRuntime && this.managedSkillDiscoveryTarget
+            ? { discoveryTarget: this.managedSkillDiscoveryTarget }
+            : {})
+        })
+      ).catch(() => {})
+    } catch {
+      // Best-effort managed-skill maintenance must not break runtime tools.
+    }
   }
-  if (method === 'browser.profileClearDefaultCookies') {
-    return hasBooleanResult(result, 'cleared') ? 'cookie-import' : null
-  }
-  if (method === 'browser.screencast.unsubscribe') {
-    return null
-  }
-  if (method.startsWith('browser.') && isBrowserPaneUiRuntimeRpcParams(rawParams)) {
-    return null
-  }
-  if (method.startsWith('browser.') && !method.startsWith('browser.profile')) {
-    return 'agent-browser-use'
-  }
-  if (method.startsWith('emulator.')) {
-    // Emulator commands are allowed from terminal/CLI (workspace-scoped, like other automation).
-    // Return null to indicate no special feature-interaction restriction (or add 'emulator-use' later).
-    return null
-  }
-  if (method === 'computer.permissions') {
-    return 'computer-use-setup'
-  }
-  if (
-    method.startsWith('computer.') &&
-    method !== 'computer.capabilities' &&
-    method !== 'computer.permissionsStatus'
-  ) {
-    return 'computer-use'
-  }
-  if (method.startsWith('orchestration.')) {
-    return 'agent-orchestration'
-  }
-  return null
-}
-
-function hasBooleanResult(value: unknown, key: string): boolean {
-  return (
-    value !== null && typeof value === 'object' && (value as Record<string, unknown>)[key] === true
-  )
 }

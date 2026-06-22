@@ -1,5 +1,5 @@
 import type { Dirent } from 'node:fs'
-import { open, readdir, realpath, stat } from 'node:fs/promises'
+import { lstat, open, readdir, realpath, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { summarizeSkillMarkdown } from '../../shared/skill-metadata'
 import type { Repo } from '../../shared/types'
@@ -203,13 +203,43 @@ async function readSkillSummary(skillFilePath: string): Promise<{
   }
 }
 
+async function readSkillPathMetadata(
+  directoryPath: string,
+  skillFilePath: string
+): Promise<{
+  realDirectoryPath: string | null
+  directoryIsSymlink: boolean
+  realSkillFilePath: string | null
+  skillFileIsSymlink: boolean
+}> {
+  const [directoryLink, skillFileLink, realDirectoryPath, realSkillFilePath] = await Promise.all([
+    lstat(directoryPath)
+      .then((pathStat) => pathStat.isSymbolicLink())
+      .catch(() => false),
+    lstat(skillFilePath)
+      .then((pathStat) => pathStat.isSymbolicLink())
+      .catch(() => false),
+    realpath(directoryPath).catch(() => null),
+    realpath(skillFilePath).catch(() => null)
+  ])
+  return {
+    realDirectoryPath,
+    directoryIsSymlink: directoryLink,
+    realSkillFilePath,
+    skillFileIsSymlink: skillFileLink
+  }
+}
+
 async function scanRoot(root: SkillScanRoot): Promise<DiscoveredSkill[]> {
   const maxDepth = root.sourceKind === 'plugin' ? 9 : 4
   const skillFiles = await findSkillFiles(root.path, maxDepth)
   const skills = await Promise.all(
     skillFiles.map(async (skillFilePath) => {
       const directoryPath = dirname(skillFilePath)
-      const summary = await readSkillSummary(skillFilePath)
+      const [summary, pathMetadata] = await Promise.all([
+        readSkillSummary(skillFilePath),
+        readSkillPathMetadata(directoryPath, skillFilePath)
+      ])
       const sourceKind = sourceKindForSkill(root, skillFilePath)
       return {
         id: stablePathId(skillFilePath),
@@ -220,7 +250,11 @@ async function scanRoot(root: SkillScanRoot): Promise<DiscoveredSkill[]> {
         sourceLabel: sourceLabelForSkill(root, sourceKind),
         rootPath: root.path,
         directoryPath,
+        realDirectoryPath: pathMetadata.realDirectoryPath,
+        directoryIsSymlink: pathMetadata.directoryIsSymlink,
         skillFilePath,
+        realSkillFilePath: pathMetadata.realSkillFilePath,
+        skillFileIsSymlink: pathMetadata.skillFileIsSymlink,
         installed: true,
         fileCount: await countFiles(directoryPath),
         updatedAt: summary.updatedAt

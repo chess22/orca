@@ -12,6 +12,11 @@ import type { OrcaRuntimeService } from './orca-runtime'
 import { writeRuntimeMetadata } from './runtime-metadata'
 import { RpcDispatcher } from './rpc/dispatcher'
 import type { RpcRequest, RpcResponse } from './rpc/core'
+import type {
+  ManagedAgentSkillContext,
+  ManagedAgentSkillName,
+  SkillDiscoveryTarget
+} from '../../shared/skills'
 import { errorResponse } from './rpc/errors'
 import type { RpcMessageContext, RpcTransport } from './rpc/transport'
 import { UnixSocketTransport } from './rpc/unix-socket-transport'
@@ -42,6 +47,14 @@ type OrcaRuntimeRpcServerOptions = {
   // fence or flood the socket with keepalive frames.
   keepaliveIntervalMs?: number
   longPollCap?: number
+  nudgeManagedSkill?: (args: {
+    skillName: ManagedAgentSkillName
+    context: ManagedAgentSkillContext
+    remoteRuntime?: boolean
+    discoveryTarget?: SkillDiscoveryTarget
+  }) => void | Promise<void>
+  managedSkillDiscoveryTarget?: SkillDiscoveryTarget
+  managedSkillRemoteRuntime?: boolean
 }
 
 // Why: after 10 s of a pending dispatch we emit a tiny `{"_keepalive":true}`
@@ -407,10 +420,18 @@ export class OrcaRuntimeRpcServer {
     wsPort = DEFAULT_WS_PORT,
     webClientRoot,
     keepaliveIntervalMs = KEEPALIVE_INTERVAL_MS,
-    longPollCap = LONG_POLL_CAP
+    longPollCap = LONG_POLL_CAP,
+    nudgeManagedSkill,
+    managedSkillDiscoveryTarget,
+    managedSkillRemoteRuntime
   }: OrcaRuntimeRpcServerOptions) {
     this.runtime = runtime
-    this.dispatcher = new RpcDispatcher({ runtime })
+    this.dispatcher = new RpcDispatcher({
+      runtime,
+      nudgeManagedSkill,
+      managedSkillDiscoveryTarget,
+      managedSkillRemoteRuntime
+    })
     this.userDataPath = userDataPath
     this.pid = pid
     this.platform = platform

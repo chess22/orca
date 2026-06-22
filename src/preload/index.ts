@@ -55,7 +55,14 @@ import type {
 } from '../shared/terminal-custom-themes'
 import type { GitHistoryOptions, GitHistoryResult } from '../shared/git-history'
 import type { ShellOpenLocalPathResult } from '../shared/shell-open-types'
-import type { SkillDiscoveryResult, SkillDiscoveryTarget } from '../shared/skills'
+import type {
+  ManagedAgentSkillEnsureRequest,
+  ManagedAgentSkillEnsureResult,
+  ManagedAgentSkillFallback,
+  ManagedAgentSkillUpdated,
+  SkillDiscoveryResult,
+  SkillDiscoveryTarget
+} from '../shared/skills'
 import type {
   RuntimeBrowserDriverState,
   RuntimeMobileSessionTabMove,
@@ -1895,7 +1902,38 @@ const api = {
 
   skills: {
     discover: (target?: SkillDiscoveryTarget): Promise<SkillDiscoveryResult> =>
-      ipcRenderer.invoke('skills:discover', target)
+      ipcRenderer.invoke('skills:discover', target),
+
+    ensureManagedReady: (
+      request: ManagedAgentSkillEnsureRequest
+    ): Promise<ManagedAgentSkillEnsureResult> =>
+      ipcRenderer.invoke('skills:ensureManagedReady', request),
+
+    onManagedFallback: (callback: (event: ManagedAgentSkillFallback) => void): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        event: ManagedAgentSkillFallback
+      ): void => {
+        callback(event)
+      }
+      ipcRenderer.on('skills:managedFallback', listener)
+      return () => {
+        ipcRenderer.removeListener('skills:managedFallback', listener)
+      }
+    },
+
+    onManagedUpdated: (callback: (event: ManagedAgentSkillUpdated) => void): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        event: ManagedAgentSkillUpdated
+      ): void => {
+        callback(event)
+      }
+      ipcRenderer.on('skills:managedUpdated', listener)
+      return () => {
+        ipcRenderer.removeListener('skills:managedUpdated', listener)
+      }
+    }
   },
 
   pet: {

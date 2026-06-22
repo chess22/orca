@@ -265,7 +265,14 @@ import type {
 import type { ResolvedSourceControlAiGenerationParams } from '../shared/source-control-ai'
 import type { SourceControlAiSettings } from '../shared/source-control-ai-types'
 import type { ShellOpenLocalPathResult } from '../shared/shell-open-types'
-import type { SkillDiscoveryResult, SkillDiscoveryTarget } from '../shared/skills'
+import type {
+  ManagedAgentSkillEnsureRequest,
+  ManagedAgentSkillEnsureResult,
+  ManagedAgentSkillFallback,
+  ManagedAgentSkillUpdated,
+  SkillDiscoveryResult,
+  SkillDiscoveryTarget
+} from '../shared/skills'
 import type {
   CrashReportBreadcrumbData,
   CrashReportRecord,
@@ -1903,6 +1910,11 @@ export type PreloadApi = {
   }
   skills: {
     discover: (target?: SkillDiscoveryTarget) => Promise<SkillDiscoveryResult>
+    ensureManagedReady: (
+      request: ManagedAgentSkillEnsureRequest
+    ) => Promise<ManagedAgentSkillEnsureResult>
+    onManagedFallback: (callback: (event: ManagedAgentSkillFallback) => void) => () => void
+    onManagedUpdated: (callback: (event: ManagedAgentSkillUpdated) => void) => () => void
   }
   pet: {
     import: () => Promise<CustomPet | null>

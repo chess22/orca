@@ -1,8 +1,15 @@
-import { ipcMain } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
 import type { Store } from '../persistence'
 import { discoverSkills } from '../skills/discovery'
-import type { SkillDiscoveryResult, SkillDiscoveryTarget } from '../../shared/skills'
+import type {
+  ManagedAgentSkillEnsureRequest,
+  ManagedAgentSkillEnsureResult,
+  SkillDiscoveryResult,
+  SkillDiscoveryTarget
+} from '../../shared/skills'
+import { shouldEmitManagedAgentSkillFallback } from '../../shared/skills'
 import { getDefaultWslDistro, getWslHome } from '../wsl'
+import { getManagedSkillUpdateCoordinator } from '../skills/managed-skill-updates'
 
 type SkillDiscoveryRuntimeTarget =
   | { runtime: 'host' }
@@ -54,4 +61,39 @@ export function registerSkillsHandlers(store: Store): void {
       return discoverSkills({ repos: store.getRepos() })
     }
   )
+
+  ipcMain.handle(
+    'skills:ensureManagedReady',
+    async (
+      event,
+      request: ManagedAgentSkillEnsureRequest
+    ): Promise<ManagedAgentSkillEnsureResult> => {
+      const result = await getManagedSkillUpdateCoordinator(store).ensureManagedReady(request)
+      if (shouldEmitManagedAgentSkillFallback(result)) {
+        event.sender.send('skills:managedFallback', result)
+      }
+      if (result.status === 'updated') {
+        sendManagedSkillUpdated(result)
+      }
+      return result
+    }
+  )
+}
+
+export function sendManagedSkillFallback(result: ManagedAgentSkillEnsureResult): void {
+  if (!shouldEmitManagedAgentSkillFallback(result)) {
+    return
+  }
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send('skills:managedFallback', result)
+  }
+}
+
+export function sendManagedSkillUpdated(result: ManagedAgentSkillEnsureResult): void {
+  if (result.status !== 'updated') {
+    return
+  }
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send('skills:managedUpdated', result)
+  }
 }

@@ -20,7 +20,10 @@ const {
   sendRemoteRuntimeSharedControlRequestMock,
   subscribeRemoteRuntimeSharedControlRequestMock,
   getRemoteRuntimeSharedControlDiagnosticsMock,
-  closeRemoteRuntimeRequestConnectionMock
+  closeRemoteRuntimeRequestConnectionMock,
+  ensureManagedReadyMock,
+  sendManagedSkillFallbackMock,
+  sendManagedSkillUpdatedMock
 } = vi.hoisted(() => ({
   handleMock: vi.fn(),
   onMock: vi.fn(),
@@ -33,7 +36,10 @@ const {
   sendRemoteRuntimeSharedControlRequestMock: vi.fn(),
   subscribeRemoteRuntimeSharedControlRequestMock: vi.fn(),
   getRemoteRuntimeSharedControlDiagnosticsMock: vi.fn(),
-  closeRemoteRuntimeRequestConnectionMock: vi.fn()
+  closeRemoteRuntimeRequestConnectionMock: vi.fn(),
+  ensureManagedReadyMock: vi.fn(),
+  sendManagedSkillFallbackMock: vi.fn(),
+  sendManagedSkillUpdatedMock: vi.fn()
 }))
 
 vi.mock('electron', () => ({
@@ -57,6 +63,17 @@ vi.mock('./runtime-environment-request-connections', () => ({
   subscribeRemoteRuntimeSharedControlRequest: subscribeRemoteRuntimeSharedControlRequestMock,
   getRemoteRuntimeSharedControlDiagnostics: getRemoteRuntimeSharedControlDiagnosticsMock,
   closeRemoteRuntimeRequestConnection: closeRemoteRuntimeRequestConnectionMock
+}))
+
+vi.mock('../skills/managed-skill-updates', () => ({
+  getManagedSkillUpdateCoordinator: () => ({
+    ensureManagedReady: ensureManagedReadyMock
+  })
+}))
+
+vi.mock('./skills', () => ({
+  sendManagedSkillFallback: sendManagedSkillFallbackMock,
+  sendManagedSkillUpdated: sendManagedSkillUpdatedMock
 }))
 
 import { registerRuntimeEnvironmentHandlers } from './runtime-environments'
@@ -97,6 +114,10 @@ describe('registerRuntimeEnvironmentHandlers', () => {
     getRemoteRuntimeSharedControlDiagnosticsMock.mockReset()
     getRemoteRuntimeSharedControlDiagnosticsMock.mockReturnValue(null)
     closeRemoteRuntimeRequestConnectionMock.mockReset()
+    ensureManagedReadyMock.mockReset()
+    ensureManagedReadyMock.mockResolvedValue({ status: 'ready' })
+    sendManagedSkillFallbackMock.mockReset()
+    sendManagedSkillUpdatedMock.mockReset()
   })
 
   afterEach(() => {
@@ -377,6 +398,51 @@ describe('registerRuntimeEnvironmentHandlers', () => {
       75
     )
     expect(sendRemoteRuntimeConnectionRequestMock).not.toHaveBeenCalled()
+  })
+
+  it('nudges managed skill readiness after remote runtime feature RPCs without opening setup', async () => {
+    registerRuntimeEnvironmentHandlers({} as never)
+    ensureManagedReadyMock.mockResolvedValue({
+      status: 'fallback',
+      skillName: 'orchestration',
+      context: 'agent-orchestration',
+      runtime: 'host',
+      scope: 'missing',
+      reason: 'remote-runtime'
+    })
+    sendRemoteRuntimeRequestMock.mockResolvedValue({
+      id: 'rpc-orchestration',
+      ok: true,
+      result: { accepted: true },
+      _meta: { runtimeId: 'runtime-remote' }
+    })
+
+    const add = handler<
+      { name: string; pairingCode: string },
+      { environment: { id: string; name: string } }
+    >('runtimeEnvironments:addFromPairingCode')
+    await add(null, { name: 'desk', pairingCode: pairingCode() })
+
+    const call = handler<
+      { selector: string; method: string; params?: unknown; timeoutMs?: number },
+      { ok: true; result: unknown }
+    >('runtimeEnvironments:call')
+    await expect(
+      call(null, {
+        selector: 'desk',
+        method: 'orchestration.send',
+        params: { message: 'coordinate' }
+      })
+    ).resolves.toMatchObject({ ok: true })
+
+    await vi.waitFor(() => {
+      expect(ensureManagedReadyMock).toHaveBeenCalledWith({
+        skillName: 'orchestration',
+        context: 'agent-orchestration',
+        remoteRuntime: true
+      })
+    })
+    expect(sendManagedSkillFallbackMock).not.toHaveBeenCalled()
   })
 
   it('falls back to one-shot RPC when the saved runtime lacks shared-control support', async () => {

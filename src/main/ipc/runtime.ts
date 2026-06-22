@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import type { OrcaRuntimeService } from '../runtime/orca-runtime'
+import type { Store } from '../persistence'
 import type {
   RuntimeBrowserDriverState,
   RuntimeStatus,
@@ -9,8 +10,9 @@ import type {
 } from '../../shared/runtime-types'
 import type { RuntimeRpcResponse } from '../../shared/runtime-rpc-envelope'
 import { RpcDispatcher } from '../runtime/rpc/dispatcher'
+import { createRuntimeManagedSkillNudge } from './runtime-managed-skill-nudge'
 
-export function registerRuntimeHandlers(runtime: OrcaRuntimeService): void {
+export function registerRuntimeHandlers(runtime: OrcaRuntimeService, store?: Store): void {
   ipcMain.removeHandler('runtime:syncWindowGraph')
   ipcMain.removeHandler('runtime:getStatus')
   ipcMain.removeHandler('runtime:call')
@@ -36,7 +38,11 @@ export function registerRuntimeHandlers(runtime: OrcaRuntimeService): void {
       _event,
       args: { method: string; params?: unknown }
     ): Promise<RuntimeRpcResponse<unknown>> => {
-      return (await new RpcDispatcher({ runtime }).dispatch({
+      return (await new RpcDispatcher({
+        runtime,
+        nudgeManagedSkill: store ? createRuntimeManagedSkillNudge(store) : undefined,
+        managedSkillDiscoveryTarget: { runtime: 'host' }
+      }).dispatch({
         id: 'desktop-ipc',
         authToken: 'desktop-ipc',
         method: args.method,

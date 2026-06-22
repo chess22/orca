@@ -152,7 +152,9 @@
             "36761d9604": "Se ignoró la acción de combinación de teclas desconocida \"{{value0}}\".",
             "d2e43e426a": "{{value0}} debe ser un objeto.",
             "fb290366b2": "No disponible en la web.",
-            "76122208ca": "Se ignoró el acceso directo para \"{{value0}}\": {{value1}}"
+            "76122208ca": "Se ignoró el acceso directo para \"{{value0}}\": {{value1}}",
+            "remoteManagedSkillRuntime": "Los entornos de ejecución remotos no se actualizan en segundo plano.",
+            "remoteManagedSkillCooldown": "Orca intentó recientemente esta comprobación de habilidad administrada y está esperando antes de volver a intentarlo."
           }
         },
         "runtime": {
@@ -2322,8 +2324,7 @@
             "f3eeb1de13": "Copiar",
             "c2f0b72b8d": "Insertar",
             "925f49f210": "Expandir panel",
-            "df766809e0": "Contraer panel",
-            "copyTerminalId": "Copy Terminal ID"
+            "df766809e0": "Contraer panel"
           },
           "TerminalErrorToast": {
             "e4aa243f8c": "Reiniciar demonio",
@@ -3261,6 +3262,42 @@
           "cd7893fbc1": "Habilidades de escaneo",
           "35b9a724a0": "Disponible",
           "0c74e7ff34": "Local"
+        },
+        "ManagedAgentSkillSetupDialogHost": {
+          "title": "Se necesita configurar la habilidad del agente",
+          "panelTitle": "Configurar habilidad de agente administrada",
+          "terminalTitle": "Configurar habilidad de agente",
+          "terminalAria": "Terminal de configuración de habilidad de agente",
+          "update": "Actualizar",
+          "install": "Instalar",
+          "recheck": "Volver a comprobar",
+          "dontShowAgain": "No volver a mostrar",
+          "notNow": "Ahora no",
+          "linearWorktreeContext": "Este flujo de tarea de Linear necesita la habilidad de agente de Linear. Orca no pudo actualizarla automáticamente.",
+          "agentOrchestrationContext": "Un agente acaba de intentar usar la orquestación de Orca. Orca necesita la habilidad de orquestación para que los agentes puedan coordinarse de forma fiable.",
+          "agentComputerUseContext": "Un agente acaba de intentar usar Computer Use. Orca necesita la habilidad Computer Use para que los agentes puedan controlar apps de forma fiable.",
+          "agentOrcaCliContext": "Un agente acaba de intentar usar la habilidad de CLI de Orca para este flujo. Orca necesita la habilidad de CLI para que este flujo pueda continuar de forma fiable.",
+          "targetRequired": "Orca no pudo resolver el entorno de ejecución que debe leer esta habilidad.",
+          "unsupportedSkill": "Esta no es una habilidad de agente administrada por Orca.",
+          "repairRequiredRuntime": "El entorno de ejecución seleccionado necesita reparación antes de que Orca pueda inspeccionar sus habilidades.",
+          "remoteRuntime": "Los entornos de ejecución remotos no se actualizan en segundo plano.",
+          "wslRuntime": "Las actualizaciones de habilidades en WSL son manuales en esta versión.",
+          "missingInstall": "La habilidad administrada no está instalada en el entorno de ejecución seleccionado.",
+          "projectInstall": "Las habilidades con alcance de proyecto no se actualizan en segundo plano.",
+          "ambiguousInstall": "Orca encontró copias globales y con alcance de proyecto de esta habilidad.",
+          "bundledOrPluginInstall": "Orca no modifica habilidades incluidas ni de caché de plugins.",
+          "symlinkedGlobalInstall": "Las habilidades globales con enlaces simbólicos aún no son seguras para actualizaciones en segundo plano.",
+          "unsupportedCliContract": "Esta compilación no incluye el contrato verificado de actualización de la CLI de skills.",
+          "expectedHashMissing": "Esta compilación no incluye un hash esperado para esta habilidad administrada.",
+          "lockfileMissing": "Orca no pudo encontrar el lockfile global de skills.",
+          "lockfileMalformed": "No se pudo analizar el lockfile global de skills.",
+          "lockfileUnsupportedSchema": "El lockfile global de skills usa una versión de esquema no compatible.",
+          "lockEntryMissing": "El lockfile global de skills no registra esta habilidad.",
+          "lockEntryUnmanagedSource": "La habilidad instalada no está registrada como origen administrado por Orca.",
+          "backgroundUpdateDisabled": "Las actualizaciones automáticas de habilidades están desactivadas, por lo que esta actualización necesita revisión manual.",
+          "cooldown": "Orca intentó recientemente esta comprobación de habilidad administrada y está esperando antes de volver a intentarlo.",
+          "updateFailed": "El comando de actualización de la habilidad administrada falló.",
+          "updateTimeout": "El comando de actualización de la habilidad administrada agotó el tiempo de espera."
         }
       },
       "sidebar": {
@@ -4278,6 +4315,18 @@
                       "f8bda25f29": "Mantenga actualizado el principal local"
                     }
                   }
+                }
+              }
+            }
+          }
+        },
+        "managed": {
+          "agent": {
+            "skill": {
+              "background": {
+                "updates": {
+                  "title": "Permitir actualizaciones verificadas de habilidades de Orca",
+                  "description": "Cuando Orca tiene metadatos de instalación verificados y una ruta de actualización segura, puede intentar actualizar las habilidades de agente administradas en segundo plano. Desactiva esto para revisar las actualizaciones manualmente."
                 }
               }
             }
@@ -9144,9 +9193,6 @@
                 "copyCommand": "Copy command"
               }
             }
-          },
-          "SourceControlEntryContextMenu": {
-            "a1f2c8d901": "View"
           }
         }
       },

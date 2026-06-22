@@ -1400,6 +1400,38 @@ describe('web UI preload API', () => {
     )
   })
 
+  it('returns remote managed skill fallback from web ensure checks without emitting setup', async () => {
+    const { api } = await installApi()
+    const fallback = vi.fn()
+    const unsubscribe = api.skills.onManagedFallback(fallback)
+
+    const result = await api.skills.ensureManagedReady({
+      skillName: 'linear-tickets',
+      context: 'linear-worktree',
+      remoteRuntime: true
+    })
+
+    expect(result).toMatchObject({
+      status: 'fallback',
+      reason: 'remote-runtime',
+      skillName: 'linear-tickets'
+    })
+    expect(fallback).not.toHaveBeenCalled()
+
+    const cooldown = await api.skills.ensureManagedReady({
+      skillName: 'linear-tickets',
+      context: 'linear-worktree',
+      remoteRuntime: true
+    })
+    expect(cooldown).toMatchObject({
+      status: 'fallback',
+      reason: 'cooldown',
+      skillName: 'linear-tickets'
+    })
+    expect(fallback).not.toHaveBeenCalled()
+    unsubscribe()
+  })
+
   it('rejects paired web computer-use status failures instead of marking the helper unavailable', async () => {
     vi.doMock('./web-runtime-client', () => ({
       WebRuntimeClient: class {

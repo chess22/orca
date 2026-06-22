@@ -152,7 +152,9 @@
             "36761d9604": "未知的键绑定操作“{{value0}}”被忽略。",
             "d2e43e426a": "{{value0}} 必须是一个对象。",
             "fb290366b2": "无法在网络上使用。",
-            "76122208ca": "“{{value0}}”的快捷方式被忽略：{{value1}}"
+            "76122208ca": "“{{value0}}”的快捷方式被忽略：{{value1}}",
+            "remoteManagedSkillRuntime": "远程运行时不会在后台更新。",
+            "remoteManagedSkillCooldown": "Orca 最近已尝试此托管技能检查，正在等待重试。"
           }
         },
         "runtime": {
@@ -2322,8 +2324,7 @@
             "f3eeb1de13": "复制",
             "c2f0b72b8d": "插入",
             "925f49f210": "展开窗格",
-            "df766809e0": "折叠窗格",
-            "copyTerminalId": "Copy Terminal ID"
+            "df766809e0": "折叠窗格"
           },
           "TerminalErrorToast": {
             "e4aa243f8c": "重新启动守护进程",
@@ -3261,6 +3262,42 @@
           "cd7893fbc1": "正在扫描技能",
           "35b9a724a0": "可用的",
           "0c74e7ff34": "当地的"
+        },
+        "ManagedAgentSkillSetupDialogHost": {
+          "title": "需要设置代理技能",
+          "panelTitle": "设置托管代理技能",
+          "terminalTitle": "设置代理技能",
+          "terminalAria": "代理技能设置终端",
+          "update": "更新",
+          "install": "安装",
+          "recheck": "重新检查",
+          "dontShowAgain": "不再显示",
+          "notNow": "稍后",
+          "linearWorktreeContext": "此 Linear 任务流程需要 Linear 代理技能。Orca 无法自动更新它。",
+          "agentOrchestrationContext": "代理刚刚尝试使用 Orca 编排。Orca 需要编排技能，代理才能可靠地协作。",
+          "agentComputerUseContext": "代理刚刚尝试使用 Computer Use。Orca 需要 Computer Use 技能，代理才能可靠地控制应用。",
+          "agentOrcaCliContext": "代理刚刚尝试在此流程中使用 Orca 的 CLI 技能。Orca 需要 CLI 技能，此流程才能可靠地继续。",
+          "targetRequired": "Orca 无法解析应读取此技能的运行时。",
+          "unsupportedSkill": "这不是 Orca 托管的代理技能。",
+          "repairRequiredRuntime": "所选运行时需要修复，Orca 才能检查其技能。",
+          "remoteRuntime": "远程运行时不会在后台更新。",
+          "wslRuntime": "此版本中 WSL 技能更新需要手动完成。",
+          "missingInstall": "所选运行时未安装托管技能。",
+          "projectInstall": "项目范围的技能不会在后台更新。",
+          "ambiguousInstall": "Orca 找到了此技能的全局副本和项目范围副本。",
+          "bundledOrPluginInstall": "Orca 不会修改捆绑技能或插件缓存技能。",
+          "symlinkedGlobalInstall": "符号链接的全局技能目前还不能安全地进行后台更新。",
+          "unsupportedCliContract": "此构建不包含经过验证的 skills CLI 更新契约。",
+          "expectedHashMissing": "此构建不包含此托管技能的预期哈希。",
+          "lockfileMissing": "Orca 找不到全局 skills 锁定文件。",
+          "lockfileMalformed": "无法解析全局 skills 锁定文件。",
+          "lockfileUnsupportedSchema": "全局 skills 锁定文件使用了不受支持的架构版本。",
+          "lockEntryMissing": "全局 skills 锁定文件未跟踪此技能。",
+          "lockEntryUnmanagedSource": "已安装的技能未被跟踪为 Orca 托管来源。",
+          "backgroundUpdateDisabled": "自动技能更新已关闭，因此此次更新需要手动审核。",
+          "cooldown": "Orca 最近已尝试此托管技能检查，正在等待重试。",
+          "updateFailed": "托管技能更新命令失败。",
+          "updateTimeout": "托管技能更新命令超时。"
         }
       },
       "sidebar": {
@@ -4268,6 +4305,18 @@
         }
       },
       "settings": {
+        "managed": {
+          "agent": {
+            "skill": {
+              "background": {
+                "updates": {
+                  "title": "允许已验证的 Orca 技能更新",
+                  "description": "当 Orca 拥有已验证的安装元数据和安全更新路径时，可以尝试在后台更新托管的智能体技能。关闭后可手动审核更新。"
+                }
+              }
+            }
+          }
+        },
         "AccountsPane": {
           "c2d2751587": "删除账户",
           "dbb9626ed1": "取消",
@@ -9144,9 +9193,6 @@
                 "copyCommand": "Copy command"
               }
             }
-          },
-          "SourceControlEntryContextMenu": {
-            "a1f2c8d901": "View"
           }
         }
       },

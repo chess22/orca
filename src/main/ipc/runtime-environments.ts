@@ -13,6 +13,7 @@ import {
 import type { RuntimeStatus } from '../../shared/runtime-types'
 import type { RuntimeRpcResponse } from '../../shared/runtime-rpc-envelope'
 import type { RemoteRuntimeSubscription } from '../../shared/remote-runtime-client'
+import type { Store } from '../persistence'
 import { closeRemoteRuntimeRequestConnection } from './runtime-environment-request-connections'
 import {
   callRuntimeEnvironment,
@@ -21,6 +22,9 @@ import {
   resetSharedControlSupport,
   subscribeRuntimeEnvironment
 } from './runtime-environment-transport-routing'
+import { getRuntimeFeatureInteractionId } from '../runtime/rpc/runtime-feature-interaction-id'
+import { getManagedSkillNudgeForFeatureInteraction } from '../runtime/rpc/managed-skill-nudge'
+import { createRuntimeManagedSkillNudge } from './runtime-managed-skill-nudge'
 
 const RUNTIME_ENVIRONMENT_HANDLER_CHANNELS = [
   'runtimeEnvironments:list',
@@ -57,7 +61,7 @@ function closeSubscriptionsForEnvironment(environmentId: string): void {
   }
 }
 
-export function registerRuntimeEnvironmentHandlers(): void {
+export function registerRuntimeEnvironmentHandlers(store?: Store): void {
   // Why: keep direct re-registration safe even though register-core-handlers
   // normally guards this path; otherwise the binary send listener can stack.
   resetSharedControlSupport()
@@ -128,13 +132,15 @@ export function registerRuntimeEnvironmentHandlers(): void {
       _event,
       args: { selector: string; method: string; params?: unknown; timeoutMs?: number }
     ): Promise<RuntimeRpcResponse<unknown>> => {
-      return callRuntimeEnvironment(
+      const response = await callRuntimeEnvironment(
         getUserDataPath(),
         args.selector,
         args.method,
         args.params,
         args.timeoutMs
       )
+      nudgeManagedSkillForRemoteRuntimeCall(store, args, response)
+      return response
     }
   )
   ipcMain.handle(
@@ -256,6 +262,28 @@ export function registerRuntimeEnvironmentHandlers(): void {
       }
     }
   )
+}
+
+function nudgeManagedSkillForRemoteRuntimeCall(
+  store: Store | undefined,
+  args: { method: string; params?: unknown },
+  response: RuntimeRpcResponse<unknown>
+): void {
+  if (!store || !response.ok) {
+    return
+  }
+  const id = getRuntimeFeatureInteractionId(args.method, response.result, args.params)
+  const nudge = id ? getManagedSkillNudgeForFeatureInteraction(id) : null
+  if (!nudge) {
+    return
+  }
+  try {
+    void Promise.resolve(
+      createRuntimeManagedSkillNudge(store)({ ...nudge, remoteRuntime: true })
+    ).catch(() => {})
+  } catch {
+    // Best-effort managed-skill maintenance must not break remote runtime tools.
+  }
 }
 
 function toBinaryPayload(value: unknown): Uint8Array<ArrayBufferLike> | null {

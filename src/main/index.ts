@@ -21,6 +21,7 @@ import { registerCoreHandlers } from './ipc/register-core-handlers'
 import { initObservability, shutdownObservability } from './observability'
 import { startSpan } from './observability/tracer'
 import { registerMobileHandlers } from './ipc/mobile'
+import { sendManagedSkillFallback, sendManagedSkillUpdated } from './ipc/skills'
 import { initTelemetry, shutdownTelemetry, trackAppOpenedOnce } from './telemetry/client'
 import { runManagedHookInstallers } from './agent-hooks/install-telemetry'
 import {
@@ -34,6 +35,7 @@ import { resolveConsent } from './telemetry/consent'
 import { triggerStartupNotificationRegistration } from './ipc/notifications'
 import { OrcaRuntimeService } from './runtime/orca-runtime'
 import { OrcaRuntimeRpcServer } from './runtime/runtime-rpc'
+import { getManagedSkillUpdateCoordinator } from './skills/managed-skill-updates'
 import { awaitRuntimeFileWatcherUnsubscribes } from './runtime/orca-runtime-files'
 import { clearRuntimeMetadataIfOwned } from './runtime/runtime-metadata'
 import { ensureMainI18n, setMainUiLanguage } from './i18n/main-i18n'
@@ -1622,7 +1624,22 @@ app.whenReady().then(async () => {
     ...(isE2E ? { wsPort: 0 } : {}),
     ...(devWsPort !== undefined ? { wsPort: devWsPort } : {}),
     ...(serveOptions?.wsPort !== undefined ? { wsPort: serveOptions.wsPort } : {}),
-    webClientRoot: getBundledWebClientRoot()
+    webClientRoot: getBundledWebClientRoot(),
+    managedSkillDiscoveryTarget: { runtime: 'host' },
+    managedSkillRemoteRuntime: isServeMode,
+    nudgeManagedSkill: async ({ skillName, context, remoteRuntime, discoveryTarget }) => {
+      const result = await getManagedSkillUpdateCoordinator(store!).ensureManagedReady({
+        skillName,
+        context,
+        ...(remoteRuntime ? { remoteRuntime } : {}),
+        ...(!remoteRuntime && discoveryTarget ? { discoveryTarget } : {})
+      })
+      if (result.status === 'fallback') {
+        sendManagedSkillFallback(result)
+      } else if (result.status === 'updated') {
+        sendManagedSkillUpdated(result)
+      }
+    }
   })
   registerMobileHandlers(runtimeRpc)
 

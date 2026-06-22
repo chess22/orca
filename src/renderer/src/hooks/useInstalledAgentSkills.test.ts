@@ -113,6 +113,50 @@ describe('hasInstalledAgentSkill', () => {
       })
     ).toBe(true)
   })
+
+  it('filters repo skills to the requested project root', () => {
+    expect(
+      hasInstalledAgentSkill(
+        [
+          skill({
+            name: 'linear-tickets',
+            sourceKind: 'repo',
+            sourceLabel: 'Repo current .agents',
+            rootPath: '/repo/current/.agents/skills',
+            directoryPath: '/repo/current/.agents/skills/linear-tickets',
+            skillFilePath: '/repo/current/.agents/skills/linear-tickets/SKILL.md'
+          }),
+          skill({
+            id: 'skill-2',
+            name: 'linear-tickets',
+            sourceKind: 'repo',
+            sourceLabel: 'Repo other .agents',
+            rootPath: '/repo/other/.agents/skills',
+            directoryPath: '/repo/other/.agents/skills/linear-tickets',
+            skillFilePath: '/repo/other/.agents/skills/linear-tickets/SKILL.md'
+          })
+        ],
+        'linear-tickets',
+        { projectRootPath: '/repo/current', sourceKinds: ['repo'] }
+      )
+    ).toBe(true)
+    expect(
+      hasInstalledAgentSkill(
+        [
+          skill({
+            name: 'linear-tickets',
+            sourceKind: 'repo',
+            sourceLabel: 'Repo other .agents',
+            rootPath: '/repo/other/.agents/skills',
+            directoryPath: '/repo/other/.agents/skills/linear-tickets',
+            skillFilePath: '/repo/other/.agents/skills/linear-tickets/SKILL.md'
+          })
+        ],
+        'linear-tickets',
+        { projectRootPath: '/repo/current', sourceKinds: ['repo'] }
+      )
+    ).toBe(false)
+  })
 })
 
 describe('isOrchestrationSkillName', () => {

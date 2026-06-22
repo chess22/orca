@@ -9,7 +9,7 @@ export function buildAgentFeatureSkillInstallCommand(skillNames: readonly string
   if (skillNames.length === 0) {
     throw new Error('At least one skill name is required.')
   }
-  return `npx skills add ${ORCA_SKILLS_REPOSITORY_URL} --skill ${skillNames.join(' ')} --global`
+  return `npx --yes skills add ${ORCA_SKILLS_REPOSITORY_URL} --skill ${skillNames.join(' ')} --global --yes`
 }
 
 export function buildAgentFeatureSkillUpdateCommand(skillName: string): string {
@@ -17,7 +17,7 @@ export function buildAgentFeatureSkillUpdateCommand(skillName: string): string {
   if (!trimmedSkillName) {
     throw new Error('A skill name is required.')
   }
-  return `npx skills update ${trimmedSkillName} --global`
+  return `npx --yes skills update ${trimmedSkillName} --global --yes`
 }
 
 export const ORCA_CLI_SKILL_INSTALL_COMMAND = buildAgentFeatureSkillInstallCommand([

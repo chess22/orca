@@ -8,8 +8,8 @@ import { getOrchestrationUsageExamples } from '@/lib/orchestration-usage-example
 import { OrchestrationPane } from './OrchestrationPane'
 
 const INSTALL_COMMAND =
-  'npx skills add https://github.com/stablyai/orca --skill orchestration --global'
-const UPDATE_COMMAND = 'npx skills update orchestration --global'
+  'npx --yes skills add https://github.com/stablyai/orca --skill orchestration --global --yes'
+const UPDATE_COMMAND = 'npx --yes skills update orchestration --global --yes'
 
 const mocks = vi.hoisted(() => ({
   dialogProps: [] as Record<string, unknown>[],

@@ -52,6 +52,10 @@ const updateCapableCallers = new Map<string, readonly string[]>([
     ['installedCommand={installedCommand}']
   ],
   [
+    'src/renderer/src/components/skills/ManagedAgentSkillSetupDialogHost.tsx',
+    ['installedCommand={installedCommand}']
+  ],
+  [
     'src/renderer/src/components/settings/MobileEmulatorAgentControlRow.tsx',
     ['ORCA_CLI_SKILL_UPDATE_COMMAND', 'installedCommand={ORCA_CLI_SKILL_UPDATE_COMMAND}']
   ]

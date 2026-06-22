@@ -29,8 +29,11 @@ import { tabHasLivePty } from '@/lib/tab-has-live-pty'
 import {
   callRuntimeRpc,
   getActiveRuntimeTarget,
+  type RuntimeClientTarget,
   RuntimeRpcCallError
 } from '../../runtime/runtime-rpc-client'
+import { LINEAR_TICKETS_SKILL_NAME } from '@/lib/agent-feature-install-commands'
+import { getLocalRepoProjectExecutionRuntimeContext } from '@/lib/local-preflight-context'
 import { toRuntimeWorktreeSelector } from '../../runtime/runtime-worktree-selector'
 import { getHostedReviewCacheKey, refreshHostedReviewCard } from './hosted-review'
 import { getGitHubPRCacheKey, getLegacyGitHubPRCacheKey } from './github-cache-key'
@@ -183,6 +186,34 @@ function showPreservedBranchToast(
       ...(action ? { action } : {})
     }
   )
+}
+
+function nudgeLinearManagedSkillSetup(
+  target: RuntimeClientTarget,
+  remote: boolean,
+  projectRuntime: ReturnType<typeof getLocalRepoProjectExecutionRuntimeContext>,
+  projectRootPath: string | null,
+  linkedLinearIssue: string | undefined
+): void {
+  if (!linkedLinearIssue) {
+    return
+  }
+  const localDiscoveryTarget =
+    target.kind === 'local' && !remote
+      ? projectRuntime
+        ? { projectRuntime, projectRootPath }
+        : { runtime: 'host' as const, projectRootPath }
+      : null
+  void window.api.skills
+    .ensureManagedReady({
+      skillName: LINEAR_TICKETS_SKILL_NAME,
+      context: 'linear-worktree',
+      ...(localDiscoveryTarget ? { discoveryTarget: localDiscoveryTarget } : {}),
+      ...(target.kind === 'environment' || remote ? { remoteRuntime: true } : {})
+    })
+    .catch(() => {
+      // Best-effort setup checks must never block worktree creation.
+    })
 }
 
 function arraysShallowEqual(a: string[] | undefined, b: string[] | undefined): boolean {
@@ -1844,6 +1875,18 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
                   },
                   { timeoutMs: 10 * 60_000 }
                 )
+          const repo = get().repos.find((entry) => entry.id === repoId)
+          const projectRuntime =
+            target.kind === 'local' && !repo?.connectionId
+              ? getLocalRepoProjectExecutionRuntimeContext(get(), repoId)
+              : undefined
+          nudgeLinearManagedSkillSetup(
+            target,
+            Boolean(repo?.connectionId),
+            projectRuntime,
+            result.worktree.path,
+            linkedLinearIssue
+          )
           // Why: a file watcher (worktrees.onChanged) can fire between the
           // backend creating the worktree and this callback running, causing
           // fetchWorktrees to add the worktree first. Appending unconditionally

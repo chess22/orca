@@ -152,7 +152,9 @@
             "36761d9604": "Unknown keybinding action \"{{value0}}\" was ignored.",
             "d2e43e426a": "{{value0}} must be an object.",
             "fb290366b2": "Unavailable on web.",
-            "76122208ca": "Shortcut for \"{{value0}}\" was ignored: {{value1}}"
+            "76122208ca": "Shortcut for \"{{value0}}\" was ignored: {{value1}}",
+            "remoteManagedSkillRuntime": "Remote runtimes are not updated in the background.",
+            "remoteManagedSkillCooldown": "Orca recently tried this managed-skill check and is cooling down."
           }
         },
         "runtime": {
@@ -2322,8 +2324,7 @@
             "f3eeb1de13": "Copy",
             "c2f0b72b8d": "Insert",
             "925f49f210": "Expand Pane",
-            "df766809e0": "Collapse Pane",
-            "copyTerminalId": "Copy Terminal ID"
+            "df766809e0": "Collapse Pane"
           },
           "TerminalErrorToast": {
             "e4aa243f8c": "Restart daemon",
@@ -3261,6 +3262,42 @@
           "cd7893fbc1": "Scanning skills",
           "35b9a724a0": "Available",
           "0c74e7ff34": "Local"
+        },
+        "ManagedAgentSkillSetupDialogHost": {
+          "title": "Agent skill setup needed",
+          "panelTitle": "Set up managed agent skill",
+          "terminalTitle": "Set up agent skill",
+          "terminalAria": "Agent skill setup terminal",
+          "update": "Update",
+          "install": "Install",
+          "recheck": "Re-check",
+          "dontShowAgain": "Don't show again",
+          "notNow": "Not now",
+          "linearWorktreeContext": "This Linear task workflow needs the Linear agent skill. Orca could not update it automatically.",
+          "agentOrchestrationContext": "An agent just tried to use Orca orchestration. Orca needs the orchestration skill before agents can coordinate reliably.",
+          "agentComputerUseContext": "An agent just tried to use Computer Use. Orca needs the Computer Use skill before agents can control apps reliably.",
+          "agentOrcaCliContext": "An agent just tried to use Orca's CLI skill for this workflow. Orca needs the CLI skill before this workflow can continue reliably.",
+          "targetRequired": "Orca could not resolve the runtime that should read this skill.",
+          "unsupportedSkill": "This is not an Orca-managed agent skill.",
+          "repairRequiredRuntime": "The selected runtime needs repair before Orca can inspect its skills.",
+          "remoteRuntime": "Remote runtimes are not updated in the background.",
+          "wslRuntime": "WSL skill updates are manual in this version.",
+          "missingInstall": "The managed skill is not installed in the selected runtime.",
+          "projectInstall": "Project-scoped skills are not updated in the background.",
+          "ambiguousInstall": "Orca found both global and project-scoped copies of this skill.",
+          "bundledOrPluginInstall": "Bundled and plugin-cache skills are not mutated by Orca.",
+          "symlinkedGlobalInstall": "Symlinked global skills are not safe for background updates yet.",
+          "unsupportedCliContract": "This build does not include the verified skills CLI update contract.",
+          "expectedHashMissing": "This build does not include an expected hash for this managed skill.",
+          "lockfileMissing": "Orca could not find the global skills lockfile.",
+          "lockfileMalformed": "The global skills lockfile could not be parsed.",
+          "lockfileUnsupportedSchema": "The global skills lockfile uses an unsupported schema version.",
+          "lockEntryMissing": "The global skills lockfile does not track this skill.",
+          "lockEntryUnmanagedSource": "The installed skill is not tracked as Orca-managed source.",
+          "backgroundUpdateDisabled": "Automatic skill updates are turned off, so this update needs manual review.",
+          "cooldown": "Orca recently tried this managed-skill check and is cooling down.",
+          "updateFailed": "The managed-skill update command failed.",
+          "updateTimeout": "The managed-skill update command timed out."
         }
       },
       "sidebar": {
@@ -4278,6 +4315,18 @@
                       "f8bda25f29": "Keep Local Main Up to Date"
                     }
                   }
+                }
+              }
+            }
+          }
+        },
+        "managed": {
+          "agent": {
+            "skill": {
+              "background": {
+                "updates": {
+                  "title": "Allow verified Orca skill updates",
+                  "description": "When Orca has verified install metadata and a safe update path, it can try managed agent skill updates in the background. Turn this off to review updates manually."
                 }
               }
             }
@@ -9144,9 +9193,6 @@
                 "copyCommand": "Copy command"
               }
             }
-          },
-          "SourceControlEntryContextMenu": {
-            "a1f2c8d901": "View"
           }
         }
       },

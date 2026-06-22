@@ -25,7 +25,12 @@ import type {
   WorkspaceSessionPatch,
   WorkspaceSessionState
 } from '../../../shared/types'
-import type { SkillDiscoveryResult } from '../../../shared/skills'
+import type {
+  ManagedAgentSkillEnsureRequest,
+  ManagedAgentSkillEnsureResult,
+  ManagedAgentSkillFallback,
+  SkillDiscoveryResult
+} from '../../../shared/skills'
 import {
   getDefaultOnboardingState,
   getDefaultSettings,
@@ -2272,13 +2277,59 @@ function createComputerUsePermissionsApi(): NonNullable<
 }
 
 function createSkillsApi(): NonNullable<Partial<PreloadApi>['skills']> {
+  const fallbackCallbacks = new Set<(event: ManagedAgentSkillFallback) => void>()
+  const cooldownUntilByKey = new Map<string, number>()
+  const cooldownMs = 60_000
   return {
     discover: () =>
       callRuntimeResult<SkillDiscoveryResult>('skills.discover', undefined, 15_000).catch(() => ({
         skills: [],
         sources: [],
         scannedAt: Date.now()
-      }))
+      })),
+    ensureManagedReady: (request: ManagedAgentSkillEnsureRequest) => {
+      const uiKey = ['remote', '', request.skillName, request.context].join(':')
+      const cooldownUntil = cooldownUntilByKey.get(uiKey)
+      if (!request.force && cooldownUntil && cooldownUntil > Date.now()) {
+        return Promise.resolve({
+          status: 'fallback',
+          skillName: request.skillName,
+          context: request.context,
+          runtime: 'remote',
+          scope: 'missing',
+          reason: 'cooldown',
+          uiKey,
+          message: translate(
+            'auto.web.web.preload.api.remoteManagedSkillCooldown',
+            'Orca recently tried this managed-skill check and is cooling down.'
+          ),
+          request
+        } satisfies ManagedAgentSkillEnsureResult)
+      }
+      const result = {
+        status: 'fallback',
+        skillName: request.skillName,
+        context: request.context,
+        runtime: 'remote',
+        scope: 'missing',
+        reason: 'remote-runtime',
+        uiKey,
+        message: translate(
+          'auto.web.web.preload.api.remoteManagedSkillRuntime',
+          'Remote runtimes are not updated in the background.'
+        ),
+        request
+      } satisfies ManagedAgentSkillFallback
+      cooldownUntilByKey.set(uiKey, Date.now() + cooldownMs)
+      return Promise.resolve(result satisfies ManagedAgentSkillEnsureResult)
+    },
+    onManagedFallback: (callback) => {
+      fallbackCallbacks.add(callback)
+      return () => {
+        fallbackCallbacks.delete(callback)
+      }
+    },
+    onManagedUpdated: () => () => {}
   }
 }
 

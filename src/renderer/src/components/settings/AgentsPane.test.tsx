@@ -10,6 +10,7 @@ import { useAppStore } from '../../store'
 import { getAgentGeneratedTabTitlesTitle } from './agent-generated-tab-title-copy'
 import { getAgentStatusHooksTitle } from './agent-status-hooks-copy'
 import { getAgentAwakeDescription, getAgentAwakeTitle } from './agent-awake-copy'
+import { getManagedAgentSkillBackgroundUpdatesTitle } from './managed-agent-skill-background-updates-copy'
 import { AgentAwakeSetting } from './AgentAwakeSetting'
 import {
   AgentAvailabilityControl,
@@ -17,6 +18,7 @@ import {
   AgentGeneratedTabTitlesSetting,
   AgentStatusHooksSetting,
   AgentsPane,
+  ManagedAgentSkillBackgroundUpdatesSetting,
   getAgentsPaneSearchEntries,
   buildAgentAvailabilitySettingsUpdate,
   createAgentAvailabilityUpdateQueue
@@ -144,6 +146,10 @@ describe('AgentsPane', () => {
     expect(markup).toContain(
       'Keeps this computer and display awake while agents are working. Orca also asks this device to stay awake when the lid is closed, subject to its power policy.'
     )
+    expect(markup).toContain('Allow verified Orca skill updates')
+    expect(markup).toContain(
+      'When Orca has verified install metadata and a safe update path, it can try managed agent skill updates in the background. Turn this off to review updates manually.'
+    )
     expect(markup).toContain('aria-checked="false"')
   })
 
@@ -223,6 +229,27 @@ describe('AgentsPane', () => {
     })
   })
 
+  it('toggles managed skill background updates with the next value', () => {
+    const updateSettings = vi.fn()
+    const element = ManagedAgentSkillBackgroundUpdatesSetting({
+      settings: {
+        ...getDefaultSettings('/tmp'),
+        managedAgentSkillBackgroundUpdatesEnabled: true
+      },
+      updateSettings
+    })
+
+    const updatesSwitch = findSwitchRow(element, getManagedAgentSkillBackgroundUpdatesTitle())
+    expect(updatesSwitch.props.checked).toBe(true)
+
+    const onChange = updatesSwitch.props.onChange as () => void
+    onChange()
+
+    expect(updateSettings).toHaveBeenCalledWith({
+      managedAgentSkillBackgroundUpdatesEnabled: false
+    })
+  })
+
   it('toggles generated tab titles with the next value', () => {
     const updateSettings = vi.fn()
     const element = AgentGeneratedTabTitlesSetting({
@@ -254,6 +281,12 @@ describe('AgentsPane', () => {
     expect(matchesSettingsSearch('hooks', getAgentsPaneSearchEntries())).toBe(true)
     expect(matchesSettingsSearch('waiting', getAgentsPaneSearchEntries())).toBe(true)
     expect(matchesSettingsSearch('codex', getAgentsPaneSearchEntries())).toBe(true)
+  })
+
+  it('includes managed skill update search metadata', () => {
+    expect(matchesSettingsSearch('automatic', getAgentsPaneSearchEntries())).toBe(true)
+    expect(matchesSettingsSearch('manual', getAgentsPaneSearchEntries())).toBe(true)
+    expect(matchesSettingsSearch('skills', getAgentsPaneSearchEntries())).toBe(true)
   })
 
   it('includes generated title search metadata', () => {

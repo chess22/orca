@@ -76,6 +76,26 @@ const mockApi = {
   },
   runtimeEnvironments: {
     call: runtimeEnvironmentTransportCall
+  },
+  platform: {
+    get: vi.fn(() => ({ platform: 'win32' }))
+  },
+  skills: {
+    ensureManagedReady: vi.fn().mockResolvedValue({
+      status: 'fallback',
+      skillName: 'linear-tickets',
+      context: 'linear-worktree',
+      runtime: 'remote',
+      scope: 'missing',
+      reason: 'remote-runtime',
+      uiKey: 'remote::linear-tickets:linear-worktree',
+      message: 'Remote runtimes are not updated in the background.',
+      request: {
+        skillName: 'linear-tickets',
+        context: 'linear-worktree',
+        remoteRuntime: true
+      }
+    })
   }
 }
 
@@ -1612,6 +1632,141 @@ describe('createWorktree base status merge', () => {
       linkedLinearIssue: 'ENG-123',
       workspaceStatus: 'in-review',
       pendingFirstAgentMessageRename: true
+    })
+  })
+
+  it('marks linked Linear skill setup remote for SSH-owned worktree creates', async () => {
+    const store = createTestStore()
+    const wt = makeWorktree({
+      id: 'repo1::/path/wt1',
+      repoId: 'repo1',
+      path: '/path/wt1',
+      linkedLinearIssue: 'ENG-123'
+    })
+    store.setState({
+      repos: [{ id: 'repo1', path: '/repo', connectionId: 'ssh-1' } as AppState['repos'][number]]
+    } as Partial<AppState>)
+    mockApi.worktrees.create.mockResolvedValue({ worktree: wt })
+
+    await store
+      .getState()
+      .createWorktree(
+        'repo1',
+        'feature',
+        'origin/main',
+        'inherit',
+        undefined,
+        'sidebar',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'ENG-123'
+      )
+
+    expect(mockApi.skills.ensureManagedReady).toHaveBeenCalledWith({
+      skillName: 'linear-tickets',
+      context: 'linear-worktree',
+      remoteRuntime: true
+    })
+  })
+
+  it('passes the local project root for host linked Linear skill setup nudges', async () => {
+    const store = createTestStore()
+    const wt = makeWorktree({
+      id: 'repo1::/repo/wt1',
+      repoId: 'repo1',
+      path: '/repo/wt1',
+      linkedLinearIssue: 'ENG-123'
+    })
+    store.setState({
+      repos: [
+        {
+          id: 'repo1',
+          path: '/repo',
+          connectionId: null
+        } as AppState['repos'][number]
+      ]
+    } as Partial<AppState>)
+    mockApi.worktrees.create.mockResolvedValue({ worktree: wt })
+
+    await store
+      .getState()
+      .createWorktree(
+        'repo1',
+        'feature',
+        'origin/main',
+        'inherit',
+        undefined,
+        'sidebar',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'ENG-123'
+      )
+
+    expect(mockApi.skills.ensureManagedReady).toHaveBeenCalledWith({
+      skillName: 'linear-tickets',
+      context: 'linear-worktree',
+      discoveryTarget: expect.objectContaining({
+        projectRootPath: '/repo/wt1'
+      })
+    })
+  })
+
+  it('preserves local WSL project runtime for linked Linear skill setup nudges', async () => {
+    const store = createTestStore()
+    const wt = makeWorktree({
+      id: 'repo1::C:\\repo\\wt1',
+      repoId: 'repo1',
+      path: 'C:\\repo\\wt1',
+      linkedLinearIssue: 'ENG-123'
+    })
+    store.setState({
+      repos: [
+        {
+          id: 'repo1',
+          path: 'C:\\repo',
+          connectionId: null
+        } as AppState['repos'][number]
+      ],
+      projects: [{ id: 'repo1', localWindowsRuntimePreference: { kind: 'wsl', distro: 'Ubuntu' } }]
+    } as Partial<AppState>)
+    mockApi.worktrees.create.mockResolvedValue({ worktree: wt })
+
+    await store
+      .getState()
+      .createWorktree(
+        'repo1',
+        'feature',
+        'origin/main',
+        'inherit',
+        undefined,
+        'sidebar',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'ENG-123'
+      )
+
+    expect(mockApi.skills.ensureManagedReady).toHaveBeenCalledWith({
+      skillName: 'linear-tickets',
+      context: 'linear-worktree',
+      discoveryTarget: {
+        projectRootPath: 'C:\\repo\\wt1',
+        projectRuntime: expect.objectContaining({
+          status: 'resolved',
+          runtime: expect.objectContaining({
+            kind: 'wsl',
+            distro: 'Ubuntu'
+          })
+        })
+      }
     })
   })
 

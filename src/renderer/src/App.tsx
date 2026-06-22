@@ -55,6 +55,7 @@ import RightSidebar from './components/right-sidebar'
 import { StarNagCard } from './components/StarNagCard'
 import { StarNagAgentValueMomentObserver } from './components/star-nag/StarNagAgentValueMomentObserver'
 import { StarNagToastHost } from './components/star-nag/StarNagToastHost'
+import { ManagedAgentSkillSetupDialogHost } from './components/skills/ManagedAgentSkillSetupDialogHost'
 import { TelemetryFirstLaunchSurface } from './components/TelemetryFirstLaunchSurface'
 import { ZoomOverlay } from './components/ZoomOverlay'
 import { onOnboardingReopened } from './components/onboarding/show-onboarding-event'
@@ -2595,6 +2596,14 @@ function App(): React.JSX.Element {
               compact
             >
               <RecentTabSwitcher />
+            </RecoverableRenderErrorBoundary>
+            <RecoverableRenderErrorBoundary
+              boundaryId="modal.managed-agent-skill-setup"
+              surface="modal"
+              resetKey={activeView}
+              compact
+            >
+              <ManagedAgentSkillSetupDialogHost />
             </RecoverableRenderErrorBoundary>
           </LinkRoutingPreferenceDialogProvider>
         </ConfirmationDialogProvider>
