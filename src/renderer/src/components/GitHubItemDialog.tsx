@@ -17,10 +17,12 @@ import {
   ArrowDown,
   ArrowRight,
   ArrowUp,
+  Ban,
   Braces,
   Check,
   ChevronDown,
   ChevronLeft,
+  ChevronRight,
   CircleDashed,
   CircleDot,
   Copy,
@@ -38,6 +40,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Search,
   Send,
   Settings,
   UndoDot,
@@ -193,6 +196,12 @@ import {
 import { PER_REPO_FETCH_LIMIT } from '../../../shared/work-items'
 import { translate } from '@/i18n/i18n'
 import { getSettingsForRepoRuntimeOwner } from '@/lib/repo-runtime-owner'
+import {
+  buildTaskPageGitHubCloseUpdate,
+  getTaskPageGitHubDuplicateCandidates,
+  validateTaskPageGitHubDuplicateTarget,
+  type TaskPageGitHubCloseAction
+} from '@/components/task-page-github-status-actions'
 
 // Why: the GH item dialog can be opened from any work-item list surface and
 // doesn't have the full owner/repo context the list's cache entry carries.
@@ -354,7 +363,7 @@ function getStateTone(item: GitHubWorkItem): string {
     return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
   }
   if (item.state === 'closed') {
-    return 'border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-300'
+    return 'border-ring/50 bg-primary/10 text-foreground'
   }
   return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
 }
@@ -4626,6 +4635,27 @@ function GitHubLabelsSettingsLink({
   )
 }
 
+function getDuplicateTargetErrorMessage(
+  validation: Exclude<
+    ReturnType<typeof validateTaskPageGitHubDuplicateTarget>,
+    { ok: true; duplicateOf: number }
+  >
+): string {
+  return validation.reason === 'missing'
+    ? translate(
+        'auto.components.TaskPage.duplicateIssueMissing',
+        'Enter an issue number in this repository.'
+      )
+    : validation.reason === 'not_integer'
+      ? translate('auto.components.TaskPage.duplicateIssueNotInteger', 'Use a whole issue number.')
+      : validation.reason === 'not_positive'
+        ? translate(
+            'auto.components.TaskPage.duplicateIssueNotPositive',
+            'Use a positive issue number.'
+          )
+        : translate('auto.components.TaskPage.duplicateIssueSameIssue', 'Choose a different issue.')
+}
+
 function GHEditSection({
   item,
   repoPath,
@@ -4667,11 +4697,36 @@ function GHEditSection({
 }): React.JSX.Element | null {
   const [labelPopoverOpen, setLabelPopoverOpen] = useState(false)
   const [assigneePopoverOpen, setAssigneePopoverOpen] = useState(false)
+  const [statusPopoverOpen, setStatusPopoverOpen] = useState(false)
+  const [duplicatePickerOpen, setDuplicatePickerOpen] = useState(false)
+  const [duplicateSearch, setDuplicateSearch] = useState('')
+  const [duplicateError, setDuplicateError] = useState<string | null>(null)
   const [localAssignees, setLocalAssignees] = useState<string[]>(assignees)
   const editedAssigneesItemKeyRef = useRef<string | null>(null)
   const assigneesItemKey = `${item.repoId}\0${item.id}`
   const patchWorkItem = useAppStore((s) => s.patchWorkItem)
   const patchProjectRowContent = useAppStore((s) => s.patchProjectRowContent)
+  const duplicateIssueCandidates = useAppStore(
+    useShallow((s) => {
+      if (!duplicatePickerOpen) {
+        return []
+      }
+      const deduped = new Map<number, GitHubWorkItem>()
+      for (const entry of Object.values(s.workItemsCache)) {
+        for (const candidate of entry.data ?? []) {
+          if (
+            candidate.type === 'issue' &&
+            candidate.repoId === item.repoId &&
+            candidate.number !== item.number &&
+            !deduped.has(candidate.number)
+          ) {
+            deduped.set(candidate.number, candidate)
+          }
+        }
+      }
+      return Array.from(deduped.values()).sort((a, b) => b.number - a.number)
+    })
+  )
   const repoOwnerSettings = useAppStore(
     useShallow((s) => getSettingsForRepoRuntimeOwner(s, item.repoId ?? null))
   )
@@ -4723,6 +4778,33 @@ function GHEditSection({
   const repoAssignees = projectOrigin ? repoAssigneesBySlug : repoAssigneesByPath
   const hasAttachedWorkspace =
     attachedWorkspaceLabel !== null && attachedWorkspaceLabel !== undefined
+  const filteredDuplicateCandidates = useMemo(
+    () =>
+      getTaskPageGitHubDuplicateCandidates(duplicateIssueCandidates, item.number, duplicateSearch),
+    [duplicateIssueCandidates, duplicateSearch, item.number]
+  )
+  const directDuplicateTarget = useMemo(() => {
+    const trimmed = duplicateSearch.trim()
+    const validation = validateTaskPageGitHubDuplicateTarget(trimmed, item.number)
+    if (!trimmed || !validation.ok) {
+      return null
+    }
+    if (
+      filteredDuplicateCandidates.some((candidate) => candidate.number === validation.duplicateOf)
+    ) {
+      return null
+    }
+    return validation.duplicateOf
+  }, [duplicateSearch, filteredDuplicateCandidates, item.number])
+  const duplicatePickerTitle = useMemo(() => {
+    if (projectOrigin) {
+      return `${projectOrigin.owner}/${projectOrigin.repo}`
+    }
+    const parsed = parseOwnerRepoFromItemUrl(item.url)
+    return parsed
+      ? `${parsed.owner}/${parsed.repo}`
+      : translate('auto.components.TaskPage.repository', 'Repository')
+  }, [item.url, projectOrigin])
   const handleOpenOrUseWorkspace = useCallback((): void => {
     if (onOpenOrUse) {
       onOpenOrUse(item)
@@ -4742,7 +4824,7 @@ function GHEditSection({
   }, [assigneesItemKey, assignees])
 
   const handleStateChange = useCallback(
-    (newState: 'open' | 'closed') => {
+    (newState: 'open' | 'closed', closeAction?: TaskPageGitHubCloseAction) => {
       if (newState === localState) {
         return
       }
@@ -4755,7 +4837,10 @@ function GHEditSection({
             sourceContext,
             projectOrigin,
             number: item.number,
-            updates: { state: newState }
+            updates:
+              newState === 'closed' && closeAction
+                ? buildTaskPageGitHubCloseUpdate(closeAction)
+                : { state: newState }
           }),
         onOptimistic: () => {
           onStateChange(newState)
@@ -4791,6 +4876,42 @@ function GHEditSection({
       onMutated
     ]
   )
+
+  const closeAsDuplicate = useCallback(
+    (targetIssueNumber: number | string) => {
+      const validation = validateTaskPageGitHubDuplicateTarget(
+        String(targetIssueNumber),
+        item.number
+      )
+      if (!validation.ok) {
+        setDuplicateError(getDuplicateTargetErrorMessage(validation))
+        return
+      }
+      setDuplicateError(null)
+      handleStateChange('closed', { stateReason: 'duplicate', duplicateOf: validation.duplicateOf })
+      setStatusPopoverOpen(false)
+      setDuplicatePickerOpen(false)
+    },
+    [handleStateChange, item.number]
+  )
+
+  const handleDuplicateSearchSubmit = useCallback(() => {
+    const validation = validateTaskPageGitHubDuplicateTarget(duplicateSearch, item.number)
+    if (!validation.ok) {
+      setDuplicateError(getDuplicateTargetErrorMessage(validation))
+      return
+    }
+    closeAsDuplicate(validation.duplicateOf)
+  }, [closeAsDuplicate, duplicateSearch, item.number])
+
+  const handleStatusPopoverOpenChange = useCallback((nextOpen: boolean) => {
+    setStatusPopoverOpen(nextOpen)
+    if (!nextOpen) {
+      setDuplicatePickerOpen(false)
+      setDuplicateSearch('')
+      setDuplicateError(null)
+    }
+  }, [])
 
   const handleLabelToggle = useCallback(
     (label: string) => {
@@ -4947,6 +5068,225 @@ function GHEditSection({
     ]
   )
 
+  const renderIssueStatusPopover = (variant: 'sidebar' | 'pill'): React.JSX.Element => {
+    const isSidebar = variant === 'sidebar'
+    return (
+      <Popover open={statusPopoverOpen} onOpenChange={handleStatusPopoverOpenChange}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            disabled={isPending('state')}
+            className={cn(
+              isSidebar
+                ? 'inline-flex w-full items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-[12px] font-medium transition hover:brightness-125 hover:ring-1 hover:ring-white/10 disabled:opacity-50'
+                : 'group/status inline-flex items-center gap-0.5 rounded-full border px-2 py-0.5 text-[11px] font-medium transition hover:brightness-125 hover:ring-1 hover:ring-white/10 disabled:opacity-50',
+              getStateTone({ ...item, state: localState })
+            )}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              {localState === 'closed' ? (
+                <CircleDashed className={isSidebar ? 'size-3.5' : 'size-3'} />
+              ) : (
+                <CircleDot className={isSidebar ? 'size-3.5' : 'size-3'} />
+              )}
+              {getStateLabel({ ...item, state: localState })}
+            </span>
+            <ChevronDown className={isSidebar ? 'size-3 opacity-60' : 'size-2.5 opacity-50'} />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          className={cn(duplicatePickerOpen ? 'w-[360px]' : 'w-72', 'p-1')}
+          align="start"
+        >
+          {duplicatePickerOpen ? (
+            <div>
+              <div className="flex items-center gap-2 px-1 py-1.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  className="size-7"
+                  onClick={() => {
+                    setDuplicatePickerOpen(false)
+                    setDuplicateSearch('')
+                    setDuplicateError(null)
+                  }}
+                  aria-label={translate('auto.components.TaskPage.backToCloseReasons', 'Back')}
+                >
+                  <ChevronLeft className="size-4" />
+                </Button>
+                <span className="min-w-0 truncate text-[12px] font-semibold">
+                  {duplicatePickerTitle}
+                </span>
+              </div>
+              <div className="relative px-1 pb-2">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  autoFocus
+                  value={duplicateSearch}
+                  onChange={(event) => {
+                    setDuplicateSearch(event.target.value)
+                    setDuplicateError(null)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      handleDuplicateSearchSubmit()
+                    }
+                  }}
+                  placeholder={translate('auto.components.TaskPage.searchIssues', 'Search issues')}
+                  className="h-9 pl-8 text-[12px]"
+                  aria-invalid={duplicateError ? true : undefined}
+                />
+              </div>
+              {duplicateError ? (
+                <p className="px-2 pb-2 text-[11px] text-destructive">{duplicateError}</p>
+              ) : null}
+              <div className="scrollbar-sleek max-h-72 overflow-y-auto pr-1">
+                {directDuplicateTarget ? (
+                  <button
+                    type="button"
+                    onClick={() => closeAsDuplicate(directDuplicateTarget)}
+                    className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left hover:bg-accent"
+                  >
+                    <Copy className="size-4 text-primary" />
+                    <span className="min-w-0 flex-1 text-[12px] font-medium">
+                      {translate(
+                        'auto.components.TaskPage.useIssueNumber',
+                        'Use issue #{{value0}}',
+                        {
+                          value0: directDuplicateTarget
+                        }
+                      )}
+                    </span>
+                  </button>
+                ) : null}
+                {filteredDuplicateCandidates.map((candidate) => (
+                  <button
+                    key={`${candidate.repoId}:${candidate.number}`}
+                    type="button"
+                    onClick={() => closeAsDuplicate(candidate.number)}
+                    className="flex w-full items-start gap-2 rounded-sm px-2 py-2 text-left hover:bg-accent"
+                  >
+                    {candidate.state === 'closed' ? (
+                      <CircleDashed className="mt-0.5 size-4 shrink-0 text-primary" />
+                    ) : (
+                      <CircleDot className="mt-0.5 size-4 shrink-0 text-emerald-500" />
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[12px] font-medium leading-snug">
+                        {candidate.title}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-[12px] text-muted-foreground">
+                      #{candidate.number}
+                    </span>
+                  </button>
+                ))}
+                {!directDuplicateTarget && filteredDuplicateCandidates.length === 0 ? (
+                  <p className="px-2 py-3 text-[12px] text-muted-foreground">
+                    {translate(
+                      'auto.components.TaskPage.noMatchingIssuesLoaded',
+                      'No matching issues loaded.'
+                    )}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  handleStateChange('open')
+                  setStatusPopoverOpen(false)
+                }}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[12px] hover:bg-accent',
+                  localState === 'open' && 'bg-accent/50'
+                )}
+              >
+                <CircleDot className="size-4 text-emerald-500" />
+                {translate('auto.components.GitHubItemDialog.dc1ca081a8', 'Open')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleStateChange('closed', { stateReason: 'completed' })
+                  setStatusPopoverOpen(false)
+                }}
+                className={cn(
+                  'flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-left hover:bg-accent',
+                  localState === 'closed' && 'bg-accent/50'
+                )}
+              >
+                <Check className="mt-0.5 size-4 text-primary" />
+                <span className="min-w-0">
+                  <span className="block text-[12px] font-medium">
+                    {translate('auto.components.TaskPage.closeAsCompleted', 'Close as completed')}
+                  </span>
+                  <span className="block text-[11px] text-muted-foreground">
+                    {translate(
+                      'auto.components.TaskPage.closeAsCompletedDescription',
+                      'Done, closed, fixed, resolved'
+                    )}
+                  </span>
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleStateChange('closed', { stateReason: 'not_planned' })
+                  setStatusPopoverOpen(false)
+                }}
+                className="flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-left hover:bg-accent"
+              >
+                <Ban className="mt-0.5 size-4 text-muted-foreground" />
+                <span className="min-w-0">
+                  <span className="block text-[12px] font-medium">
+                    {translate(
+                      'auto.components.TaskPage.closeAsNotPlanned',
+                      'Close as not planned'
+                    )}
+                  </span>
+                  <span className="block text-[11px] text-muted-foreground">
+                    {translate(
+                      'auto.components.TaskPage.closeAsNotPlannedDescription',
+                      "Won't fix, can't repro, stale"
+                    )}
+                  </span>
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDuplicatePickerOpen(true)
+                  setDuplicateSearch('')
+                  setDuplicateError(null)
+                }}
+                className="flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-left hover:bg-accent"
+              >
+                <Copy className="mt-0.5 size-4 text-muted-foreground" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[12px] font-medium">
+                    {translate('auto.components.TaskPage.closeAsDuplicate', 'Close as duplicate')}
+                  </span>
+                  <span className="block text-[11px] text-muted-foreground">
+                    {translate(
+                      'auto.components.TaskPage.closeAsDuplicateDescription',
+                      'Duplicate of another issue in this repository'
+                    )}
+                  </span>
+                </span>
+                <ChevronRight className="mt-1 size-3.5 text-muted-foreground" />
+              </button>
+            </>
+          )}
+        </PopoverContent>
+      </Popover>
+    )
+  }
+
   if (item.type === 'pr') {
     return null
   }
@@ -4971,51 +5311,7 @@ function GHEditSection({
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
             {translate('auto.components.GitHubItemDialog.00ccdf9b5a', 'Status')}
           </div>
-          <Popover>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className={cn(
-                  'inline-flex w-full items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-[12px] font-medium transition hover:brightness-125 hover:ring-1 hover:ring-white/10',
-                  getStateTone({ ...item, state: localState })
-                )}
-              >
-                <span className="inline-flex items-center gap-1.5">
-                  {localState === 'closed' ? (
-                    <CircleDashed className="size-3.5" />
-                  ) : (
-                    <CircleDot className="size-3.5" />
-                  )}
-                  {getStateLabel({ ...item, state: localState })}
-                </span>
-                <ChevronDown className="size-3 opacity-60" />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-44 p-1" align="start">
-              <button
-                type="button"
-                onClick={() => handleStateChange('open')}
-                className={cn(
-                  'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[12px] hover:bg-accent',
-                  localState === 'open' && 'bg-accent/50'
-                )}
-              >
-                <CircleDot className="size-3 text-emerald-500" />
-                {translate('auto.components.GitHubItemDialog.dc1ca081a8', 'Open')}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleStateChange('closed')}
-                className={cn(
-                  'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[12px] hover:bg-accent',
-                  localState === 'closed' && 'bg-accent/50'
-                )}
-              >
-                <CircleDashed className="size-3 text-rose-500" />
-                {translate('auto.components.GitHubItemDialog.ab050dffec', 'Closed')}
-              </button>
-            </PopoverContent>
-          </Popover>
+          {renderIssueStatusPopover('sidebar')}
         </section>
 
         {/* Assignees */}
@@ -5264,44 +5560,7 @@ function GHEditSection({
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/60 px-4 py-2.5">
       {/* State */}
-      <Popover>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            className={cn(
-              'group/status inline-flex items-center gap-0.5 rounded-full border px-2 py-0.5 text-[11px] font-medium transition hover:brightness-125 hover:ring-1 hover:ring-white/10',
-              getStateTone({ ...item, state: localState })
-            )}
-          >
-            {getStateLabel({ ...item, state: localState })}
-            <ChevronDown className="size-2.5 opacity-50" />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent className="w-36 p-1" align="start">
-          <button
-            type="button"
-            onClick={() => handleStateChange('open')}
-            className={cn(
-              'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[12px] hover:bg-accent',
-              localState === 'open' && 'bg-accent/50'
-            )}
-          >
-            <CircleDot className="size-3 text-emerald-500" />
-            {translate('auto.components.GitHubItemDialog.dc1ca081a8', 'Open')}
-          </button>
-          <button
-            type="button"
-            onClick={() => handleStateChange('closed')}
-            className={cn(
-              'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[12px] hover:bg-accent',
-              localState === 'closed' && 'bg-accent/50'
-            )}
-          >
-            <CircleDashed className="size-3 text-rose-500" />
-            {translate('auto.components.GitHubItemDialog.ab050dffec', 'Closed')}
-          </button>
-        </PopoverContent>
-      </Popover>
+      {renderIssueStatusPopover('pill')}
 
       {/* Labels */}
       <Popover open={labelPopoverOpen} onOpenChange={setLabelPopoverOpen}>

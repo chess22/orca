@@ -5,6 +5,7 @@
 - [TaskPage.tsx](/Users/jinwoohong/orca/workspaces/orca/tasks-page-parity/src/renderer/src/components/TaskPage.tsx:1025) renders `GHStatusCell` with only `Open` and `Closed`.
 - [TaskPage.tsx](/Users/jinwoohong/orca/workspaces/orca/tasks-page-parity/src/renderer/src/components/TaskPage.tsx:1064) sends `{ state: 'closed' }`, so the list path cannot choose GitHub close reasons.
 - [TaskPage.tsx](/Users/jinwoohong/orca/workspaces/orca/tasks-page-parity/src/renderer/src/components/TaskPage.tsx:1137) styles closed issues with rose/destructive color, while GitHub treats closing as a neutral/purple completion action rather than a delete/error action.
+- [GitHubItemDialog.tsx](/Users/jinwoohong/orca/workspaces/orca/tasks-page-parity/src/renderer/src/components/GitHubItemDialog.tsx:4960) has a separate issue-detail status popover; it must expose the same close reasons so opening an issue from Tasks does not fall back to the old Open/Closed-only UI.
 - [GitHubIssueCommentComposer.tsx](/Users/jinwoohong/orca/workspaces/orca/tasks-page-parity/src/renderer/src/components/github/GitHubIssueCommentComposer.tsx:188) already supports close reasons in the detail composer, but the Tasks list does not.
 
 ## Goal
@@ -15,6 +16,7 @@ Bring the GitHub Tasks list status menu closer to GitHub:
 2. Open issues must expose close-as-completed, close-as-not-planned, and close-as-duplicate from the status menu.
 3. Duplicate closes must require a target issue number and pass it as `duplicateOf`.
 4. Reopening still works from the same status menu.
+5. GitHub issue detail metadata must use the same close-reason and duplicate-picker behavior as the Tasks row.
 
 ## Non-goals
 
@@ -31,7 +33,7 @@ Bring the GitHub Tasks list status menu closer to GitHub:
 3. Route issue-state mutations by issue identity:
    - If the row URL parses to `owner/repo`, use `github.project.updateIssueBySlug` / runtime `github.project.updateIssueBySlug`. This avoids closing the wrong repository for GitHub project/custom-source rows whose issue repo can differ from the caller repo.
    - Otherwise keep the existing `github.updateIssue` path with `repoPath`/`repoId`/`sourceContext`.
-4. Render the status popover with `Open`, `Close as completed`, `Close as not planned`, and `Close as duplicate`. The duplicate row advances to a second-step picker with a back button, search field, loaded issue candidates, and an exact-number fallback.
+4. Render the status popover with `Open`, `Close as completed`, `Close as not planned`, and `Close as duplicate` in both the Tasks row and issue-detail metadata sidebar. The duplicate row advances to a second-step picker with a back button, search field, loaded issue candidates, and an exact-number fallback.
 5. Replace rose closed-state classes with token-based primary/ring color-mix classes so the closed pill is completion-like, not destructive. Keep the open-state green treatment for parity with the existing Tasks page unless a broader status-color pass changes it.
 6. Keep the payload serializable for IPC/runtime/SSH: `{ state, stateReason, duplicateOf }` only contains strings and numbers.
 
@@ -78,6 +80,7 @@ Bring the GitHub Tasks list status menu closer to GitHub:
 - Store/cache unit: successful close from an open-filtered Tasks list invalidates or refreshes the affected work-items cache so hidden-by-filter rows do not linger indefinitely.
 - Electron validation: Tasks GitHub issue row status menu shows the new close options and closed issue pill is not red.
 - Electron validation: duplicate close picker appears after the duplicate action and supports issue search/exact-number fallback. Do not submit a real close mutation against user data.
+- Electron validation: GitHub issue detail status sidebar shows the same close options and duplicate picker as the list row.
 - Electron/runtime smoke: same menu opens and validation works when the active runtime target is an SSH/environment source; avoid a real close mutation unless using disposable test data.
 
 ## UI Quality Bar
@@ -92,7 +95,9 @@ Bring the GitHub Tasks list status menu closer to GitHub:
 1. GitHub Tasks issue row with status popover open showing all close reasons.
 2. Duplicate close second-step picker with search and issue candidates.
 3. Closed issue row/pill showing non-red completion styling.
-4. Adjacent smoke: GitHub Tasks header/search area still renders normally.
+4. GitHub issue detail sidebar status popover showing all close reasons.
+5. GitHub issue detail duplicate close second-step picker.
+6. Adjacent smoke: GitHub Tasks header/search area still renders normally.
 
 ## Rollout
 
