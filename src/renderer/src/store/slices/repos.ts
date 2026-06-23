@@ -434,8 +434,55 @@ function mergeProjectCompatibilityProjects(
   return merged
 }
 
+function mergeUpdatedProjectCompatibilityProject(
+  base: Project,
+  updated: Project,
+  updates: ProjectUpdate
+): Project {
+  const project = mergeProjectCompatibilityProject(base, updated)
+  if ('localWindowsRuntimePreference' in updates) {
+    const localWindowsRuntimePreference =
+      'localWindowsRuntimePreference' in updated
+        ? updated.localWindowsRuntimePreference
+        : updates.localWindowsRuntimePreference
+    // Why: project.update returns one host's project record, but preference
+    // clears must still override the cross-host metadata preservation merge.
+    if (localWindowsRuntimePreference === undefined) {
+      delete project.localWindowsRuntimePreference
+    } else {
+      project.localWindowsRuntimePreference = localWindowsRuntimePreference
+    }
+  }
+  return project
+}
+
 function getCurrentSourceRepoIds(project: Project, currentRepoIds: ReadonlySet<string>): string[] {
   return project.sourceRepoIds.filter((repoId) => currentRepoIds.has(repoId))
+}
+
+function getSourceRepoIdsOutsideHost(
+  project: Project,
+  reposById: ReadonlyMap<string, Repo>,
+  hostId: string
+): string[] {
+  return project.sourceRepoIds.filter((repoId) => {
+    const repo = reposById.get(repoId)
+    return repo && getRepoExecutionHostId(repo) !== hostId
+  })
+}
+
+function getMergedSourceRepoIdsForHostRefresh(
+  previous: Project,
+  current: Project,
+  reposById: ReadonlyMap<string, Repo>,
+  hostId: string
+): string[] {
+  return [
+    ...new Set([
+      ...getSourceRepoIdsOutsideHost(previous, reposById, hostId),
+      ...getCurrentSourceRepoIds(current, new Set(reposById.keys()))
+    ])
+  ]
 }
 
 function projectWithCurrentSourceRepoIds(
@@ -451,13 +498,32 @@ function projectWithCurrentSourceRepoIds(
 function mergePreviousProjectMetadata(
   previous: Project,
   current: Project,
-  currentRepoIds: ReadonlySet<string>
+  reposById: ReadonlyMap<string, Repo>,
+  hostId: string
 ): Project {
+  const project = mergeProjectCompatibilityProject(previous, current)
+  if (hostId === LOCAL_EXECUTION_HOST_ID) {
+    // Why: `localWindowsRuntimePreference` belongs to the local host; a local
+    // refresh that omits it is authoritative and should clear stale renderer state.
+    if ('localWindowsRuntimePreference' in current) {
+      if (current.localWindowsRuntimePreference === undefined) {
+        delete project.localWindowsRuntimePreference
+      } else {
+        project.localWindowsRuntimePreference = current.localWindowsRuntimePreference
+      }
+    } else {
+      delete project.localWindowsRuntimePreference
+    }
+  } else if (previous.localWindowsRuntimePreference !== undefined) {
+    // Why: remote runtimes can have their own local Windows preference; they must
+    // not overwrite the client-local project runtime setting.
+    project.localWindowsRuntimePreference = previous.localWindowsRuntimePreference
+  }
   return {
-    ...mergeProjectCompatibilityProject(previous, current),
+    ...project,
     // Why: fetched project metadata can lag behind repo.list; repo ownership
     // must track the freshly reconciled repos so removed host repos do not linger.
-    sourceRepoIds: getCurrentSourceRepoIds(current, currentRepoIds)
+    sourceRepoIds: getMergedSourceRepoIdsForHostRefresh(previous, current, reposById, hostId)
   }
 }
 
@@ -489,6 +555,18 @@ function getProjectHostIds(
   setups: readonly ProjectHostSetup[],
   repos: readonly Repo[]
 ): Set<string> {
+  const hostIds = getExplicitProjectHostIds(project, setups, repos)
+  if (hostIds.size === 0) {
+    hostIds.add(LOCAL_EXECUTION_HOST_ID)
+  }
+  return hostIds
+}
+
+function getExplicitProjectHostIds(
+  project: Project,
+  setups: readonly ProjectHostSetup[],
+  repos: readonly Repo[]
+): Set<string> {
   const hostIds = new Set<string>()
   const repoById = new Map(repos.map((repo) => [repo.id, repo]))
   for (const setup of setups) {
@@ -501,9 +579,6 @@ function getProjectHostIds(
     if (repo) {
       hostIds.add(getRepoExecutionHostId(repo))
     }
-  }
-  if (hostIds.size === 0) {
-    hostIds.add(LOCAL_EXECUTION_HOST_ID)
   }
   return hostIds
 }
@@ -523,30 +598,47 @@ function mergeFetchedProjectCompatibilityForHost({
   const preservedSetups = previous.projectHostSetups.filter((setup) => setup.hostId !== hostId)
   const projectHostSetups = mergeById(preservedSetups, fetchedSetupsForHost)
   const previousProjectById = new Map(previous.projects.map((project) => [project.id, project]))
+  const reposById = new Map(repos.map((repo) => [repo.id, repo]))
   const currentRepoIds = new Set(repos.map((repo) => repo.id))
-  const hasCurrentOwner = (project: Project): boolean =>
-    project.sourceRepoIds.some((repoId) => currentRepoIds.has(repoId)) ||
-    projectHostSetups.some((setup) => setup.projectId === project.id)
-  const fetchedProjects = fetched.projects
-    .filter(
-      (project) =>
-        hasCurrentOwner(project) ||
-        getProjectHostIds(project, fetched.projectHostSetups, repos).has(hostId)
+  const projectHasHost = (project: Project, setups: readonly ProjectHostSetup[]): boolean =>
+    getProjectHostIds(project, setups, repos).has(hostId)
+  const projectHasCurrentOwnerOutsideHost = (project: Project): boolean =>
+    [...getExplicitProjectHostIds(project, projectHostSetups, repos)].some(
+      (ownerHostId) => ownerHostId !== hostId
     )
+  const fetchedProjects = fetched.projects
+    .filter((project) => {
+      const previousProject = previousProjectById.get(project.id)
+      // Why: repo-derived compatibility projects include every known host.
+      // A one-host refresh should only reconcile that host or prune its stale ownership.
+      return (
+        projectHasHost(project, fetched.projectHostSetups) ||
+        (previousProject ? projectHasHost(previousProject, previous.projectHostSetups) : false)
+      )
+    })
     .map((project) => {
       const previousProject = previousProjectById.get(project.id)
       return previousProject
-        ? mergePreviousProjectMetadata(previousProject, project, currentRepoIds)
+        ? mergePreviousProjectMetadata(previousProject, project, reposById, hostId)
         : projectWithCurrentSourceRepoIds(project, currentRepoIds)
     })
   const fetchedProjectIds = new Set(fetchedProjects.map((project) => project.id))
   const preservedProjects = previous.projects.filter(
     (project) =>
       !fetchedProjectIds.has(project.id) &&
-      !getProjectHostIds(project, previous.projectHostSetups, repos).has(hostId)
+      (!getProjectHostIds(project, previous.projectHostSetups, repos).has(hostId) ||
+        projectHasCurrentOwnerOutsideHost(project))
   )
   return {
-    projects: mergeProjectCompatibilityProjects(preservedProjects, fetchedProjects),
+    projects: mergeProjectCompatibilityProjects(
+      preservedProjects.map((project) => {
+        const sourceRepoIds = getSourceRepoIdsOutsideHost(project, reposById, hostId)
+        return sourceRepoIds.length === project.sourceRepoIds.length
+          ? project
+          : { ...project, sourceRepoIds }
+      }),
+      fetchedProjects
+    ),
     projectHostSetups
   }
 }
@@ -2171,7 +2263,9 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
       const runtimePreferenceChanged = 'localWindowsRuntimePreference' in updates
       set((state) => ({
         projects: state.projects.map((project) =>
-          project.id === projectId ? updatedProject : project
+          project.id === projectId
+            ? mergeUpdatedProjectCompatibilityProject(project, updatedProject, updates)
+            : project
         ),
         folderWorkspacePathStatuses: {}
       }))

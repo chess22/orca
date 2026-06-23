@@ -2189,10 +2189,58 @@ describe('project groups', () => {
 
   it('returns both parent Project Group and repo keys for grouped repo reveals', () => {
     const groupedRepo: Repo = { ...repo, projectGroupId: 'group-1' }
+    const group: ProjectGroup = {
+      id: 'group-1',
+      name: 'Platform',
+      parentPath: '/platform',
+      parentGroupId: null,
+      createdFrom: 'folder-scan',
+      tabOrder: 0,
+      isCollapsed: false,
+      color: null,
+      createdAt: 1,
+      updatedAt: 1
+    }
 
     expect(
-      getGroupKeysForWorktree('repo', worktree, new Map([[groupedRepo.id, groupedRepo]]), null)
+      getGroupKeysForWorktree(
+        'repo',
+        worktree,
+        new Map([[groupedRepo.id, groupedRepo]]),
+        null,
+        undefined,
+        undefined,
+        [group]
+      )
     ).toEqual(['project-group:group-1', 'repo:repo-1'])
+  })
+
+  it('returns only the repo key for missing Project Group metadata reveals', () => {
+    const groupedRepo: Repo = { ...repo, projectGroupId: 'missing-group' }
+    const loadedGroup: ProjectGroup = {
+      id: 'loaded-group',
+      name: 'Loaded',
+      parentPath: '/loaded',
+      parentGroupId: null,
+      createdFrom: 'folder-scan',
+      tabOrder: 0,
+      isCollapsed: false,
+      color: null,
+      createdAt: 1,
+      updatedAt: 1
+    }
+
+    expect(
+      getGroupKeysForWorktree(
+        'repo',
+        worktree,
+        new Map([[groupedRepo.id, groupedRepo]]),
+        null,
+        undefined,
+        undefined,
+        [loadedGroup]
+      )
+    ).toEqual(['repo:repo-1'])
   })
 
   it('returns only the repo key for ungrouped repo reveals', () => {
