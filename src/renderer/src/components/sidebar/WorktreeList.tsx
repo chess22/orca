@@ -472,6 +472,9 @@ function getRenderRowSidebarKey(row: RenderRow): string | null {
 }
 
 function rowKeyMatchesRenderRow(row: RenderRow, rowKey: string): boolean {
+  if (row.type === 'lineage-group') {
+    return row.rows.some((item) => item.rowKey === rowKey)
+  }
   return getRenderRowSidebarKey(row) === rowKey
 }
 

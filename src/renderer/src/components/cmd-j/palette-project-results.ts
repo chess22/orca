@@ -163,6 +163,30 @@ function buildCmdJProjectSearchCandidates({
   return candidates
 }
 
+export function hasCmdJProjectSearchCandidates({
+  projectGroups,
+  repos,
+  projects,
+  projectHostSetups,
+  renderableRepoIds
+}: {
+  projectGroups: readonly ProjectGroup[]
+  repos: readonly Repo[]
+  projects: readonly Project[]
+  projectHostSetups: readonly ProjectHostSetup[]
+  renderableRepoIds?: ReadonlySet<string>
+}): boolean {
+  return (
+    buildCmdJProjectSearchCandidates({
+      projectGroups,
+      repos,
+      projects,
+      projectHostSetups,
+      renderableRepoIds
+    }).length > 0
+  )
+}
+
 function projectRankingForCandidate(
   query: string,
   candidate: CmdJProjectSearchResult
@@ -213,10 +237,14 @@ export function searchCmdJProjectResults({
   projectHostSetups: readonly ProjectHostSetup[]
   renderableRepoIds?: ReadonlySet<string>
 }): CmdJProjectSearchResult[] {
+  // Why: oversized pasted input should not force the palette to scan project,
+  // repo, or group names that may include private workspace details.
   if (isCmdJPaletteQueryTooLarge(query)) {
     return []
   }
   const normalizedQuery = normalizeQuery(query)
+  // Why: project/group rows sit after worktree matches, so one-character
+  // searches would add broad noisy navigation targets before intent is clear.
   if (normalizedQuery.length < 2) {
     return []
   }

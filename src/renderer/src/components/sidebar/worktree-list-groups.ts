@@ -145,14 +145,24 @@ type ProjectGroupingIndex = {
   multiSetupProjectHostKeys: Set<string>
 }
 
+const projectGroupingIndexCache = new WeakMap<ProjectGroupingModel, ProjectGroupingIndex | null>()
+
 function projectHostKey(projectId: string, hostId: string): string {
   return `${projectId}::${hostId}`
 }
 
 function buildProjectGroupingIndex(model?: ProjectGroupingModel): ProjectGroupingIndex | null {
-  const projects = model?.projects ?? []
-  const projectHostSetups = model?.projectHostSetups ?? []
+  if (!model) {
+    return null
+  }
+  const cached = projectGroupingIndexCache.get(model)
+  if (cached !== undefined) {
+    return cached
+  }
+  const projects = model.projects
+  const projectHostSetups = model.projectHostSetups
   if (projects.length === 0 || projectHostSetups.length === 0) {
+    projectGroupingIndexCache.set(model, null)
     return null
   }
   const setupCountByProjectHost = new Map<string, number>()
@@ -166,11 +176,13 @@ function buildProjectGroupingIndex(model?: ProjectGroupingModel): ProjectGroupin
       multiSetupProjectHostKeys.add(key)
     }
   }
-  return {
+  const index = {
     projectById: new Map(projects.map((project) => [project.id, project])),
     setupByRepoId: new Map(projectHostSetups.map((setup) => [setup.repoId, setup])),
     multiSetupProjectHostKeys
   }
+  projectGroupingIndexCache.set(model, index)
+  return index
 }
 
 export type ProjectHeaderRevealTarget = {

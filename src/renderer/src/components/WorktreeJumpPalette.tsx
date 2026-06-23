@@ -88,6 +88,7 @@ import {
 } from '@/components/cmd-j/palette-results'
 import { buildImportedWorktreesCardCandidates } from '@/components/sidebar/imported-worktrees-card-candidates'
 import {
+  hasCmdJProjectSearchCandidates,
   searchCmdJProjectResults,
   type CmdJProjectSearchResult
 } from '@/components/cmd-j/palette-project-results'
@@ -767,6 +768,8 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
     [settingsSections]
   )
   const actionResults = useMemo(() => buildCmdJActionResults(getCmdJQuickActions()), [])
+  // Why: Cmd+J should only offer project jumps the sidebar can actually reveal;
+  // archived-only repos are intentionally left out of this navigation surface.
   const renderableProjectRepoIds = useMemo(() => {
     const ids = new Set<string>()
     for (const worktree of allWorktrees) {
@@ -790,6 +793,17 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
     }
     return ids
   }, [allWorktrees, detectedWorktreesByRepo, pendingWorktreeCreations, repos, worktreesByRepo])
+  const hasAnyProjectSearchCandidates = useMemo(
+    () =>
+      hasCmdJProjectSearchCandidates({
+        projectGroups,
+        repos,
+        projects,
+        projectHostSetups,
+        renderableRepoIds: renderableProjectRepoIds
+      }),
+    [projectGroups, projectHostSetups, projects, renderableProjectRepoIds, repos]
+  )
   const projectTargetItems = useMemo<ProjectTargetPaletteItem[]>(
     () =>
       hasQuery
@@ -1055,7 +1069,6 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
     simulatorTabEntries.length > 0 ||
     workspaceTabEntries.length > 0
   const hasAnyMiddleResults = middleItems.length > 0
-  const hasAnyProjectTargets = projectTargetItems.length > 0
 
   useEffect(() => {
     if (visible && !wasVisibleRef.current) {
@@ -1364,6 +1377,8 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
   const handleSelectProjectTarget = useCallback(
     (result: CmdJProjectSearchResult) => {
       skipRestoreFocusRef.current = true
+      // Why: selecting a project or repo group is a sidebar navigation action;
+      // it should reveal the grouping row without activating an arbitrary workspace.
       revealSidebarRow(result.rowKey, { behavior: 'smooth', highlight: true })
       recordFeatureInteraction('cmd-j')
       closeModal()
@@ -1628,7 +1643,7 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
   const emptyState = (() => {
     if (
       (hasAnySearchableWorktrees ||
-        hasAnyProjectTargets ||
+        hasAnyProjectSearchCandidates ||
         hasAnyMiddleResults ||
         hasAnyOpenTabs) &&
       hasQuery

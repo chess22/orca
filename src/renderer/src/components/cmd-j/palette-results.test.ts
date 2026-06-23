@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Globe, Settings } from 'lucide-react'
 import type { CmdJQuickAction } from './quick-actions'
@@ -10,7 +11,7 @@ import {
   type CmdJActionResult,
   type CmdJSettingsResult
 } from './palette-results'
-import { searchCmdJProjectResults } from './palette-project-results'
+import { hasCmdJProjectSearchCandidates, searchCmdJProjectResults } from './palette-project-results'
 import type { SettingsNavSection } from '@/lib/settings-navigation-types'
 import type { Project, ProjectGroup, ProjectHostSetup, Repo } from '../../../../shared/types'
 
@@ -265,7 +266,7 @@ describe('Cmd+J palette middle-band ranking', () => {
 function repo(id: string, displayName: string, projectGroupId?: string | null): Repo {
   return {
     id,
-    path: `/repos/${displayName}`,
+    path: path.join('/repos', displayName),
     displayName,
     badgeColor: '#999999',
     addedAt: 1,
@@ -290,7 +291,7 @@ function setup(id: string, projectId: string, hostId: string, repoId: string): P
     projectId,
     hostId: hostId as ProjectHostSetup['hostId'],
     repoId,
-    path: `/repos/${repoId}`,
+    path: path.join('/repos', repoId),
     displayName: repoId,
     setupState: 'ready',
     setupMethod: 'cloned',
@@ -397,6 +398,26 @@ describe('Cmd+J project and repo-group search', () => {
     })
 
     expect(results).toEqual([])
+  })
+
+  it('reports searchable project candidates even when a query has no match', () => {
+    expect(
+      hasCmdJProjectSearchCandidates({
+        projectGroups: [projectGroup('group-1', 'Infrastructure')],
+        repos: [],
+        projects: [],
+        projectHostSetups: []
+      })
+    ).toBe(true)
+    expect(
+      searchCmdJProjectResults({
+        query: 'zzzz',
+        projectGroups: [projectGroup('group-1', 'Infrastructure')],
+        repos: [],
+        projects: [],
+        projectHostSetups: []
+      })
+    ).toEqual([])
   })
 
   it('rejects oversized project queries before reading names', () => {
