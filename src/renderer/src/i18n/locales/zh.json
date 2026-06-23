@@ -1622,7 +1622,8 @@
         "backToCloseReasons": "Back",
         "searchIssues": "Search issues",
         "useIssueNumber": "Use issue #{{value0}}",
-        "noMatchingIssuesLoaded": "No matching issues loaded."
+        "noMatchingIssuesLoaded": "No matching issues loaded.",
+        "editReviewersWithCurrent": "Edit reviewers: {{value0}}"
       },
       "Terminal": {
         "73768427cf": "关闭",

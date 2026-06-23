@@ -108,6 +108,7 @@ import type {
 import { useConfirmationDialog } from '@/components/confirmation-dialog'
 import {
   getGitHubPRPrimaryReviewer,
+  getGitHubPRReviewerRows,
   getGitHubPRReviewLabel,
   normalizeGitHubReviewerLogins,
   parseGitHubReviewerInputLogins,
@@ -1499,19 +1500,6 @@ function formatPRDelta(item: GitHubWorkItem): string | null {
   return parts.length > 0 ? parts.join(' ') : null
 }
 
-function getReviewTone(item: GitHubWorkItem): string {
-  if (item.reviewDecision === 'APPROVED') {
-    return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
-  }
-  if (item.reviewDecision === 'CHANGES_REQUESTED') {
-    return 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-200'
-  }
-  if (item.reviewRequests && item.reviewRequests.length > 0) {
-    return 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-200'
-  }
-  return 'border-border/60 bg-background/70 text-muted-foreground'
-}
-
 function ReviewChipAvatar({
   reviewer
 }: {
@@ -1525,7 +1513,7 @@ function ReviewChipAvatar({
         loading="lazy"
         decoding="async"
         title={reviewer.name ? `${reviewer.name} (${reviewer.login})` : reviewer.login}
-        className="size-3.5 shrink-0 rounded-full border border-border/50 bg-muted object-cover"
+        className="size-5 shrink-0 rounded-full border border-border/50 bg-muted object-cover"
       />
     )
   }
@@ -1533,13 +1521,13 @@ function ReviewChipAvatar({
     return (
       <span
         title={reviewer.login}
-        className="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full border border-border/50 bg-muted text-[8px] font-medium text-muted-foreground"
+        className="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-border/50 bg-muted text-[10px] font-medium text-muted-foreground"
       >
         {reviewer.login.slice(0, 1).toUpperCase()}
       </span>
     )
   }
-  return <Users className="size-3 shrink-0" />
+  return <Users className="size-5 shrink-0" />
 }
 
 function GitHubAssigneeAvatar({ assignee }: { assignee: GitHubAssignableUser }): React.JSX.Element {
@@ -2293,6 +2281,8 @@ function PRReviewCell({
 
   const itemWithLocalReviewRequests = { ...item, reviewRequests: localReviewRequests }
   const primaryReviewer = getGitHubPRPrimaryReviewer(itemWithLocalReviewRequests)
+  const reviewerRows = getGitHubPRReviewerRows(itemWithLocalReviewRequests)
+  const extraReviewerCount = Math.max(0, reviewerRows.length - 1)
   const hasReviewerMetadata =
     item.reviewDecision !== undefined ||
     localReviewRequests.length > 0 ||
@@ -2498,12 +2488,31 @@ function PRReviewCell({
           type="button"
           onClick={(event) => event.stopPropagation()}
           className={cn(
-            'inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition hover:brightness-110',
-            getReviewTone(itemWithLocalReviewRequests)
+            'inline-flex h-7 max-w-full items-center justify-center text-[12px] font-medium transition hover:brightness-110',
+            primaryReviewer
+              ? 'gap-1 rounded-full border border-border/40 bg-background/70 px-1.5 text-muted-foreground hover:text-foreground'
+              : 'min-w-7 text-muted-foreground hover:text-foreground'
           )}
+          aria-label={translate(
+            'auto.components.TaskPage.editReviewersWithCurrent',
+            'Edit reviewers: {{value0}}',
+            { value0: getGitHubPRReviewLabel(itemWithLocalReviewRequests) }
+          )}
+          title={getGitHubPRReviewLabel(itemWithLocalReviewRequests)}
         >
-          <ReviewChipAvatar reviewer={primaryReviewer} />
-          <span className="truncate">{getGitHubPRReviewLabel(itemWithLocalReviewRequests)}</span>
+          {primaryReviewer ? (
+            <>
+              <ReviewChipAvatar reviewer={primaryReviewer} />
+              {extraReviewerCount > 0 ? (
+                <span className="text-[10px] tabular-nums text-muted-foreground">
+                  +{extraReviewerCount}
+                </span>
+              ) : null}
+              <ChevronDown className="size-3 text-muted-foreground" />
+            </>
+          ) : (
+            <span aria-hidden="true">-</span>
+          )}
         </button>
       </PopoverTrigger>
       <PopoverContent
