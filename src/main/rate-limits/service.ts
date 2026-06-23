@@ -75,6 +75,11 @@ function normalizePollingInterval(ms: number): number {
 function isSystemDefaultClaudeAuth(
   authPreparation: ClaudeRuntimeAuthPreparation | undefined
 ): boolean {
+  // Why: fetch cycles classify missing Claude auth as system-default; keep the
+  // PTY fallback gate aligned so background refresh cannot trigger auth flows.
+  if (!authPreparation) {
+    return true
+  }
   const provenance = authPreparation?.provenance
   return provenance === 'system' || Boolean(provenance?.endsWith(':system'))
 }

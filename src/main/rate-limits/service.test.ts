@@ -353,7 +353,7 @@ describe('RateLimitService', () => {
     expect(fetchClaudeRateLimits).toHaveBeenCalledTimes(1)
     expect(fetchClaudeRateLimits).toHaveBeenCalledWith({
       authPreparation: undefined,
-      allowPtyFallback: true
+      allowPtyFallback: false
     })
     expect(fetchCodexRateLimits).toHaveBeenCalledTimes(1)
     expect(fetchGeminiRateLimits).toHaveBeenCalledTimes(1)
@@ -483,6 +483,20 @@ describe('RateLimitService', () => {
 
     expect(fetchClaudeRateLimits).toHaveBeenCalledWith({
       authPreparation: expect.objectContaining({ provenance: 'system' }),
+      allowPtyFallback: false
+    })
+  })
+
+  it('does not use Claude PTY fallback when Claude auth preparation is unavailable', async () => {
+    const service = new RateLimitService()
+
+    vi.mocked(fetchClaudeRateLimits).mockResolvedValueOnce(okProvider('claude', 10, Date.now()))
+    vi.mocked(fetchCodexRateLimits).mockResolvedValueOnce(okProvider('codex', 20, Date.now()))
+
+    await service.refresh()
+
+    expect(fetchClaudeRateLimits).toHaveBeenCalledWith({
+      authPreparation: undefined,
       allowPtyFallback: false
     })
   })
