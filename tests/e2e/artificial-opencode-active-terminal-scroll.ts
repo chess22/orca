@@ -258,3 +258,21 @@ export async function readActiveTerminalScrollState(
     }
   }, ptyId ?? null)
 }
+
+export async function waitForActiveTerminalViewportChange(
+  page: Page,
+  beforeViewportY: number,
+  timeoutMs: number,
+  ptyId?: string
+): Promise<ActiveTerminalScrollState> {
+  const start = performance.now()
+  let state = await readActiveTerminalScrollState(page, ptyId)
+  while (performance.now() - start < timeoutMs) {
+    state = await readActiveTerminalScrollState(page, ptyId)
+    if (state.viewportY < beforeViewportY) {
+      break
+    }
+    await page.waitForTimeout(5)
+  }
+  return state
+}

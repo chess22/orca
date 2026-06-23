@@ -6,7 +6,7 @@ import {
   scrollActiveTerminalByApi,
   scrollActiveTerminalToBottom,
   scrollActiveTerminalViewportElement,
-  type ActiveTerminalScrollState
+  waitForActiveTerminalViewportChange
 } from './artificial-opencode-active-terminal-scroll'
 import {
   getResponsiveScrollPath,
@@ -297,22 +297,4 @@ async function measureScrollAttempt(
     error
   })
   return after.viewportY
-}
-
-async function waitForActiveTerminalViewportChange(
-  page: Page,
-  beforeViewportY: number,
-  timeoutMs: number,
-  ptyId?: string
-): Promise<ActiveTerminalScrollState> {
-  const start = performance.now()
-  let state = await readActiveTerminalScrollState(page, ptyId)
-  while (performance.now() - start < timeoutMs) {
-    state = await readActiveTerminalScrollState(page, ptyId)
-    if (state.viewportY < beforeViewportY) {
-      break
-    }
-    await page.waitForTimeout(5)
-  }
-  return state
 }
