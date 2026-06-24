@@ -529,7 +529,10 @@ describe('useTerminalPaneGlobalEffects', () => {
     expect(mocks.requestTerminalBacklogRecovery).toHaveBeenCalledWith(terminal)
     expect(mocks.flushTerminalOutput).toHaveBeenCalledWith(terminal, { maxChars: 256 * 1024 })
     expect(manager.resumeRendering).toHaveBeenCalledTimes(1)
-    expect(mocks.fitAndFocusPanes).toHaveBeenCalledWith(manager)
+    expect(mocks.fitAndFocusPanes).toHaveBeenCalledWith(manager, {
+      debugSource: 'visibility-resume-fit',
+      syncScrollbar: false
+    })
     expect(manager.resetWebglTextureAtlases).toHaveBeenCalledTimes(1)
   })
 
@@ -619,6 +622,7 @@ describe('useTerminalPaneGlobalEffects', () => {
     expect(mocks.captureScrollState).toHaveBeenCalledTimes(2)
     expect(manager.suspendRendering).toHaveBeenCalledTimes(1)
     expect(mocks.restoreScrollStateAfterLayout).toHaveBeenLastCalledWith(terminalA, preHideState, {
+      debugSource: 'visibility-restore',
       syncScrollbar: false
     })
   })

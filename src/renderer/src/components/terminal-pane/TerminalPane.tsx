@@ -907,7 +907,10 @@ export default function TerminalPane({
           tabId,
           worktreeId
         })
-        restoreScrollStateAfterLayout(pane.terminal, scrollState, { syncScrollbar: false })
+        restoreScrollStateAfterLayout(pane.terminal, scrollState, {
+          debugSource: 'durable-remount-restore',
+          syncScrollbar: false
+        })
       }
     }
     hasAppliedDurableScrollRestoreRef.current = true

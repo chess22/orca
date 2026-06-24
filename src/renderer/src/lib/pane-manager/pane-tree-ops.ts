@@ -27,6 +27,11 @@ type TreeOpsCallbacks = {
   requestPaneReparentFrame?: (callback: FrameRequestCallback) => void
 }
 
+type SafeFitOptions = {
+  debugSource?: string
+  syncScrollbar?: boolean
+}
+
 const MIN_PANE_FIT_WIDTH_PX = 48
 const MIN_PANE_FIT_HEIGHT_PX = 24
 const MIN_PANE_FIT_COLS = 8
@@ -65,7 +70,7 @@ function captureScrollStateForFit(pane: ManagedPane): ScrollState | null {
     : captureScrollState(pane.terminal)
 }
 
-export function safeFit(pane: ManagedPane): void {
+export function safeFit(pane: ManagedPane, options: SafeFitOptions = {}): void {
   if (!canMeasurePaneForFit(pane)) {
     return
   }
@@ -103,7 +108,10 @@ export function safeFit(pane: ManagedPane): void {
   } finally {
     if (shouldRestoreScroll && scrollState) {
       try {
-        restoreScrollStateAfterLayout(pane.terminal, scrollState)
+        restoreScrollStateAfterLayout(pane.terminal, scrollState, {
+          debugSource: options.debugSource ?? 'safeFit',
+          syncScrollbar: options.syncScrollbar
+        })
       } catch {
         // Why: xterm can temporarily expose a terminal whose renderer has not
         // initialized dimensions yet during SSH reattach/layout. Fit is best-effort.
@@ -112,9 +120,12 @@ export function safeFit(pane: ManagedPane): void {
   }
 }
 
-export function fitAllPanesInternal(panes: Map<number, ManagedPaneInternal>): void {
+export function fitAllPanesInternal(
+  panes: Map<number, ManagedPaneInternal>,
+  options: SafeFitOptions = {}
+): void {
   for (const pane of panes.values()) {
-    safeFit(pane)
+    safeFit(pane, options)
   }
 }
 

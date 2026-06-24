@@ -19,6 +19,7 @@ const deferredScrollRestores = new WeakMap<
 >()
 
 type RestoreScrollStateOptions = {
+  debugSource?: string
   syncScrollbar?: boolean
 }
 
@@ -79,12 +80,14 @@ export function restoreScrollStateAfterLayout(
 ): void {
   cancelDeferredScrollRestore(terminal)
   const syncScrollbar = options.syncScrollbar ?? true
+  const debugSource = options.debugSource
   logTerminalScrollRestore('restore-scheduled', {
+    source: debugSource,
     saved: terminalScrollStateForDebug(state),
     syncScrollbar,
     viewport: terminalViewportForDebug(terminal)
   })
-  restoreScrollStateNow(terminal, state, { syncScrollbar })
+  restoreScrollStateNow(terminal, state, { debugSource, syncScrollbar })
   if (typeof requestAnimationFrame !== 'function') {
     releaseScrollStateMarker(state)
     return
@@ -99,7 +102,7 @@ export function restoreScrollStateAfterLayout(
   }
   const restore = (): void => {
     if (!pending.cancelled) {
-      restoreScrollStateNow(terminal, state, { syncScrollbar })
+      restoreScrollStateNow(terminal, state, { debugSource, syncScrollbar })
     }
   }
   const cancelPendingRafs = (): void => {
@@ -121,7 +124,7 @@ export function restoreScrollStateAfterLayout(
   })
   const timeoutId = setTimeout(() => {
     if (!pending.cancelled) {
-      restoreScrollStateNow(terminal, state, { syncScrollbar })
+      restoreScrollStateNow(terminal, state, { debugSource, syncScrollbar })
     }
     // Why: background tabs can throttle rAF past the timeout. Once the
     // authoritative timeout restore has run, stale frame callbacks must not
@@ -138,12 +141,13 @@ export function restoreScrollStateAfterLayout(
 function restoreScrollStateNow(
   terminal: Terminal,
   state: ScrollState,
-  options: Required<RestoreScrollStateOptions>
+  options: RestoreScrollStateOptions & { syncScrollbar: boolean }
 ): void {
   if (!terminal.element) {
     logTerminalScrollRestore('restore-attempt', {
       reason: 'missing-element',
       saved: terminalScrollStateForDebug(state),
+      source: options.debugSource,
       syncScrollbar: options.syncScrollbar
     })
     return
@@ -153,6 +157,7 @@ function restoreScrollStateNow(
     logTerminalScrollRestore('restore-attempt', {
       reason: 'buffer-type-mismatch',
       saved: terminalScrollStateForDebug(state),
+      source: options.debugSource,
       syncScrollbar: options.syncScrollbar,
       viewport: terminalViewportForDebug(terminal)
     })
@@ -174,6 +179,7 @@ function restoreScrollStateNow(
         before,
         branch: 'bottom',
         saved: terminalScrollStateForDebug(state),
+        source: options.debugSource,
         syncScrollbar: options.syncScrollbar
       })
     }
@@ -201,6 +207,7 @@ function restoreScrollStateNow(
       branch: 'line',
       markerLine,
       saved: terminalScrollStateForDebug(state),
+      source: options.debugSource,
       syncScrollbar: options.syncScrollbar,
       targetLine
     })

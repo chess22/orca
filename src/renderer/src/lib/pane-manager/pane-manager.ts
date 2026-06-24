@@ -161,8 +161,8 @@ export class PaneManager {
     return Array.from(this.panes.values()).map(toPublicPane)
   }
 
-  fitAllPanes(): void {
-    fitAllPanesInternal(this.panes)
+  fitAllPanes(options?: { debugSource?: string; syncScrollbar?: boolean }): void {
+    fitAllPanesInternal(this.panes, options)
   }
 
   refreshAllPanes(): void {

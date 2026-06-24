@@ -1,7 +1,12 @@
 import type { PaneManager } from '@/lib/pane-manager/pane-manager'
 
-export function fitPanes(manager: PaneManager): void {
-  manager.fitAllPanes()
+type FitPanesOptions = {
+  debugSource?: string
+  syncScrollbar?: boolean
+}
+
+export function fitPanes(manager: PaneManager, options?: FitPanesOptions): void {
+  manager.fitAllPanes(options)
 }
 
 /**
@@ -42,8 +47,8 @@ export function focusActivePane(manager: PaneManager): void {
   activePane?.terminal.focus()
 }
 
-export function fitAndFocusPanes(manager: PaneManager): void {
-  fitPanes(manager)
+export function fitAndFocusPanes(manager: PaneManager, options?: FitPanesOptions): void {
+  fitPanes(manager, options)
   focusActivePane(manager)
 }
 

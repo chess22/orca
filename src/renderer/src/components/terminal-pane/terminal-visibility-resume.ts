@@ -149,9 +149,15 @@ function resumeTerminalVisibilityHeavy(manager: PaneManager, isActive: boolean):
   // above, so this fit only absorbs container dimension changes that
   // happened while hidden (e.g. sidebar toggle on another worktree).
   if (isActive) {
-    fitAndFocusPanes(manager)
+    fitAndFocusPanes(manager, {
+      debugSource: 'visibility-resume-fit',
+      syncScrollbar: false
+    })
   } else {
-    fitPanes(manager)
+    fitPanes(manager, {
+      debugSource: 'visibility-resume-fit',
+      syncScrollbar: false
+    })
   }
 }
 
@@ -168,7 +174,10 @@ function restoreTerminalViewportPositions(
         saved: terminalScrollStateForDebug(position),
         source: 'resumeTerminalVisibility'
       })
-      restoreScrollStateAfterLayout(pane.terminal, position, { syncScrollbar: false })
+      restoreScrollStateAfterLayout(pane.terminal, position, {
+        debugSource: 'visibility-restore',
+        syncScrollbar: false
+      })
     }
   }
 }
