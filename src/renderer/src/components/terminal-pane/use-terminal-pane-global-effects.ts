@@ -92,7 +92,7 @@ export function useTerminalPaneGlobalEffects({
     }
   }, [captureViewportPositions, isVisible])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const manager = managerRef.current
     if (!manager) {
       return

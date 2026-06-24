@@ -608,7 +608,8 @@ export function useTerminalPaneLifecycle({
       dispatchNotification,
       setCacheTimerStartedAt,
       syncPanePtyLayoutBinding,
-      restoredPtyIdByLeafId: initialLayoutRef.current.ptyIdsByLeafId ?? {}
+      restoredPtyIdByLeafId: initialLayoutRef.current.ptyIdsByLeafId ?? {},
+      restoredScrollStatesByLeafId: initialLayoutRef.current.scrollStatesByLeafId
     }
 
     const unregisterRuntimeTab = registerRuntimeTerminalTab({

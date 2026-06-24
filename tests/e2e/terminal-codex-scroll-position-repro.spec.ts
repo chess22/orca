@@ -134,6 +134,74 @@ async function readTerminalScrollStateForPaneIndex(
   }, paneIndex)
 }
 
+async function sampleTerminalScrollStateFramesOnActiveWorktree(
+  page: Page,
+  worktreeId: string,
+  paneIndex: number
+): Promise<
+  {
+    frame: number
+    scrollState: {
+      baseY: number
+      bufferType: string
+      leafId: string | null
+      paneId: number
+      viewportY: number
+    } | null
+  }[]
+> {
+  return page.evaluate(
+    ({ paneIndex, worktreeId }) =>
+      new Promise((resolve) => {
+        const samples: {
+          frame: number
+          scrollState: {
+            baseY: number
+            bufferType: string
+            leafId: string | null
+            paneId: number
+            viewportY: number
+          } | null
+        }[] = []
+        let started = false
+        const sample = (): void => {
+          const state = window.__store?.getState()
+          if (state?.activeWorktreeId === worktreeId) {
+            started = true
+            const tabId =
+              state.activeTabType === 'terminal'
+                ? state.activeTabId
+                : (state.activeTabIdByWorktree?.[worktreeId] ?? null)
+            const manager = tabId ? window.__paneManagers?.get(tabId) : null
+            const pane = manager?.getPanes?.()[paneIndex] ?? null
+            if (pane) {
+              const buffer = pane.terminal.buffer.active
+              samples.push({
+                frame: samples.length,
+                scrollState: {
+                  baseY: buffer.baseY,
+                  bufferType: buffer.type,
+                  leafId: pane.leafId ?? null,
+                  paneId: pane.id,
+                  viewportY: buffer.viewportY
+                }
+              })
+            } else {
+              samples.push({ frame: samples.length, scrollState: null })
+            }
+          }
+          if (started && samples.length >= 30) {
+            resolve(samples)
+            return
+          }
+          requestAnimationFrame(sample)
+        }
+        requestAnimationFrame(sample)
+      }),
+    { paneIndex, worktreeId }
+  )
+}
+
 async function scrollCodexViewportJustAboveBottom(page: Page): Promise<{
   baseY: number
   bufferType: string
@@ -141,7 +209,7 @@ async function scrollCodexViewportJustAboveBottom(page: Page): Promise<{
   paneId: number
   viewportY: number
 }> {
-  return page.evaluate(() => {
+  const target = await page.evaluate(() => {
     const state = window.__store?.getState()
     const worktreeId = state?.activeWorktreeId
     const tabId =
@@ -155,21 +223,123 @@ async function scrollCodexViewportJustAboveBottom(page: Page): Promise<{
     if (!pane) {
       throw new Error('Active terminal pane unavailable')
     }
-    const buffer = pane.terminal.buffer.active
-    pane.terminal.scrollToBottom()
-    const targetViewportY = Math.max(1, buffer.baseY - 8)
-    pane.terminal.scrollToLine(targetViewportY)
-    const viewport = pane.container.querySelector<HTMLElement>('.xterm-viewport')
-    viewport?.dispatchEvent(new Event('scroll', { bubbles: true }))
     pane.terminal.focus()
+    pane.terminal.scrollToBottom()
+    const wheelTarget =
+      pane.container.querySelector<HTMLElement>('.xterm-viewport') ??
+      pane.container.querySelector<HTMLElement>('.xterm') ??
+      pane.container.querySelector<HTMLElement>('.xterm-screen')
+    if (!wheelTarget) {
+      throw new Error('Active terminal wheel target unavailable')
+    }
+    const rect = wheelTarget.getBoundingClientRect()
     return {
-      baseY: buffer.baseY,
-      bufferType: buffer.type,
-      leafId: pane.leafId ?? null,
-      paneId: pane.id,
-      viewportY: buffer.viewportY
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2
     }
   })
+  const isAboveBottom = async (): Promise<boolean> => {
+    const state = await readActiveTerminalScrollState(page)
+    return state.bufferType === 'normal' && state.viewportY > 0 && state.viewportY < state.baseY
+  }
+  const attempts: (() => Promise<void>)[] = [
+    async () => {
+      await page.mouse.move(target.x, target.y)
+      await page.mouse.wheel(0, -1200)
+    },
+    async () => {
+      await page.evaluate(() => {
+        const state = window.__store?.getState()
+        const worktreeId = state?.activeWorktreeId
+        const tabId =
+          state?.activeTabType === 'terminal'
+            ? state.activeTabId
+            : worktreeId
+              ? (state?.activeTabIdByWorktree?.[worktreeId] ?? null)
+              : null
+        const manager = tabId ? window.__paneManagers?.get(tabId) : null
+        const pane = manager?.getActivePane?.() ?? manager?.getPanes?.()[0] ?? null
+        if (!pane) {
+          throw new Error('Active terminal pane unavailable')
+        }
+        const wheelTargets = [
+          pane.container.querySelector<HTMLElement>('.xterm'),
+          pane.container.querySelector<HTMLElement>('.xterm-viewport'),
+          pane.container.querySelector<HTMLElement>('.xterm-screen')
+        ].filter((candidate): candidate is HTMLElement => Boolean(candidate))
+        for (const wheelTarget of wheelTargets) {
+          wheelTarget.dispatchEvent(
+            new WheelEvent('wheel', {
+              bubbles: true,
+              cancelable: true,
+              deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+              deltaY: -1200
+            })
+          )
+        }
+      })
+    },
+    async () => {
+      await page.evaluate(() => {
+        const state = window.__store?.getState()
+        const worktreeId = state?.activeWorktreeId
+        const tabId =
+          state?.activeTabType === 'terminal'
+            ? state.activeTabId
+            : worktreeId
+              ? (state?.activeTabIdByWorktree?.[worktreeId] ?? null)
+              : null
+        const manager = tabId ? window.__paneManagers?.get(tabId) : null
+        const pane = manager?.getActivePane?.() ?? manager?.getPanes?.()[0] ?? null
+        const viewport = pane?.container.querySelector<HTMLElement>('.xterm-viewport')
+        if (!viewport) {
+          throw new Error('Active terminal viewport unavailable')
+        }
+        viewport.scrollTop = Math.max(0, viewport.scrollTop - 1200)
+        viewport.dispatchEvent(new Event('scroll', { bubbles: true }))
+      })
+    },
+    async () => {
+      await page.evaluate(() => {
+        const state = window.__store?.getState()
+        const worktreeId = state?.activeWorktreeId
+        const tabId =
+          state?.activeTabType === 'terminal'
+            ? state.activeTabId
+            : worktreeId
+              ? (state?.activeTabIdByWorktree?.[worktreeId] ?? null)
+              : null
+        const manager = tabId ? window.__paneManagers?.get(tabId) : null
+        const pane = manager?.getActivePane?.() ?? manager?.getPanes?.()[0] ?? null
+        if (!pane) {
+          throw new Error('Active terminal pane unavailable')
+        }
+        const targetLine = Math.max(1, pane.terminal.buffer.active.baseY - 20)
+        pane.terminal.scrollToLine(targetLine)
+      })
+    }
+  ]
+  for (const attempt of attempts) {
+    await attempt()
+    await page.waitForTimeout(100)
+    if (await isAboveBottom()) {
+      break
+    }
+  }
+  await expect
+    .poll(
+      () =>
+        readActiveTerminalScrollState(page).then(
+          (state) =>
+            state.bufferType === 'normal' && state.viewportY > 0 && state.viewportY < state.baseY
+        ),
+      {
+        timeout: 5_000,
+        message: 'Codex viewport did not settle above bottom before switching'
+      }
+    )
+    .toBe(true)
+  return readActiveTerminalScrollState(page)
 }
 
 async function waitForCodexReady(page: Page): Promise<void> {
@@ -211,6 +381,42 @@ async function waitForTerminalScrollback(page: Page): Promise<void> {
   }
 }
 
+async function waitForCodexResponseLine(
+  page: Page,
+  marker: string,
+  lineNumber: number
+): Promise<void> {
+  await expect
+    .poll(() => getTerminalContent(page, 40_000), {
+      timeout: 180_000,
+      message: 'Codex did not finish the generated scrollback response'
+    })
+    .toContain(`${marker}_VISIBLE_LINE_${lineNumber}`)
+}
+
+async function waitForStableActiveTerminalScrollback(page: Page): Promise<void> {
+  let previousBaseY: number | null = null
+  let stableSamples = 0
+  await expect
+    .poll(
+      async () => {
+        const { baseY } = await readActiveTerminalScrollState(page)
+        if (baseY === previousBaseY) {
+          stableSamples += 1
+        } else {
+          previousBaseY = baseY
+          stableSamples = 0
+        }
+        return stableSamples >= 3
+      },
+      {
+        timeout: 15_000,
+        message: 'Codex scrollback did not settle before switching'
+      }
+    )
+    .toBe(true)
+}
+
 test.describe('Codex TUI scroll position repro', () => {
   test('keeps real Codex TUI scrollback position across worktree switches', async ({
     orcaPage
@@ -236,7 +442,7 @@ test.describe('Codex TUI scroll position repro', () => {
     const marker = `CODEX_SCROLL_REPRO_${Date.now()}`
     const prompt = [
       'Do not run commands.',
-      'Reply with exactly 140 separate short lines.',
+      'Reply with exactly 360 separate short lines.',
       `Each line must be in the form "${marker}_VISIBLE_LINE_N" where N counts up from 0.`,
       'Do not use markdown bullets or code fences.'
     ].join(' ')
@@ -253,6 +459,8 @@ test.describe('Codex TUI scroll position repro', () => {
     await dismissCodexPromptsIfPresent(orcaPage)
     await waitForCodexReady(orcaPage)
     await waitForTerminalScrollback(orcaPage)
+    await waitForCodexResponseLine(orcaPage, marker, 359)
+    await waitForStableActiveTerminalScrollback(orcaPage)
     await splitActiveTerminalPane(orcaPage, 'vertical')
     await expect
       .poll(
@@ -283,12 +491,18 @@ test.describe('Codex TUI scroll position repro', () => {
     await waitForActiveTerminalManager(orcaPage, 30_000)
     await orcaPage.waitForTimeout(500)
 
+    const returnFrameSamplesPromise = sampleTerminalScrollStateFramesOnActiveWorktree(
+      orcaPage,
+      firstWorktreeId,
+      0
+    )
     await orcaPage.getByRole('option', { name: /main/ }).first().click()
     await expect
       .poll(() => getActiveWorktreeId(orcaPage), { timeout: 10_000 })
       .toBe(firstWorktreeId)
     await ensureTerminalVisible(orcaPage)
     await waitForActiveTerminalManager(orcaPage, 30_000)
+    const returnFrameSamples = await returnFrameSamplesPromise
 
     const afterSwitch = await readTerminalScrollStateForPaneIndex(orcaPage, 0)
     testInfo.annotations.push({
@@ -301,5 +515,10 @@ test.describe('Codex TUI scroll position repro', () => {
     // xterm can reflow several rows when the split pane is hidden and refit;
     // the regression is the viewport teleporting to the top.
     expect(Math.abs(afterBottomOffset - beforeBottomOffset)).toBeLessThanOrEqual(10)
+    expect(
+      returnFrameSamples.filter(
+        (sample) => sample.scrollState?.baseY && sample.scrollState.viewportY === 0
+      )
+    ).toEqual([])
   })
 })
