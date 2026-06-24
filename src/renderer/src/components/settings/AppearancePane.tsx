@@ -582,11 +582,11 @@ export function AppearancePane({
             <SettingsSwitchRow
               label={translate(
                 'auto.components.settings.AppearancePane.showPinnedWorktreesInGroups.title',
-                'Also show pinned worktrees in groups'
+                'Also show pinned worktrees outside Pinned'
               )}
               description={translate(
                 'auto.components.settings.AppearancePane.showPinnedWorktreesInGroups.description',
-                'Keeps pinned worktrees in Pinned and also shows them in All, Project, Status, and PR groups.'
+                'They stay in Pinned and also appear in All, Project, Status, and PR.'
               )}
               className="pb-1"
               checked={settings.showPinnedWorktreesInGroups === true}
