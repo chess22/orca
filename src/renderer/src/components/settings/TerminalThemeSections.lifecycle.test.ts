@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GlobalSettings } from '../../../../shared/types'
 import type { UseWarpThemeImportReturn } from './useWarpThemeImport'
 
-let themeTarget: 'dark' | 'light' = 'dark'
+let themeTarget: 'dark' | 'light' | undefined = 'dark'
 
 vi.mock('react', async () => {
   const actual = await vi.importActual<typeof import('react')>('react') // eslint-disable-line @typescript-eslint/consistent-type-imports -- vi.importActual requires inline import()
@@ -63,7 +63,7 @@ function makeSettings(overrides: Partial<GlobalSettings> = {}): GlobalSettings {
 function renderCatalog(
   settings = makeSettings(),
   updateSettings = vi.fn(),
-  target: 'dark' | 'light' = 'dark',
+  target?: 'dark' | 'light',
   preferredTarget?: 'dark' | 'light'
 ): React.JSX.Element {
   themeTarget = target
@@ -168,7 +168,7 @@ describe('TerminalThemeCatalogSection', () => {
     const element = renderCatalog(
       makeSettings({ terminalUseSeparateLightTheme: true }),
       vi.fn(),
-      'light',
+      undefined,
       'light'
     )
     const picker = findElementByTypeName(element, 'ThemePicker')

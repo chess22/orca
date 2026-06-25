@@ -159,6 +159,7 @@ export function TerminalThemeCatalogSection({
                   )}
                   checked={matchDarkMode}
                   onChange={() =>
+                    // The legacy setting stores the inverse; the UI exposes the matching concept.
                     updateSettings({
                       terminalUseSeparateLightTheme: !settings.terminalUseSeparateLightTheme
                     })
