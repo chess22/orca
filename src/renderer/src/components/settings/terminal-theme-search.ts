@@ -53,13 +53,10 @@ export const getTerminalThemeTargetSearchEntries = createLocalizedCatalog(() => 
 
 export const getTerminalLightThemeSearchEntries = createLocalizedCatalog(() => [
   {
-    title: translate(
-      'auto.components.settings.terminal.search.232e532169',
-      'Use separate light theme'
-    ),
+    title: translate('auto.components.settings.terminal.search.232e532169', 'Customize Light Mode'),
     description: translate(
       'auto.components.settings.terminal.search.f268092ee3',
-      'When enabled, light mode uses its own terminal theme and divider color.'
+      'Light mode can use its own terminal theme.'
     ),
     keywords: [
       ...translateSearchKeyword('auto.components.settings.terminal.search.f66a7cf715', 'terminal'),
@@ -69,8 +66,14 @@ export const getTerminalLightThemeSearchEntries = createLocalizedCatalog(() => [
       ),
       ...translateSearchKeyword(
         'auto.components.settings.terminal.search.232e532169',
-        'Use separate light theme',
-        { aliases: ['Use Separate Theme In Light Mode'] }
+        'Customize Light Mode',
+        {
+          aliases: [
+            'Use separate light theme',
+            'Use Separate Theme In Light Mode',
+            'Match dark mode terminal theme'
+          ]
+        }
       ),
       ...translateSearchKeyword('auto.components.settings.terminal.search.0ce176909a', 'theme')
     ]

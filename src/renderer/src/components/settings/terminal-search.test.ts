@@ -131,6 +131,8 @@ describe('getTerminalPaneSearchEntries', () => {
     'dark terminal theme',
     'target',
     'editing',
+    'Customize Light Mode',
+    'Match dark mode terminal theme',
     'Use Separate Theme In Light Mode',
     'import',
     'Warp',

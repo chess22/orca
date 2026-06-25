@@ -149,6 +149,29 @@ function hasText(node: unknown, text: string): boolean {
   return hasText(element.props?.children, text) || hasText(element.props?.action, text)
 }
 
+function findActionByText(node: unknown, text: string): (() => void) | null {
+  if (node == null || typeof node === 'string' || typeof node === 'number') {
+    return null
+  }
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const found = findActionByText(child, text)
+      if (found) {
+        return found
+      }
+    }
+    return null
+  }
+
+  const element = node as ReactElementLike
+  if (typeof element.props?.onClick === 'function' && hasText(element.props.children, text)) {
+    return element.props.onClick as () => void
+  }
+  return (
+    findActionByText(element.props?.children, text) ?? findActionByText(element.props?.action, text)
+  )
+}
+
 describe('TerminalThemeCatalogSection', () => {
   beforeEach(() => {
     themeTarget = 'dark'
@@ -177,7 +200,12 @@ describe('TerminalThemeCatalogSection', () => {
   })
 
   it('uses the preferred target when opened from a light-specific search', () => {
-    const element = renderCatalog(makeSettings(), vi.fn(), 'light', 'light')
+    const element = renderCatalog(
+      makeSettings({ terminalUseSeparateLightTheme: true }),
+      vi.fn(),
+      'light',
+      'light'
+    )
     const picker = findElementByTypeName(element, 'ThemePicker')
     const preview = findElementByTypeName(element, 'TerminalSettingsPreview')
 
@@ -198,7 +226,11 @@ describe('TerminalThemeCatalogSection', () => {
 
   it('updates the light theme from the catalog when the light target is active', () => {
     const updateSettings = vi.fn()
-    const element = renderCatalog(makeSettings(), updateSettings, 'light')
+    const element = renderCatalog(
+      makeSettings({ terminalUseSeparateLightTheme: true }),
+      updateSettings,
+      'light'
+    )
     const picker = findElementByTypeName(element, 'ThemePicker')
     const selectTheme = picker?.props?.onSelectTheme as (theme: string) => void
 
@@ -207,18 +239,32 @@ describe('TerminalThemeCatalogSection', () => {
     expect(updateSettings).toHaveBeenCalledWith({ terminalThemeLight: 'Builtin Tango Light' })
   })
 
-  it('toggles the separate light theme setting', () => {
+  it('customizes light mode from the matching-dark state', () => {
     const updateSettings = vi.fn()
     const element = renderCatalog(
       makeSettings({ terminalUseSeparateLightTheme: false }),
-      updateSettings
+      updateSettings,
+      'light'
     )
-    const switchRow = findElementByTypeName(element, 'SettingsSwitchRow')
-    const toggleSeparateLightTheme = switchRow?.props?.onChange as () => void
+    const customizeLightMode = findActionByText(element, 'Customize Light Mode')
 
-    toggleSeparateLightTheme()
+    customizeLightMode?.()
 
     expect(updateSettings).toHaveBeenCalledWith({ terminalUseSeparateLightTheme: true })
+  })
+
+  it('matches the dark terminal theme from the customized light state', () => {
+    const updateSettings = vi.fn()
+    const element = renderCatalog(
+      makeSettings({ terminalUseSeparateLightTheme: true }),
+      updateSettings,
+      'light'
+    )
+    const matchDarkMode = findActionByText(element, 'Match dark mode terminal theme')
+
+    matchDarkMode?.()
+
+    expect(updateSettings).toHaveBeenCalledWith({ terminalUseSeparateLightTheme: false })
   })
 
   it('shows the required inactive note and light preview while separate light theme is disabled', () => {
@@ -229,13 +275,19 @@ describe('TerminalThemeCatalogSection', () => {
     )
     const preview = findElementByTypeName(element, 'TerminalSettingsPreview')
 
-    expect(hasText(element, 'Turn on separate light theme')).toBe(true)
+    expect(hasText(element, 'Light mode matches the dark mode terminal theme')).toBe(true)
+    expect(countElementsByTypeName(element, 'ThemePicker')).toBe(0)
+    expect(countElementsByTypeName(element, 'ColorField')).toBe(0)
     expect(preview?.props?.modeOverride).toBe('light')
   })
 
   it('uses the active target for divider color updates', () => {
     const updateSettings = vi.fn()
-    const lightElement = renderCatalog(makeSettings(), updateSettings, 'light')
+    const lightElement = renderCatalog(
+      makeSettings({ terminalUseSeparateLightTheme: true }),
+      updateSettings,
+      'light'
+    )
     const lightColorField = findElementByTypeName(lightElement, 'ColorField')
     const updateLightDividerColor = lightColorField?.props?.onChange as (value: string) => void
 
