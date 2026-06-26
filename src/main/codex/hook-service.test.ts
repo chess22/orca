@@ -183,10 +183,10 @@ describe('CodexHookService', () => {
 
   // Why: #6078 — a Windows user profile path like `C:\Users\Jane Doe` used to
   // be written verbatim as the hook command, so Codex split it at the space and
-  // the hook exited with code 1. The managed command uses an encoded launcher
-  // so the path never appears raw on the cmd.exe command line.
+  // the hook exited with code 1. Codex's cmd.exe runner can launch a bare .cmd
+  // path with spaces directly, avoiding a PowerShell startup for this case.
   it.skipIf(process.platform !== 'win32')(
-    'wraps the managed hook command in an encoded launcher when the profile path contains a space (#6078)',
+    'launches the managed .cmd directly when the profile path contains a space (#6078)',
     () => {
       const spaceHome = join(tmpdir(), 'orca home with spaces')
       mkdirSync(spaceHome, { recursive: true })
@@ -205,12 +205,42 @@ describe('CodexHookService', () => {
 
         for (const eventName of localManagedCodexEvents()) {
           const command = hooksConfig.hooks[eventName]?.[0]?.hooks?.[0]?.command
+          expect(command).toBe(join(spaceHome, '.orca', 'agent-hooks', 'codex-hook.cmd'))
+        }
+      } finally {
+        rmSync(spaceHome, { recursive: true, force: true })
+      }
+    }
+  )
+
+  // Why: cmd.exe expands `%` and treats `^` as an escape even inside otherwise
+  // plausible paths. Keep those rare cases on the encoded launcher from #6078.
+  it.skipIf(process.platform !== 'win32')(
+    'keeps the encoded launcher when the profile path contains cmd metacharacters',
+    () => {
+      const metacharHome = join(tmpdir(), 'orca %ORCA_TEST% ^ home')
+      mkdirSync(metacharHome, { recursive: true })
+      homedirMock.mockReturnValue(metacharHome)
+      try {
+        const systemCodexHome = join(metacharHome, '.codex')
+        mkdirSync(systemCodexHome, { recursive: true })
+
+        const status = new CodexHookService().install()
+        expect(status.state).toBe('installed')
+
+        const managedCodexHome = join(userDataDir, 'codex-runtime-home', 'home')
+        const hooksConfig = JSON.parse(
+          readFileSync(join(managedCodexHome, 'hooks.json'), 'utf-8')
+        ) as { hooks: Record<string, { hooks?: { command?: string }[] }[]> }
+
+        for (const eventName of localManagedCodexEvents()) {
+          const command = hooksConfig.hooks[eventName]?.[0]?.hooks?.[0]?.command
           expect(command).toMatch(
             /^powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand \S+$/
           )
         }
       } finally {
-        rmSync(spaceHome, { recursive: true, force: true })
+        rmSync(metacharHome, { recursive: true, force: true })
       }
     }
   )
@@ -232,7 +262,7 @@ describe('CodexHookService', () => {
       // Why: the temp home is normally cmd-safe; guard so a runner whose tmpdir
       // holds an exotic character still asserts the correct (fallback) branch.
       const command = hooksConfig.hooks.Stop?.[0]?.hooks?.[0]?.command ?? ''
-      const cmdSafe = /^[A-Za-z0-9_.:\\~-]+$/.test(join(tmpHome, '.orca', 'agent-hooks'))
+      const cmdSafe = /^[A-Za-z0-9_.:\\~ -]+$/.test(join(tmpHome, '.orca', 'agent-hooks'))
       if (cmdSafe) {
         expect(command).not.toMatch(/powershell/i)
         expect(command).toMatch(/\\agent-hooks\\codex-hook\.cmd$/)
