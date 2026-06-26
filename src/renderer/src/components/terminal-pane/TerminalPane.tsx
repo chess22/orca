@@ -779,37 +779,14 @@ export default function TerminalPane({
   const clearPaneScrollback = useCallback(
     (pane: ManagedPane): void => {
       clearedScrollbackLeafIdsRef.current.add(pane.leafId)
-      const transport = paneTransportsRef.current.get(pane.id)
-      const ptyId = transport?.getPtyId() ?? null
       pane.terminal.clear()
+      // Why: also clear the host buffer for remote-server panes, or the next
+      // host snapshot replays the scrollback we just cleared locally.
+      const ptyId = paneTransportsRef.current.get(pane.id)?.getPtyId() ?? null
       clearWebRuntimeTerminalBuffer(ptyId)
-      const isRemoteRuntimePty = typeof ptyId === 'string' && isRemoteRuntimePtyId(ptyId)
-      const shouldRepairWindowsClear =
-        isWindowsUserAgent() && getConnectionId(worktreeId) === null && !isRemoteRuntimePty
-      const repairWindowsClear = (): void => {
-        if (!shouldRepairWindowsClear) {
-          return
-        }
-        // Why: local Windows xterm can keep wrapped prompt/cursor paint stale
-        // after clear; keep this frontend-only so ConPTY does not repaint it.
-        safeFit(pane)
-        pane.terminal.refresh(0, Math.max(0, pane.terminal.rows - 1))
-        requestAnimationFrame(() => {
-          if (!managerRef.current?.getPanes().some((livePane) => livePane.id === pane.id)) {
-            return
-          }
-          safeFit(pane)
-          pane.terminal.refresh(0, Math.max(0, pane.terminal.rows - 1))
-        })
-      }
-      // Why: provider/session buffers can outlive the visible xterm. Clear
-      // them through the same contract used by remote/mobile terminal state.
-      void Promise.resolve(transport?.clearBuffer?.()).finally(() => {
-        repairWindowsClear()
-        persistLayoutSnapshot()
-      })
+      persistLayoutSnapshot()
     },
-    [paneTransportsRef, persistLayoutSnapshot, worktreeId]
+    [paneTransportsRef, persistLayoutSnapshot]
   )
 
   useEffect(() => {

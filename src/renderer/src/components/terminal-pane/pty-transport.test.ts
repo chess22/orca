@@ -42,7 +42,6 @@ describe('createIpcPtyTransport', () => {
           writeAccepted: vi.fn().mockResolvedValue(true),
           resize: vi.fn(),
           kill: vi.fn(),
-          clearBuffer: vi.fn().mockResolvedValue(undefined),
           onData: vi.fn((callback: (payload: { id: string; data: string }) => void) => {
             onData = callback
             return () => {}
@@ -162,20 +161,6 @@ describe('createIpcPtyTransport', () => {
       shellOverride: 'wsl.exe'
     })
     expect(sshTransport.getLocalSessionMetadata?.()).toBeNull()
-  })
-
-  it('clears the connected PTY buffer through the preload API', async () => {
-    const { createIpcPtyTransport } = await import('./pty-transport')
-    const transport = createIpcPtyTransport({})
-
-    await transport.clearBuffer?.()
-    expect(window.api.pty.clearBuffer).not.toHaveBeenCalled()
-
-    await transport.connect({ url: '', callbacks: {} })
-    await transport.clearBuffer?.()
-
-    expect(window.api.pty.clearBuffer).toHaveBeenCalledWith('pty-1')
-    transport.disconnect()
   })
 
   it('defers title side effects until after terminal data is delivered', async () => {
