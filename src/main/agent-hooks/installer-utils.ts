@@ -147,20 +147,28 @@ function quotePowerShellString(value: string): string {
   return `'${value.replaceAll("'", "''")}'`
 }
 
+function getWindowsPowerShellExecutablePath(): string {
+  const systemRoot = process.env.SystemRoot || 'C:\\Windows'
+  // Why: PATH lookup lets a worktree-local powershell.exe hijack hook payloads.
+  // Forward slashes keep this absolute path shell-friendly for cmd.exe and Git Bash.
+  return `${systemRoot.replaceAll('\\', '/')}/System32/WindowsPowerShell/v1.0/powershell.exe`
+}
+
 export function wrapWindowsHookCommand(scriptPath: string): string {
   // Why: most Windows agents run hooks through Git Bash or another shell that
   // mangles a raw backslash path. Codex has its own cmd.exe-safe fast path; the
   // shared wrapper keeps the encoded launcher for every other agent.
   const command = `& ${quotePowerShellString(scriptPath)}; exit $LASTEXITCODE`
   const encodedCommand = Buffer.from(command, 'utf16le').toString('base64')
-  return `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCommand}`
+  return `${getWindowsPowerShellExecutablePath()} -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCommand}`
 }
 
 export function buildWindowsAgentHookPostCommand(source: AgentHookSource): string {
   // Why: Codex runs these hooks inline on every turn. PowerShell startup alone
   // makes trusted Windows hooks visibly slow, so mirror the POSIX curl path.
+  // Qualify curl so a repo-local curl.exe cannot hijack hook payloads.
   return [
-    `curl.exe -sS -X POST "http://127.0.0.1:%ORCA_AGENT_HOOK_PORT%/hook/${source}" ^`,
+    `"%SystemRoot%\\System32\\curl.exe" -sS -X POST "http://127.0.0.1:%ORCA_AGENT_HOOK_PORT%/hook/${source}" ^`,
     '  --connect-timeout 0.5 --max-time 1.5 ^',
     '  -H "Content-Type: application/x-www-form-urlencoded" ^',
     '  -H "X-Orca-Agent-Hook-Token: %ORCA_AGENT_HOOK_TOKEN%" ^',

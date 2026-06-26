@@ -40,6 +40,9 @@ vi.mock('os', async (importOriginal) => {
 
 import { CodexHookService } from './hook-service'
 
+const WINDOWS_POWERSHELL_LAUNCHER =
+  /^[A-Za-z]:\/[^"]*\/System32\/WindowsPowerShell\/v1\.0\/powershell\.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand \S+$/
+
 let tmpHome: string
 let userDataDir: string
 
@@ -183,10 +186,10 @@ describe('CodexHookService', () => {
 
   // Why: #6078 — a Windows user profile path like `C:\Users\Jane Doe` used to
   // be written verbatim as the hook command, so Codex split it at the space and
-  // the hook exited with code 1. Codex's cmd.exe runner can launch a bare .cmd
-  // path with spaces directly, avoiding a PowerShell startup for this case.
+  // the hook exited with code 1. Keep spaced paths on the encoded launcher so
+  // `cmd.exe /C` never sees the raw script path.
   it.skipIf(process.platform !== 'win32')(
-    'launches the managed .cmd directly when the profile path contains a space (#6078)',
+    'wraps the managed hook command when the profile path contains a space (#6078)',
     () => {
       const spaceHome = join(tmpdir(), 'orca home with spaces')
       mkdirSync(spaceHome, { recursive: true })
@@ -205,7 +208,7 @@ describe('CodexHookService', () => {
 
         for (const eventName of localManagedCodexEvents()) {
           const command = hooksConfig.hooks[eventName]?.[0]?.hooks?.[0]?.command
-          expect(command).toBe(join(spaceHome, '.orca', 'agent-hooks', 'codex-hook.cmd'))
+          expect(command).toMatch(WINDOWS_POWERSHELL_LAUNCHER)
         }
       } finally {
         rmSync(spaceHome, { recursive: true, force: true })
@@ -235,9 +238,7 @@ describe('CodexHookService', () => {
 
         for (const eventName of localManagedCodexEvents()) {
           const command = hooksConfig.hooks[eventName]?.[0]?.hooks?.[0]?.command
-          expect(command).toMatch(
-            /^powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand \S+$/
-          )
+          expect(command).toMatch(WINDOWS_POWERSHELL_LAUNCHER)
         }
       } finally {
         rmSync(metacharHome, { recursive: true, force: true })
@@ -262,12 +263,12 @@ describe('CodexHookService', () => {
       // Why: the temp home is normally cmd-safe; guard so a runner whose tmpdir
       // holds an exotic character still asserts the correct (fallback) branch.
       const command = hooksConfig.hooks.Stop?.[0]?.hooks?.[0]?.command ?? ''
-      const cmdSafe = /^[A-Za-z0-9_.:\\~ -]+$/.test(join(tmpHome, '.orca', 'agent-hooks'))
+      const cmdSafe = /^[A-Za-z0-9_.:\\~-]+$/.test(join(tmpHome, '.orca', 'agent-hooks'))
       if (cmdSafe) {
         expect(command).not.toMatch(/powershell/i)
         expect(command).toMatch(/\\agent-hooks\\codex-hook\.cmd$/)
       } else {
-        expect(command).toMatch(/^powershell -NoProfile/)
+        expect(command).toMatch(WINDOWS_POWERSHELL_LAUNCHER)
       }
     }
   )

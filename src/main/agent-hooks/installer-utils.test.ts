@@ -340,6 +340,9 @@ describe('wrapPosixHookCommand', () => {
 })
 
 describe('wrapWindowsHookCommand', () => {
+  const qualifiedPowerShellCommand =
+    /^[A-Za-z]:\/[^"]*\/System32\/WindowsPowerShell\/v1\.0\/powershell\.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand \S+$/
+
   function decodeWindowsHookCommand(command: string): string {
     const encodedCommand = command.match(/ -EncodedCommand (\S+)$/)?.[1]
     expect(encodedCommand).toBeTruthy()
@@ -348,7 +351,8 @@ describe('wrapWindowsHookCommand', () => {
 
   it('invokes the .cmd through an encoded PowerShell command', () => {
     const command = wrapWindowsHookCommand('C:\\Users\\alice\\.orca\\agent-hooks\\codex-hook.cmd')
-    expect(command).toMatch(/^powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand \S+$/)
+    expect(command).toMatch(qualifiedPowerShellCommand)
+    expect(command).not.toMatch(/^powershell\b/i)
     expect(decodeWindowsHookCommand(command)).toBe(
       "& 'C:\\Users\\alice\\.orca\\agent-hooks\\codex-hook.cmd'; exit $LASTEXITCODE"
     )
@@ -359,7 +363,7 @@ describe('wrapWindowsHookCommand', () => {
   // the whole path inside the encoded command so shells do not split it.
   it('preserves spaces in the script path (user profile with space case)', () => {
     const cmd = wrapWindowsHookCommand('C:\\Users\\Jorge Silva\\.orca\\agent-hooks\\codex-hook.cmd')
-    expect(cmd).toMatch(/^powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand \S+$/)
+    expect(cmd).toMatch(qualifiedPowerShellCommand)
     expect(decodeWindowsHookCommand(cmd)).toBe(
       "& 'C:\\Users\\Jorge Silva\\.orca\\agent-hooks\\codex-hook.cmd'; exit $LASTEXITCODE"
     )
@@ -395,7 +399,7 @@ describe('buildWindowsAgentHookPostCommand', () => {
   it('posts hook stdin through bounded curl without spawning PowerShell', () => {
     const command = buildWindowsAgentHookPostCommand('codex')
 
-    expect(command).toContain('curl.exe -sS -X POST')
+    expect(command).toContain('"%SystemRoot%\\System32\\curl.exe" -sS -X POST')
     expect(command).toContain('--connect-timeout 0.5 --max-time 1.5')
     expect(command).toContain('-H "Content-Type: application/x-www-form-urlencoded"')
     expect(command).toContain('-H "X-Orca-Agent-Hook-Token: %ORCA_AGENT_HOOK_TOKEN%"')
@@ -404,6 +408,13 @@ describe('buildWindowsAgentHookPostCommand', () => {
     expect(command).toContain('/hook/codex')
     expect(command).not.toContain('powershell')
     expect(command).not.toContain('Invoke-WebRequest')
+  })
+
+  it('does not resolve curl from the current directory or PATH', () => {
+    const command = buildWindowsAgentHookPostCommand('gemini')
+
+    expect(command).toMatch(/^"%SystemRoot%\\System32\\curl\.exe"/)
+    expect(command).not.toMatch(/^curl\.exe\b/)
   })
 })
 
