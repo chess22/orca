@@ -1292,9 +1292,7 @@ export function connectPanePty(
     agentCompletionCoordinator.dispose()
     clearPanePtyFitBinding()
     const isSuppressedExit = deps.consumeSuppressedPtyExit(ptyId)
-    if (isSuppressedExit) {
-      deps.syncPanePtyLayoutBinding(pane.id, null)
-    } else {
+    if (!isSuppressedExit) {
       deps.clearExitedPanePtyLayoutBinding(pane.id, ptyId)
     }
     deps.clearRuntimePaneTitle(deps.tabId, pane.id)
@@ -1315,6 +1313,8 @@ export function connectPanePty(
     // suppression here, split-pane Codex restarts would still close the pane
     // because this handler runs before the tab-level close logic sees the exit.
     if (isSuppressedExit) {
+      // Why: the action that suppressed the exit owns whether the leaf binding
+      // is a wake hint or should be discarded; runtime cleanup above is enough.
       manager.setPaneGpuRendering(pane.id, true)
       return
     }
@@ -2279,9 +2279,6 @@ export function connectPanePty(
         return false
       }
       const state = useAppStore.getState()
-      if (startup.hasSleepingRecord) {
-        showSessionRestoredBanner()
-      }
       state.registerAgentLaunchConfig(cacheKey, startup.launchConfig, {
         agentType: startup.agent,
         launchToken: startup.launchToken,
@@ -2440,6 +2437,9 @@ export function connectPanePty(
             })
           }
           if (resolvedPtyId) {
+            if (coldRestoreOverride?.hasSleepingRecord) {
+              showSessionRestoredBanner()
+            }
             clearSleepingRecordAfterColdRestoreSpawn(coldRestoreOverride)
           } else if (
             paneStartup?.launchConfig ||
@@ -3524,6 +3524,9 @@ export function connectPanePty(
         const preparedStartup = coldRestoreStartup ?? buildColdRestoreAgentResumeStartup()
         const didPrepareResume = applyColdRestoreAgentResumeStartup(preparedStartup)
         if (didPrepareResume) {
+          if (preparedStartup?.hasSleepingRecord) {
+            showSessionRestoredBanner()
+          }
           clearSleepingRecordAfterColdRestoreSpawn(preparedStartup)
         }
         // Cold-restore means the daemon lost the session and spawned a
@@ -4041,7 +4044,11 @@ export function connectPanePty(
                   `Pending PTY spawn for tab ${deps.tabId} resolved without a PTY id, retrying fresh spawn`
                 )
               }
-              startFreshSpawn()
+              if (sleptRemoteColdRestoreStartup || hasSleepingAgentSession) {
+                startFreshColdRestoreAgentResume(sleptRemoteColdRestoreStartup ?? undefined)
+              } else {
+                startFreshSpawn()
+              }
               return
             }
             // Why: this attach path reuses a PTY spawned by an earlier mount.
@@ -4070,7 +4077,11 @@ export function connectPanePty(
           })
       } else {
         recordPtyConnectDiagnostic(`pane=${pane.id} -> FRESH SPAWN`)
-        startFreshColdRestoreAgentResume(sleptRemoteColdRestoreStartup)
+        if (sleptRemoteColdRestoreStartup || hasSleepingAgentSession) {
+          startFreshColdRestoreAgentResume(sleptRemoteColdRestoreStartup ?? undefined)
+        } else {
+          startFreshSpawn()
+        }
       }
     }
     scheduleRuntimeGraphSync()

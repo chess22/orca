@@ -1378,6 +1378,100 @@ describe('OrcaRuntimeService', () => {
     expect(shown.ptyId).toBe('pty-1')
   })
 
+  it('surfaces stale terminal handles for stranded panes and recovers after same-pane wake', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    const tabId = 'tab-1'
+    const leafId = HEADLESS_LEAF_ID
+    const paneKey = makePaneKey(tabId, leafId)
+
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId,
+          worktreeId: TEST_WORKTREE_ID,
+          title: 'Codex',
+          activeLeafId: leafId,
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId,
+          worktreeId: TEST_WORKTREE_ID,
+          leafId,
+          paneRuntimeId: 1,
+          ptyId: 'pty-before-sleep'
+        }
+      ]
+    })
+
+    const beforeSleep = await runtime.listTerminals(`id:${TEST_WORKTREE_ID}`)
+    const staleHandle = beforeSleep.terminals[0]?.handle ?? ''
+    expect(staleHandle).toBeTruthy()
+
+    // Why: `terminal.show` is read-only; only the later renderer wake/rebind
+    // graph publish can repair the CLI handle surface for this pane.
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId,
+          worktreeId: TEST_WORKTREE_ID,
+          title: 'Codex',
+          activeLeafId: leafId,
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId,
+          worktreeId: TEST_WORKTREE_ID,
+          leafId,
+          paneRuntimeId: 1,
+          ptyId: null
+        }
+      ]
+    })
+
+    await expect(runtime.showTerminal(staleHandle)).rejects.toThrow('terminal_handle_stale')
+
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId,
+          worktreeId: TEST_WORKTREE_ID,
+          title: 'Codex',
+          activeLeafId: leafId,
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId,
+          worktreeId: TEST_WORKTREE_ID,
+          leafId,
+          paneRuntimeId: 1,
+          ptyId: 'pty-after-wake'
+        }
+      ]
+    })
+    runtime.onPtyData('pty-after-wake', 'resumed in place\n', 123)
+
+    const resolved = runtime.resolveTerminalPane(paneKey)
+    expect(resolved).toMatchObject({
+      tabId,
+      leafId,
+      ptyId: 'pty-after-wake'
+    })
+    await expect(runtime.showTerminal(resolved.handle)).resolves.toMatchObject({
+      handle: resolved.handle,
+      tabId,
+      leafId,
+      ptyId: 'pty-after-wake',
+      preview: 'resumed in place'
+    })
+  })
+
   it('keeps targeted terminal lists from adopting controller PTYs for other worktrees', async () => {
     vi.mocked(listWorktrees).mockResolvedValue([
       ...MOCK_GIT_WORKTREES,
