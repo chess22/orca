@@ -352,6 +352,42 @@ describe('createPtySubprocess', () => {
     }
   })
 
+  it('serves Unix agent foreground when node-pty reports an agent child process', async () => {
+    const proc = mockPtyProcess()
+    proc.process = 'uv'
+    spawnMock.mockReturnValue(proc)
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')
+    Object.defineProperty(process, 'platform', { value: 'darwin' })
+    let resolveForeground!: (processName: string) => void
+    resolveAgentForegroundProcessMock.mockReturnValue(
+      new Promise<string>((resolve) => {
+        resolveForeground = resolve
+      })
+    )
+
+    try {
+      const handle = createPtySubprocess({
+        sessionId: 'test',
+        cols: 80,
+        rows: 24
+      })
+
+      expect(handle.getForegroundProcess()).toBe('uv')
+      expect(resolveAgentForegroundProcessMock).toHaveBeenCalledWith(
+        proc.pid,
+        'uv',
+        expect.any(Object)
+      )
+
+      resolveForeground('claude')
+      await vi.waitFor(() => expect(handle.getForegroundProcess()).toBe('claude'))
+    } finally {
+      if (platform) {
+        Object.defineProperty(process, 'platform', platform)
+      }
+    }
+  })
+
   it('does not let stale shell enrichment clear a newer direct agent foreground cache', async () => {
     const proc = mockPtyProcess()
     proc.process = 'powershell.exe'

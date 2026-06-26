@@ -732,7 +732,11 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
   }
   const shouldInspectFallbackForegroundProcess = (fallbackProcess: string | null): boolean =>
     fallbackProcess !== null &&
-    (isShellProcess(fallbackProcess) || isAgentForegroundWrapperProcess(fallbackProcess))
+    (isShellProcess(fallbackProcess) ||
+      isAgentForegroundWrapperProcess(fallbackProcess) ||
+      // Why: agent-spawned helper processes can become the PTY foreground
+      // child; the Unix process tree can still identify the parent agent.
+      process.platform !== 'win32')
   const scheduleAgentForegroundRefresh = (fallbackProcess: string | null): void => {
     if (dead || !proc.pid) {
       return
@@ -756,7 +760,7 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
     foregroundRefreshInFlight = true
     lastForegroundRefreshStartedAt = now
     // Why: daemon foreground reads are sync and run on the IPC hot path.
-    // Refresh shell/wrapper-derived identities (powershell/node -> codex/etc.)
+    // Refresh derived identities (shell/wrapper/helper -> codex/claude/etc.)
     // in the background and serve them from a short cache on later reads.
     void resolveAgentForegroundProcess(proc.pid, fallbackProcess, {
       contextPaths: agentForegroundContextPaths
