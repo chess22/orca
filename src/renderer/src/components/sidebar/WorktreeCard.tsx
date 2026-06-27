@@ -136,6 +136,11 @@ type WorktreeCardProps = {
 
 const EMPTY_WORKSPACE_PORTS = []
 const HOSTED_REVIEW_CARD_REFRESH_INTERVAL_MS = 60_000
+type WorktreeCardHostedReviewCacheEntry = {
+  data?: HostedReviewInfo | null
+  fetchedAt?: number
+  linkedReviewHintKey?: string
+}
 type WorktreeCardPRCacheEntry = { data?: PRInfo | null; fetchedAt?: number }
 
 export function shouldBeginWorktreeRename(
@@ -178,11 +183,30 @@ function isCachedMergedBranchPRCurrentForWorktree(
   )
 }
 
+function isDetachedHeadCacheBranch(cacheBranch: string): boolean {
+  return cacheBranch.startsWith('__detached_head__:')
+}
+
+function findDetachedHostedReviewCacheEntry(
+  hostedReviewCache: Record<string, WorktreeCardHostedReviewCacheEntry> | undefined,
+  cacheBranch: string
+): WorktreeCardHostedReviewCacheEntry | undefined {
+  if (!hostedReviewCache || !isDetachedHeadCacheBranch(cacheBranch)) {
+    return undefined
+  }
+  // Why: imported/folder workspaces can observe the same detached review under a
+  // different repo owner key; the HEAD-scoped suffix is still exact.
+  const suffix = `::${cacheBranch}`
+  return Object.entries(hostedReviewCache).find(
+    ([key, entry]) => key.endsWith(suffix) && entry?.data
+  )?.[1]
+}
+
 function findDetachedPRCacheEntry(
   prCache: Record<string, WorktreeCardPRCacheEntry> | undefined,
   cacheBranch: string
 ): WorktreeCardPRCacheEntry | undefined {
-  if (!prCache || !cacheBranch.startsWith('__detached_head__:')) {
+  if (!prCache || !isDetachedHeadCacheBranch(cacheBranch)) {
     return undefined
   }
   // Why: imported/folder workspaces can observe the same detached PR under a
@@ -479,8 +503,10 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const linearIssueCacheKey = worktree.linkedLinearIssue ? `all::${worktree.linkedLinearIssue}` : ''
 
   // Subscribe to ONLY the specific cache entry, not entire review/issue caches.
-  const hostedReviewEntry = useAppStore((s) =>
-    hostedReviewCacheKey ? s.hostedReviewCache[hostedReviewCacheKey] : undefined
+  const hostedReviewEntry = useAppStore(
+    (s) =>
+      (hostedReviewCacheKey ? s.hostedReviewCache[hostedReviewCacheKey] : undefined) ??
+      findDetachedHostedReviewCacheEntry(s.hostedReviewCache, prCacheBranch)
   )
   const prCacheEntry = useAppStore(
     (s) =>
@@ -522,7 +548,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
   // cache entries are already scoped by the checked-out HEAD merge commit.
   const cachedBranchPR = prCacheEntry?.data
   const cachedBranchPRFetchedAt = prCacheEntry?.fetchedAt
-  const cachedBranchPRIsHeadScoped = branch.length === 0 && prCacheBranch.length > 0
+  const cachedBranchPRIsHeadScoped = branch.length === 0 && isDetachedHeadCacheBranch(prCacheBranch)
   const cachedMergedBranchPRMatchesCurrentHead = isCachedMergedBranchPRCurrentForWorktree(
     cachedBranchPR,
     worktree
@@ -540,6 +566,17 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const cachedBranchReview = useCachedBranchReview
     ? hostedReviewInfoFromGitHubPRInfo(cachedBranchPR)
     : hostedReview
+  const detachedHostedReviewMatchesCachedHeadPR =
+    cachedBranchPRIsHeadScoped &&
+    cachedBranchPR !== undefined &&
+    cachedBranchPR !== null &&
+    hostedReview?.provider === 'github' &&
+    hostedReview.number === cachedBranchPR.number &&
+    !hasNonGitHubLinkedReview
+  const reviewHintKey =
+    (useCachedBranchReview || detachedHostedReviewMatchesCachedHeadPR) && !hasLinkedReview
+      ? ''
+      : hostedReviewEntry?.linkedReviewHintKey
   const prDisplay = getWorktreeCardPrDisplay(
     cachedBranchReview,
     linkedGitHubPR,
@@ -548,8 +585,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
     linkedAzureDevOpsPR,
     linkedGiteaPR,
     {
-      reviewHintKey:
-        useCachedBranchReview && !hasLinkedReview ? '' : hostedReviewEntry?.linkedReviewHintKey
+      reviewHintKey
     }
   )
   const issue: IssueInfo | null | undefined = worktree.linkedIssue
