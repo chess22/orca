@@ -3,7 +3,11 @@ import React, { useEffect, useCallback, useState } from 'react'
 import { useAppStore } from '@/store'
 import { getHostedReviewCacheKey } from '@/store/slices/hosted-review'
 import { issueCacheKey as getIssueCacheKey } from '@/store/slices/github'
-import { getGitHubPRCacheBranch, getGitHubPRCacheKey } from '@/store/slices/github-cache-key'
+import {
+  getGitHubPRCacheBranch,
+  getGitHubPRCacheKey,
+  getLegacyGitHubPRCacheKey
+} from '@/store/slices/github-cache-key'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
@@ -435,6 +439,15 @@ const WorktreeCard = React.memo(function WorktreeCard({
           true
         )
       : ''
+  const canUseLegacyPRCache = repo !== undefined && !repo.connectionId && !repo.executionHostId
+  const legacyRepoScopedPRCacheKey =
+    canUseLegacyPRCache && prCacheBranch
+      ? getLegacyGitHubPRCacheKey(repo.path, repo.id, prCacheBranch)
+      : ''
+  const legacyPathScopedPRCacheKey =
+    canUseLegacyPRCache && prCacheBranch
+      ? getLegacyGitHubPRCacheKey(repo.path, undefined, prCacheBranch)
+      : ''
   const issueCacheKey =
     repo && worktree.linkedIssue
       ? getIssueCacheKey(
@@ -455,7 +468,12 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const hostedReviewEntry = useAppStore((s) =>
     hostedReviewCacheKey ? s.hostedReviewCache[hostedReviewCacheKey] : undefined
   )
-  const prCacheEntry = useAppStore((s) => (prCacheKey ? s.prCache?.[prCacheKey] : undefined))
+  const prCacheEntry = useAppStore(
+    (s) =>
+      (prCacheKey ? s.prCache?.[prCacheKey] : undefined) ??
+      (legacyRepoScopedPRCacheKey ? s.prCache?.[legacyRepoScopedPRCacheKey] : undefined) ??
+      (legacyPathScopedPRCacheKey ? s.prCache?.[legacyPathScopedPRCacheKey] : undefined)
+  )
   const issueEntry = useAppStore((s) => (issueCacheKey ? s.issueCache[issueCacheKey] : undefined))
   const linearIssueEntry = useAppStore((s) =>
     linearIssueCacheKey ? s.linearIssueCache[linearIssueCacheKey] : undefined
@@ -1171,7 +1189,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
   // Why: a detached merge commit can still have PR context; once shown, the PR
   // status is the higher-signal sidebar identity than the raw commit badge.
   const showDetachedHeadInMetaRow =
-    !compactCards && !isFolder && detachedHeadDisplay !== null && hoverReview === null
+    !compactCards && !isFolder && detachedHeadDisplay !== null && statusLaneReview === null
   const showBranch =
     !isFolder &&
     branch.length > 0 &&
