@@ -2075,6 +2075,57 @@ describe('updateWorktreeGitIdentity', () => {
     })
   })
 
+  it('persists a clear when the branch switches again before the first clear write finishes', async () => {
+    const store = createTestStore()
+    const existing = makeWorktree({
+      id: 'repo1::/path/wt1',
+      repoId: 'repo1',
+      path: '/path/wt1',
+      branch: 'refs/heads/stack/one',
+      linkedPR: 101,
+      pushTarget: { remoteName: 'fork', branchName: 'old/review-head' }
+    })
+    let releaseFirstClear!: () => void
+    const firstClearReleased = new Promise<void>((resolve) => {
+      releaseFirstClear = resolve
+    })
+    let clearCalls = 0
+    mockApi.worktrees.updateMeta.mockImplementation(async ({ updates }) => {
+      if (updates.linkedPR === null && updates.pushTarget === undefined) {
+        clearCalls += 1
+        if (clearCalls === 1) {
+          await firstClearReleased
+        }
+      }
+    })
+
+    store.setState({ worktreesByRepo: { repo1: [existing] } } as Partial<AppState>)
+
+    store.getState().updateWorktreeGitIdentity('repo1::/path/wt1', {
+      branch: 'refs/heads/stack/two'
+    })
+    await Promise.resolve()
+    store.getState().updateWorktreeGitIdentity('repo1::/path/wt1', {
+      branch: 'refs/heads/stack/three'
+    })
+    releaseFirstClear()
+
+    await vi.waitFor(() => {
+      expect(clearCalls).toBeGreaterThanOrEqual(2)
+    })
+    expect(mockApi.worktrees.updateMeta).toHaveBeenLastCalledWith({
+      worktreeId: 'repo1::/path/wt1',
+      updates: {
+        linkedPR: null,
+        linkedGitLabMR: null,
+        linkedBitbucketPR: null,
+        linkedAzureDevOpsPR: null,
+        linkedGiteaPR: null,
+        pushTarget: undefined
+      }
+    })
+  })
+
   it('clears stale linked reviews rehydrated by a refetch while branch-switch clear persists', async () => {
     const store = createTestStore()
     const existing = makeWorktree({

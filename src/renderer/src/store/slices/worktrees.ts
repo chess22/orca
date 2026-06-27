@@ -2375,12 +2375,18 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
         } else {
           const tombstone = hostedReviewLinkClearTombstonesByWorktreeId.get(worktreeId)
           if (tombstone) {
+            const nextBranchIdentity = canonicalHostedReviewBranchIdentity(nextBranch)
             hostedReviewLinkClearTombstonesByWorktreeId.set(worktreeId, {
               ...tombstone,
               branch: nextBranch,
-              branchIdentity: canonicalHostedReviewBranchIdentity(nextBranch),
+              branchIdentity: nextBranchIdentity,
               head: nextHead
             })
+            if (hostedReviewBranchChanged) {
+              shouldPersistHostedReviewClear = true
+              clearedBranch = nextBranch
+              clearGeneration = tombstone.generation
+            }
           }
         }
         // Why: terminal branch switches only patch branch/head here; auto-derived
