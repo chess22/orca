@@ -4495,7 +4495,9 @@
           "copiedCommand": "Copied command.",
           "failedToCopyCommand": "Failed to copy command.",
           "copyCommandAria": "Copy command",
-          "runCommandDescription": "Press Enter to run the command."
+          "runCommandDescription": "Press Enter to run the command.",
+          "5f818f12ab": "Preparing...",
+          "4c05b9d7cb": "Preparing setup terminal."
         },
         "AgentsPane": {
           "d83834f5e6": "Detecting installed agents…",
@@ -5315,7 +5317,10 @@
           "4f2205f3b6": "Enable Orca CLI",
           "ff4b7e65d6": "Let coding agents control the active mobile emulator with Orca CLI commands.",
           "2a674aa810": "Agent Mobile Emulator Control",
-          "cdeaed9e37": "Registered the Orca CLI in PATH."
+          "cdeaed9e37": "Registered the Orca CLI in PATH.",
+          "3d34423e88": "Registering the Orca CLI",
+          "3be27641c9": "so emulator commands can run from agent shells.",
+          "3941719a56": "Checking Orca CLI before opening skill setup."
         },
         "MobileEmulatorExamples": {
           "edf13dd03b": "Copy",
@@ -10459,7 +10464,10 @@
             "21f5687c07": "Orca CLI skill",
             "64fb057667": "Teaches agents the orca emulator commands for this worktree.",
             "5c59ea96ca": "Mobile emulator Orca CLI skill setup",
-            "bff5341ac3": "Mobile emulator Orca CLI skill install terminal"
+            "bff5341ac3": "Mobile emulator Orca CLI skill install terminal",
+            "3d34423e88": "Registering the Orca CLI",
+            "3be27641c9": "so emulator commands can run from agent shells.",
+            "3941719a56": "Checking Orca CLI before opening skill setup."
           },
           "MobileEmulatorTabIntroCallout": {
             "1924982130": "Dismiss",

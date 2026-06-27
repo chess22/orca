@@ -4480,7 +4480,9 @@
           "copiedCommand": "已复制命令。",
           "failedToCopyCommand": "复制命令失败。",
           "copyCommandAria": "复制命令",
-          "runCommandDescription": "按 Enter 运行命令。"
+          "runCommandDescription": "按 Enter 运行命令。",
+          "5f818f12ab": "Preparing...",
+          "4c05b9d7cb": "Preparing setup terminal."
         },
         "AgentsPane": {
           "d83834f5e6": "检测已安装的智能体...",
@@ -5263,7 +5265,10 @@
           "4f2205f3b6": "启用 Orca CLI",
           "ff4b7e65d6": "让编码智能体使用 Orca CLI 命令控制活动手机模拟器。",
           "2a674aa810": "智能体手机模拟器控制",
-          "cdeaed9e37": "在 PATH 中注册 Orca CLI。"
+          "cdeaed9e37": "在 PATH 中注册 Orca CLI。",
+          "3d34423e88": "Registering the Orca CLI",
+          "3be27641c9": "so emulator commands can run from agent shells.",
+          "3941719a56": "Checking Orca CLI before opening skill setup."
         },
         "MobileEmulatorExamples": {
           "edf13dd03b": "复制",
@@ -10459,7 +10464,10 @@
             "21f5687c07": "Orca CLI 技能",
             "64fb057667": "教授智能体此工作区的 orca 模拟器命令。",
             "5c59ea96ca": "移动端模拟器 Orca CLI 技能设置",
-            "bff5341ac3": "移动端模拟器 Orca CLI 技能安装终端"
+            "bff5341ac3": "移动端模拟器 Orca CLI 技能安装终端",
+            "3d34423e88": "Registering the Orca CLI",
+            "3be27641c9": "so emulator commands can run from agent shells.",
+            "3941719a56": "Checking Orca CLI before opening skill setup."
           },
           "MobileEmulatorTabIntroCallout": {
             "1924982130": "关闭",
