@@ -485,9 +485,11 @@ const WorktreeCard = React.memo(function WorktreeCard({
   // Why: ChecksPanel can discover a branch PR before hosted-review metadata
   // warms, and transient older hosted-review misses can race with that cache.
   // A newer miss only yields to merged PR cache when the stored worktree head
-  // proves the cached PR still describes the checked-out commit.
+  // proves the cached PR still describes the checked-out commit. Detached
+  // cache entries are already scoped by the checked-out HEAD merge commit.
   const cachedBranchPR = prCacheEntry?.data
   const cachedBranchPRFetchedAt = prCacheEntry?.fetchedAt
+  const cachedBranchPRIsHeadScoped = branch.length === 0 && prCacheBranch.length > 0
   const cachedMergedBranchPRMatchesCurrentHead = isCachedMergedBranchPRCurrentForWorktree(
     cachedBranchPR,
     worktree
@@ -500,6 +502,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
       (hostedReview === null &&
         ((cachedBranchPRFetchedAt !== undefined &&
           cachedBranchPRFetchedAt > (hostedReviewEntry?.fetchedAt ?? 0)) ||
+          cachedBranchPRIsHeadScoped ||
           cachedMergedBranchPRMatchesCurrentHead)))
   const cachedBranchReview = useCachedBranchReview
     ? hostedReviewInfoFromGitHubPRInfo(cachedBranchPR)
@@ -1165,7 +1168,10 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const showRepoBadgeInMetaRow =
     !showRepoIdentityInTitle && !!repo && !hideRepoBadge && !showPinnedRepoIcon
   const showHostContextBadge = !compactCards && !!hostContextLabel
-  const showDetachedHeadInMetaRow = !compactCards && !isFolder && detachedHeadDisplay !== null
+  // Why: a detached merge commit can still have PR context; once shown, the PR
+  // status is the higher-signal sidebar identity than the raw commit badge.
+  const showDetachedHeadInMetaRow =
+    !compactCards && !isFolder && detachedHeadDisplay !== null && hoverReview === null
   const showBranch =
     !isFolder &&
     branch.length > 0 &&
