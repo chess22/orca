@@ -2,12 +2,14 @@ import type { ProviderRateLimits, RateLimitWindow } from '../../../../shared/rat
 import { AgentIcon } from '@/lib/agent-catalog'
 import { ClaudeIcon, GeminiIcon, OpenAIIcon, OpenCodeGoIcon } from './icons'
 import { translate } from '@/i18n/i18n'
+import { formatResetCountdown, formatResetDuration } from '@/lib/reset-countdown'
 import {
   getProviderDisplayName,
   getProviderUsageErrorMessage,
   getProviderUsageStatusLabel
 } from './usage-error-copy'
 
+export { formatResetCountdown } from '@/lib/reset-countdown'
 export {
   getProviderDisplayName,
   getProviderUsageErrorMessage,
@@ -31,29 +33,6 @@ export function formatTimeAgo(ts: number): string {
   return `${hours}h ago`
 }
 
-function formatDuration(ms: number): string {
-  if (ms <= 0) {
-    return 'now'
-  }
-  const totalMins = Math.floor(ms / 60_000)
-  if (totalMins < 60) {
-    return `${totalMins}m`
-  }
-  const hours = Math.floor(totalMins / 60)
-  const mins = totalMins % 60
-  if (hours >= 24) {
-    const days = Math.floor(hours / 24)
-    const remHours = hours % 24
-    return remHours > 0 ? `${days}d ${remHours}h` : `${days}d`
-  }
-  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`
-}
-
-export function formatResetCountdown(ms: number): string {
-  const duration = formatDuration(ms)
-  return duration === 'now' ? 'Resets now' : `Resets in ${duration}`
-}
-
 export function formatResetCreditExpiry(
   expiresAt: number | null | undefined,
   count: number
@@ -61,7 +40,7 @@ export function formatResetCreditExpiry(
   if (!expiresAt) {
     return null
   }
-  const duration = formatDuration(expiresAt - Date.now())
+  const duration = formatResetDuration(expiresAt - Date.now())
   if (duration === 'now') {
     return count > 1
       ? translate('auto.components.status.bar.tooltip.7ec6e030a0', 'Next expires now')

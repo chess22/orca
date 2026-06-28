@@ -55,6 +55,7 @@ import {
 } from './tooltip'
 import { ClaudeIcon, GeminiIcon, OpenAIIcon, OpenCodeGoIcon } from './icons'
 import { AgentIcon } from '@/lib/agent-catalog'
+import { formatResetDuration } from '@/lib/reset-countdown'
 import { formatWindowLabel } from '@/lib/window-label-formatter'
 import { markLiveCodexSessionsForRestart } from '@/lib/codex-session-restart'
 import { UpdateStatusSegment } from './UpdateStatusSegment'
@@ -1024,6 +1025,17 @@ function WindowLabel({ w, label }: { w: RateLimitWindow; label: string }): React
   )
 }
 
+// Why: rate-limit data only refetches every ~15min, so a reset countdown
+// computed once would freeze; tick locally to keep the collapsed badge current.
+function useNow(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), intervalMs)
+    return () => window.clearInterval(id)
+  }, [intervalMs])
+  return now
+}
+
 // ---------------------------------------------------------------------------
 // Provider segment
 // ---------------------------------------------------------------------------
@@ -1041,6 +1053,15 @@ function ProviderSegment({
 }): React.JSX.Element {
   const provider = p?.provider ?? 'claude'
   const statusLabel = p ? getProviderUsageStatusLabel(p) : ''
+  const now = useNow(30_000)
+
+  // Why: show the live time-until-reset for the session window instead of the
+  // fixed window length (issue #5399) so users see it without opening the panel.
+  const sessionLabel = p?.session
+    ? p.session.resetsAt != null
+      ? formatResetDuration(p.session.resetsAt - now)
+      : formatWindowLabel(p.session.windowMinutes)
+    : ''
 
   // Idle / initial load
   if (!p || p.status === 'idle') {
@@ -1102,7 +1123,7 @@ function ProviderSegment({
           )
         })}
         {visibleBuckets.length === 0 && p.session && (
-          <WindowLabel w={p.session} label={formatWindowLabel(p.session.windowMinutes)} />
+          <WindowLabel w={p.session} label={sessionLabel} />
         )}
         {isStale && <AlertTriangle size={11} className="text-muted-foreground/80" />}
       </span>
@@ -1113,9 +1134,7 @@ function ProviderSegment({
     <span className="inline-flex items-center gap-1.5">
       <ProviderIcon provider={provider} />
       {p.session && !compact && <MiniBar leftPct={Math.max(0, 100 - p.session.usedPercent)} />}
-      {p.session && (
-        <WindowLabel w={p.session} label={formatWindowLabel(p.session.windowMinutes)} />
-      )}
+      {p.session && <WindowLabel w={p.session} label={sessionLabel} />}
       {p.session && p.weekly && <span className="text-muted-foreground">·</span>}
       {p.weekly && <WindowLabel w={p.weekly} label={formatWindowLabel(p.weekly.windowMinutes)} />}
       {isStale && <AlertTriangle size={11} className="text-muted-foreground/80" />}
