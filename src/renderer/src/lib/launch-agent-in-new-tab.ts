@@ -22,7 +22,8 @@ import {
   resolveTuiAgentLaunchEnv
 } from '../../../shared/tui-agent-launch-defaults'
 import { TUI_AGENT_CONFIG } from '../../../shared/tui-agent-config'
-import { makePaneKey } from '../../../shared/stable-pane-id'
+import { repoIsRemote } from '../../../shared/agent-launch-remote'
+import { seedCommandCodeSubmittedPromptStatus } from '@/lib/command-code-prompt-status-seed'
 import type { TuiAgent } from '../../../shared/types'
 import type { LaunchSource } from '../../../shared/telemetry-events'
 import { translate } from '@/i18n/i18n'
@@ -67,23 +68,6 @@ export type LaunchAgentInNewTabResult = {
   startupPlan: AgentStartupPlan
   pasteDraftAfterLaunch: boolean
 } | null
-
-function seedCommandCodeSubmittedPromptStatus(tabId: string, prompt: string): void {
-  const state = useAppStore.getState()
-  const leafId = state.terminalLayoutsByTabId[tabId]?.activeLeafId
-  if (!leafId) {
-    return
-  }
-  try {
-    state.setAgentStatus(makePaneKey(tabId, leafId), {
-      state: 'working',
-      prompt,
-      agentType: 'command-code'
-    })
-  } catch {
-    // Best-effort UI seed. Real hooks still own refinement/completion.
-  }
-}
 
 /**
  * Create a new terminal tab and queue the agent's launch command, optionally
@@ -131,6 +115,9 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
           repo.connectionId ? undefined : getLocalProjectExecutionRuntimeContext(store, worktreeId)
         )
       : CLIENT_PLATFORM)
+  // Why: SSH remotes deploy the CLI shim as plain `orca`, so the Linux-only
+  // `orca-ide` rename must not be applied for remote launches.
+  const isRemote = repo ? repoIsRemote(repo) : false
   const cmdOverrides = store.settings?.agentCmdOverrides ?? {}
   const effectiveAgentArgs =
     agentArgs !== undefined
@@ -159,6 +146,7 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
       prompt: '',
       cmdOverrides,
       platform: resolvedLaunchPlatform,
+      isRemote,
       agentArgs: effectiveAgentArgs,
       agentEnv,
       allowEmptyPromptLaunch: true
@@ -172,6 +160,7 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
       draft: trimmedPrompt,
       cmdOverrides,
       platform: resolvedLaunchPlatform,
+      isRemote,
       agentArgs: effectiveAgentArgs,
       agentEnv
     })
@@ -193,6 +182,7 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
         prompt: '',
         cmdOverrides,
         platform: resolvedLaunchPlatform,
+        isRemote,
         agentArgs: effectiveAgentArgs,
         agentEnv,
         allowEmptyPromptLaunch: true
@@ -205,6 +195,7 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
       prompt: '',
       cmdOverrides,
       platform: resolvedLaunchPlatform,
+      isRemote,
       agentArgs: effectiveAgentArgs,
       agentEnv,
       allowEmptyPromptLaunch: true
@@ -216,6 +207,7 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
       prompt: hasPrompt ? trimmedPrompt : '',
       cmdOverrides,
       platform: resolvedLaunchPlatform,
+      isRemote,
       agentArgs: effectiveAgentArgs,
       agentEnv,
       allowEmptyPromptLaunch: !hasPrompt
