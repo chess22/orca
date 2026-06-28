@@ -133,6 +133,46 @@ describe('hydrateShellPath', () => {
     expect(result).toEqual({ segments: [], ok: false, failureReason: 'empty_path' })
   })
 
+  // Why: the `-i` (interactive) flag forces sourcing of interactive rc init
+  // (compinit, oh-my-zsh, completion generators) that forks nested execs and
+  // wedges startup in uninterruptible sleep under macOS Endpoint Security
+  // agents (#5657). The PATH probe must spawn login-but-non-interactive (`-lc`).
+  it('spawns the shell login-but-non-interactive (-lc, never -ilc) for the PATH probe', async () => {
+    const proc = createMockShellProcess()
+    spawnMock.mockReturnValue(proc)
+
+    const resultPromise = hydrateShellPath({ shellOverride: '/bin/zsh', force: true })
+
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+    const [spawnedShell, spawnArgs] = spawnMock.mock.calls[0]
+    expect(spawnedShell).toBe('/bin/zsh')
+    expect(spawnArgs[0]).toBe('-lc')
+    expect(spawnArgs).not.toContain('-ilc')
+
+    // Emit a PATH containing version-manager dirs and confirm it still parses,
+    // proving login profiles + unguarded rc exports remain captured under -lc.
+    const path = [
+      '/Users/tester/.cargo/bin',
+      '/Users/tester/.pyenv/shims',
+      '/Users/tester/.volta/bin',
+      '/opt/homebrew/bin'
+    ].join(delimiter)
+    proc.stdout.emit('data', Buffer.from(`__ORCA_SHELL_PATH__${path}__ORCA_SHELL_PATH__`))
+    proc.emit('close')
+
+    const result = await resultPromise
+    expect(result).toEqual({
+      segments: [
+        '/Users/tester/.cargo/bin',
+        '/Users/tester/.pyenv/shims',
+        '/Users/tester/.volta/bin',
+        '/opt/homebrew/bin'
+      ],
+      ok: true,
+      failureReason: 'none'
+    })
+  })
+
   it('cleans up shell listeners when hydration times out', async () => {
     vi.useFakeTimers()
     const proc = createMockShellProcess()

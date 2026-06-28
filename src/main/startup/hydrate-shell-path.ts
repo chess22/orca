@@ -81,14 +81,21 @@ function spawnShellAndReadPath(shell: string): Promise<HydrationResult> {
   return new Promise((resolve) => {
     // Why: printing $PATH between delimiters is resilient to rc-file banners,
     // MOTDs, and `echo` invocations that shells like fish print unprompted.
-    // `-ilc` runs the shell as a login+interactive so both .profile/.zprofile
-    // and .bashrc/.zshrc are sourced — matches what `which` in Terminal sees.
+    // Why: login-but-non-interactive (`-lc`, not `-ilc`). PATH lives in login
+    // profiles (.zprofile/.zlogin/.profile/.bash_profile) and unguarded rc
+    // exports, all still sourced under `-lc`, so the captured PATH stays
+    // complete. The dropped `-i` flag is what matters: interactive init
+    // (compinit, oh-my-zsh, `source <(tool completion ...)`, nvm/sdkman) forks
+    // many nested execs that, under macOS Endpoint Security agents (Jamf
+    // Protect / CrowdStrike), each await an ES_EVENT_TYPE_AUTH_EXEC verdict; a
+    // stalled verdict wedges the spawn in uninterruptible kernel sleep (`U`),
+    // which SIGKILL cannot reap — hanging startup until reboot (#5657).
     const command = `printf '%s' '${DELIMITER}'; printf '%s' "$PATH"; printf '%s' '${DELIMITER}'`
     let finished = false
     let stdout = ''
     let timer: ReturnType<typeof setTimeout> | null = null
 
-    const child = spawn(shell, ['-ilc', command], {
+    const child = spawn(shell, ['-lc', command], {
       // Why: inherit current env so the shell sees the same baseline, then let
       // it layer its own rc files on top. Do NOT forward stdio — some shells
       // (oh-my-zsh setups, powerlevel10k) print a lot to stderr on startup,
@@ -119,7 +126,9 @@ function spawnShellAndReadPath(shell: string): Promise<HydrationResult> {
     timer = setTimeout(() => {
       // Why: slow rc files (corporate env setup, nvm eager init) can exceed
       // our budget. Kill the shell and fall back to process.env rather than
-      // blocking the Agents pane indefinitely.
+      // blocking the Agents pane indefinitely. Defense-in-depth only — SIGKILL
+      // cannot reap a child stuck in `U` (uninterruptible) state, so the real
+      // fix for the Endpoint Security wedge is the non-interactive `-lc` above.
       try {
         child.kill('SIGKILL')
       } catch {
