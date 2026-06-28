@@ -884,8 +884,21 @@ describe('registerFilesystemHandlers', () => {
   // throws. The handler must hard-delete via the distro instead of surfacing an
   // error popup.
   it('hard-deletes a WSL UNC path instead of trashing it', async () => {
-    const wslUncRoot = '\\\\wsl.localhost\\Ubuntu\\home\\me\\repo'
-    const targetPath = `${wslUncRoot}\\file.txt`
+    // Why: build the UNC-style root with path.join so it resolves as a real
+    // parent/child pair under the host's path semantics. A literal
+    // '\\wsl.localhost\...' string only resolves correctly under win32 path
+    // rules — on the Linux CI runner POSIX treats the backslashes as filename
+    // characters, so the target would not be a descendant of the root and auth
+    // would deny it before the WSL hard-delete ran (the real production path is
+    // Windows-only).
+    const wslUncRoot = path.join(
+      `${path.sep}${path.sep}wsl.localhost`,
+      'Ubuntu',
+      'home',
+      'me',
+      'repo'
+    )
+    const targetPath = path.join(wslUncRoot, 'file.txt')
     registerWorktreeRootsForRepo(store as never, 'repo-1', [REPO_PATH, wslUncRoot])
     tryDeleteWslUncPathMock.mockResolvedValue(true)
 
@@ -900,8 +913,16 @@ describe('registerFilesystemHandlers', () => {
   })
 
   it('propagates a WSL hard-delete failure instead of swallowing it', async () => {
-    const wslUncRoot = '\\\\wsl.localhost\\Ubuntu\\home\\me\\repo'
-    const targetPath = `${wslUncRoot}\\file.txt`
+    // Why: see sibling test — path.join keeps the UNC root/target a real
+    // parent/child pair under both win32 and POSIX (Linux CI) path semantics.
+    const wslUncRoot = path.join(
+      `${path.sep}${path.sep}wsl.localhost`,
+      'Ubuntu',
+      'home',
+      'me',
+      'repo'
+    )
+    const targetPath = path.join(wslUncRoot, 'file.txt')
     registerWorktreeRootsForRepo(store as never, 'repo-1', [REPO_PATH, wslUncRoot])
     tryDeleteWslUncPathMock.mockRejectedValue(
       new Error('Failed to delete WSL path: Permission denied')
@@ -909,9 +930,9 @@ describe('registerFilesystemHandlers', () => {
 
     registerFilesystemHandlers(store as never)
 
-    await expect(
-      handlers.get('fs:deletePath')!(null, { targetPath })
-    ).rejects.toThrow('Failed to delete WSL path: Permission denied')
+    await expect(handlers.get('fs:deletePath')!(null, { targetPath })).rejects.toThrow(
+      'Failed to delete WSL path: Permission denied'
+    )
     expect(trashItemMock).not.toHaveBeenCalled()
   })
 
