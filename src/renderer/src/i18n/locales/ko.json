@@ -11027,7 +11027,8 @@
           "b3e7f9a1c2": "체크 수정 컨텍스트를 사용할 수 없습니다.",
           "d5a8c2f1b9": "이 체크를 수정할 기본 AI agent 시작",
           "e2b4d7c8a1": "이 체크를 처리할 agent 선택",
-          "f1c9e3a6d4": "체크를 수정할 agent 선택"
+          "f1c9e3a6d4": "체크를 수정할 agent 선택",
+          "5e2a9c3f88": "Open file at this line"
         },
         "check": {
           "run": {
@@ -11048,6 +11049,13 @@
         },
         "richMarkdownLargeTextPaste": {
           "tooLarge": "붙여넣기 내용이 너무 큽니다."
+        },
+        "CheckRunJobs": {
+          "1c0a4d7e02": "succeeded",
+          "2d3b8f1a55": "skipped",
+          "3e6c9a2b71": "pending",
+          "4f7d0c3e88": "steps failed",
+          "5a8e1d4f23": " · "
         }
       },
       "diff": {

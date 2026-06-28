@@ -11027,7 +11027,8 @@
           "b3e7f9a1c2": "检查修复上下文不可用",
           "d5a8c2f1b9": "启动默认 AI 智能体来修复此检查",
           "e2b4d7c8a1": "为此检查选择智能体",
-          "f1c9e3a6d4": "选择智能体修复检查"
+          "f1c9e3a6d4": "选择智能体修复检查",
+          "5e2a9c3f88": "Open file at this line"
         },
         "check": {
           "run": {
@@ -11048,6 +11049,13 @@
         },
         "richMarkdownLargeTextPaste": {
           "tooLarge": "粘贴内容过大。"
+        },
+        "CheckRunJobs": {
+          "1c0a4d7e02": "succeeded",
+          "2d3b8f1a55": "skipped",
+          "3e6c9a2b71": "pending",
+          "4f7d0c3e88": "steps failed",
+          "5a8e1d4f23": " · "
         }
       },
       "diff": {

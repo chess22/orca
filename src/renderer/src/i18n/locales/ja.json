@@ -11027,7 +11027,8 @@
           "b3e7f9a1c2": "チェック修正コンテキストを利用できません",
           "d5a8c2f1b9": "既定の AI エージェントでこのチェックを修正",
           "e2b4d7c8a1": "このチェックのエージェントを選択",
-          "f1c9e3a6d4": "チェックを修正するエージェントを選択"
+          "f1c9e3a6d4": "チェックを修正するエージェントを選択",
+          "5e2a9c3f88": "Open file at this line"
         },
         "check": {
           "run": {
@@ -11048,6 +11049,13 @@
         },
         "richMarkdownLargeTextPaste": {
           "tooLarge": "貼り付け内容が大きすぎます。"
+        },
+        "CheckRunJobs": {
+          "1c0a4d7e02": "succeeded",
+          "2d3b8f1a55": "skipped",
+          "3e6c9a2b71": "pending",
+          "4f7d0c3e88": "steps failed",
+          "5a8e1d4f23": " · "
         }
       },
       "diff": {

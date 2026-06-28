@@ -11017,6 +11017,7 @@
           "d098e5529a": "Output",
           "f2fe8a4e8f": "Annotations",
           "cdbfda4dec": "Annotation",
+          "5e2a9c3f88": "Open file at this line",
           "066fedd446": "Failed jobs",
           "49731703ea": "Jobs",
           "ee07b33924": "unknown",
@@ -11028,6 +11029,13 @@
           "d5a8c2f1b9": "Start the default AI agent to fix this check",
           "e2b4d7c8a1": "Choose an agent for this check",
           "f1c9e3a6d4": "Choose agent to fix check"
+        },
+        "CheckRunJobs": {
+          "1c0a4d7e02": "succeeded",
+          "2d3b8f1a55": "skipped",
+          "3e6c9a2b71": "pending",
+          "4f7d0c3e88": "steps failed",
+          "5a8e1d4f23": " · "
         },
         "check": {
           "run": {
