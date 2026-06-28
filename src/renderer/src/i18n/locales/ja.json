@@ -2234,7 +2234,52 @@
             "2ddbd6fe8a": "チェック済み",
             "ee81adfcef": "表示",
             "4d0b72481c": "無視",
-            "9cc26c019d": "削除"
+            "9cc26c019d": "削除",
+            "0e2d235c63": "非アクティブなワークスペースのスキャンが完了しました",
+            "4a35c08764": "レビュー",
+            "47123d0108": "非アクティブなワークスペースをスキャンしています。閉じて後で戻ることができます。",
+            "9a3be9f2df": "非アクティブなワークスペースをスキャンしています。完了した行がここに順次表示されます。閉じて後で戻ることができます。",
+            "3d957ff117": "これらのフィルターに一致するワークスペースはありません。",
+            "e94b1f8bb4": "フィルターをクリア",
+            "efb3843e75": "ワークスペースをフィルターして並べ替え",
+            "93b7381d50": "フィルター",
+            "a615e24679": "並べ替え",
+            "4cc5b73efe": "非アクティブなワークスペースを検索中...",
+            "5bf2e88480": "{{value0}}/{{value1}} 件の{{value2}}をスキャン済み",
+            "searchWorkspaces": "ワークスペースを検索",
+            "age": "経過期間",
+            "review": "レビュー",
+            "git": "Git",
+            "context": "コンテキスト",
+            "sortBy": "並べ替え",
+            "direction": "方向",
+            "anyAge": "任意の経過期間",
+            "archived": "アーカイブ済み",
+            "anyReview": "任意のレビュー",
+            "noPrMr": "PR/MR なし",
+            "hasPrMr": "PR/MR あり",
+            "open": "未完了",
+            "closed": "クローズ済み",
+            "anyGit": "任意の Git 状態",
+            "clean": "クリーン",
+            "dirty": "変更あり",
+            "unpushed": "未プッシュ",
+            "unknown": "不明",
+            "anyContext": "任意のコンテキスト",
+            "hasContext": "コンテキストあり",
+            "noContext": "コンテキストなし",
+            "activity": "アクティビティ",
+            "name": "名前",
+            "repo": "リポジトリ",
+            "ascending": "昇順",
+            "descending": "降順"
+          },
+          "presentation": {
+            "fixtures": {
+              "reviewAlphaCleanup": "alpha のクリーンアップをレビュー"
+            },
+            "gitlabMrNumber": "MR #{{value0}}",
+            "githubPrNumber": "PR #{{value0}}"
           }
         }
       },
@@ -3985,7 +4030,8 @@
           "hostAuthNeeded": "認証が必要です",
           "hostDisconnected": "切断済み",
           "failedNestWorkspace": "ワークスペースをネストできませんでした",
-          "sidebarRowMissing": "対象はもう存在しません"
+          "sidebarRowMissing": "対象はもう存在しません",
+          "mobileCreateWorkspace": "ワークスペースを作成"
         },
         "WorktreeMetaDialog": {
           "3db0a2a593": "キャンセル",

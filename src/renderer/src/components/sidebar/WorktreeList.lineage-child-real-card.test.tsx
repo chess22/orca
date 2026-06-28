@@ -269,6 +269,7 @@ function setLineageState(
   mockStore.state = {
     ...makeFolderWorkspacePathStatusMockState(),
     activeModal: '',
+    activeRepoId: repo.id,
     activeView: 'terminal',
     activeWorktreeId: null,
     agentStatusByPaneKey: {},
@@ -483,6 +484,69 @@ describe('WorktreeList real child WorktreeCard integration', () => {
       'edit-meta',
       expect.objectContaining({ worktreeId: 'parent' })
     )
+  })
+
+  it('opens the workspace composer from the rendered mobile add button', async () => {
+    const container = await renderWorktreeList()
+    const mobileAddButton = container.querySelector<HTMLButtonElement>(
+      '[data-mobile-worktree-add-fab] button[aria-label="Create workspace"]'
+    )
+
+    expect(mobileAddButton).not.toBeNull()
+    expect(mobileAddButton?.closest('[data-mobile-worktree-add-fab]')?.className).toContain(
+      'worktree-mobile-create-fab'
+    )
+
+    await act(async () => {
+      mobileAddButton!.click()
+    })
+
+    expect(mockStore.openModal).toHaveBeenCalledWith('new-workspace-composer', {
+      initialRepoId: 'repo-1',
+      telemetrySource: 'sidebar'
+    })
+  })
+
+  it('hides the mobile add button when repo filters exclude all repo targets', async () => {
+    mockStore.state.filterRepoIds = ['other-repo']
+
+    const container = await renderWorktreeList()
+
+    expect(container.querySelector('[data-mobile-worktree-add-fab]')).toBeNull()
+  })
+
+  it('uses the filtered repo target for the mobile add button in an empty filtered view', async () => {
+    mockStore.state.repos = [
+      ...(mockStore.state.repos as Repo[]),
+      {
+        ...makeRepo(),
+        id: 'repo-2',
+        path: '/tmp/lineage-real-card-2',
+        displayName: 'filtered repo'
+      }
+    ]
+    mockStore.state.filterRepoIds = ['repo-2']
+    mockStore.state.worktreesByRepo = {
+      ...(mockStore.state.worktreesByRepo as Record<string, Worktree[]>),
+      'repo-2': []
+    }
+
+    const container = await renderWorktreeList()
+    const mobileAddButton = container.querySelector<HTMLButtonElement>(
+      '[data-mobile-worktree-add-fab] button[aria-label="Create workspace"]'
+    )
+
+    expect(container.textContent).toContain('No workspaces found')
+    expect(mobileAddButton).not.toBeNull()
+
+    await act(async () => {
+      mobileAddButton!.click()
+    })
+
+    expect(mockStore.openModal).toHaveBeenCalledWith('new-workspace-composer', {
+      initialRepoId: 'repo-2',
+      telemetrySource: 'sidebar'
+    })
   })
 
   it('does not activate a nested child while it is deleting', async () => {

@@ -2234,7 +2234,52 @@
             "2ddbd6fe8a": "检查过",
             "ee81adfcef": "查看",
             "4d0b72481c": "忽略",
-            "9cc26c019d": "移除"
+            "9cc26c019d": "移除",
+            "0e2d235c63": "非活跃工作区扫描已就绪",
+            "4a35c08764": "评审",
+            "47123d0108": "正在扫描非活跃工作区。你可以关闭此窗口，稍后再回来。",
+            "9a3be9f2df": "正在扫描非活跃工作区。新行会在完成后显示在这里。你可以关闭此窗口，稍后再回来。",
+            "3d957ff117": "没有工作区匹配这些筛选条件。",
+            "e94b1f8bb4": "清除筛选条件",
+            "efb3843e75": "筛选并排序工作区",
+            "93b7381d50": "筛选条件",
+            "a615e24679": "排序",
+            "4cc5b73efe": "正在查找非活跃工作区...",
+            "5bf2e88480": "已扫描 {{value0}}/{{value1}} 个{{value2}}",
+            "searchWorkspaces": "搜索工作区",
+            "age": "时间",
+            "review": "评审",
+            "git": "Git",
+            "context": "上下文",
+            "sortBy": "排序依据",
+            "direction": "方向",
+            "anyAge": "任何时间",
+            "archived": "已归档",
+            "anyReview": "任何评审",
+            "noPrMr": "无 PR/MR",
+            "hasPrMr": "有 PR/MR",
+            "open": "打开",
+            "closed": "已关闭",
+            "anyGit": "任何 Git 状态",
+            "clean": "干净",
+            "dirty": "有更改",
+            "unpushed": "未推送",
+            "unknown": "未知",
+            "anyContext": "任何上下文",
+            "hasContext": "有上下文",
+            "noContext": "无上下文",
+            "activity": "活动",
+            "name": "名称",
+            "repo": "仓库",
+            "ascending": "升序",
+            "descending": "降序"
+          },
+          "presentation": {
+            "fixtures": {
+              "reviewAlphaCleanup": "评审 alpha 清理"
+            },
+            "gitlabMrNumber": "MR #{{value0}}",
+            "githubPrNumber": "PR #{{value0}}"
           }
         }
       },
@@ -3985,7 +4030,8 @@
           "hostAuthNeeded": "需要身份验证",
           "hostDisconnected": "已断开连接",
           "failedNestWorkspace": "无法嵌套工作区",
-          "sidebarRowMissing": "目标不再存在"
+          "sidebarRowMissing": "目标不再存在",
+          "mobileCreateWorkspace": "创建工作区"
         },
         "WorktreeMetaDialog": {
           "3db0a2a593": "取消",

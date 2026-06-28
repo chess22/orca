@@ -62,6 +62,7 @@ const SidebarHeader = React.memo(function SidebarHeader({
             <Button
               variant="ghost"
               size="icon-xs"
+              className="worktree-create-touch-hidden"
               onClick={() => {
                 if (!canCreateWorkspace) {
                   return

@@ -898,7 +898,10 @@ function WorkspaceCleanupFilterToolbar({
         <Input
           value={filters.query}
           onChange={(event) => updateFilter('query', event.target.value)}
-          placeholder="Search workspaces"
+          placeholder={translate(
+            'auto.components.workspace.cleanup.WorkspaceCleanupDialog.searchWorkspaces',
+            'Search workspaces'
+          )}
           className="h-8 pl-8 text-xs"
         />
       </div>
@@ -941,47 +944,134 @@ function WorkspaceCleanupFilterToolbar({
             )}
           </DropdownMenuLabel>
           <WorkspaceCleanupMenuSub<WorkspaceCleanupTimeFilter>
-            label="Age"
+            label={translate('auto.components.workspace.cleanup.WorkspaceCleanupDialog.age', 'Age')}
             value={filters.time}
             options={[
-              ['all', 'Any age'],
+              [
+                'all',
+                translate(
+                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.anyAge',
+                  'Any age'
+                )
+              ],
               ['30d', '30d+'],
               ['90d', '90d+'],
-              ['archived', 'Archived']
+              [
+                'archived',
+                translate(
+                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.archived',
+                  'Archived'
+                )
+              ]
             ]}
             onChange={(value) => updateFilter('time', value)}
           />
           <WorkspaceCleanupMenuSub<WorkspaceCleanupReviewFilter>
-            label="Review"
+            label={translate(
+              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.review',
+              'Review'
+            )}
             value={filters.review}
             options={[
-              ['all', 'Any review'],
-              ['no-review', 'No PR/MR'],
-              ['has-review', 'Has PR/MR'],
-              ['open-review', 'Open'],
-              ['closed-review', 'Closed']
+              [
+                'all',
+                translate(
+                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.anyReview',
+                  'Any review'
+                )
+              ],
+              [
+                'no-review',
+                translate(
+                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.noPrMr',
+                  'No PR/MR'
+                )
+              ],
+              [
+                'has-review',
+                translate(
+                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.hasPrMr',
+                  'Has PR/MR'
+                )
+              ],
+              [
+                'open-review',
+                translate('auto.components.workspace.cleanup.WorkspaceCleanupDialog.open', 'Open')
+              ],
+              [
+                'closed-review',
+                translate(
+                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.closed',
+                  'Closed'
+                )
+              ]
             ]}
             onChange={(value) => updateFilter('review', value)}
           />
           <WorkspaceCleanupMenuSub<WorkspaceCleanupGitFilter>
-            label="Git"
+            label={translate('auto.components.workspace.cleanup.WorkspaceCleanupDialog.git', 'Git')}
             value={filters.git}
             options={[
-              ['all', 'Any git'],
-              ['clean', 'Clean'],
-              ['dirty', 'Dirty'],
-              ['unpushed', 'Unpushed'],
-              ['unknown', 'Unknown']
+              [
+                'all',
+                translate(
+                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.anyGit',
+                  'Any git'
+                )
+              ],
+              [
+                'clean',
+                translate('auto.components.workspace.cleanup.WorkspaceCleanupDialog.clean', 'Clean')
+              ],
+              [
+                'dirty',
+                translate('auto.components.workspace.cleanup.WorkspaceCleanupDialog.dirty', 'Dirty')
+              ],
+              [
+                'unpushed',
+                translate(
+                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.unpushed',
+                  'Unpushed'
+                )
+              ],
+              [
+                'unknown',
+                translate(
+                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.unknown',
+                  'Unknown'
+                )
+              ]
             ]}
             onChange={(value) => updateFilter('git', value)}
           />
           <WorkspaceCleanupMenuSub<WorkspaceCleanupContextFilter>
-            label="Context"
+            label={translate(
+              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.context',
+              'Context'
+            )}
             value={filters.context}
             options={[
-              ['all', 'Any context'],
-              ['has-context', 'Has context'],
-              ['no-context', 'No context']
+              [
+                'all',
+                translate(
+                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.anyContext',
+                  'Any context'
+                )
+              ],
+              [
+                'has-context',
+                translate(
+                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.hasContext',
+                  'Has context'
+                )
+              ],
+              [
+                'no-context',
+                translate(
+                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.noContext',
+                  'No context'
+                )
+              ]
             ]}
             onChange={(value) => updateFilter('context', value)}
           />
@@ -993,23 +1083,62 @@ function WorkspaceCleanupFilterToolbar({
             )}
           </DropdownMenuLabel>
           <WorkspaceCleanupMenuSub<WorkspaceCleanupSortKey>
-            label="Sort by"
+            label={translate(
+              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.sortBy',
+              'Sort by'
+            )}
             value={sortKey}
             options={[
-              ['activity', 'Activity'],
-              ['name', 'Name'],
-              ['repo', 'Repo'],
-              ['review', 'Review'],
-              ['git', 'Git']
+              [
+                'activity',
+                translate(
+                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.activity',
+                  'Activity'
+                )
+              ],
+              [
+                'name',
+                translate('auto.components.workspace.cleanup.WorkspaceCleanupDialog.name', 'Name')
+              ],
+              [
+                'repo',
+                translate('auto.components.workspace.cleanup.WorkspaceCleanupDialog.repo', 'Repo')
+              ],
+              [
+                'review',
+                translate(
+                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.review',
+                  'Review'
+                )
+              ],
+              [
+                'git',
+                translate('auto.components.workspace.cleanup.WorkspaceCleanupDialog.git', 'Git')
+              ]
             ]}
             onChange={onSortKeyChange}
           />
           <WorkspaceCleanupMenuSub<WorkspaceCleanupSortDirection>
-            label="Direction"
+            label={translate(
+              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.direction',
+              'Direction'
+            )}
             value={sortDirection}
             options={[
-              ['asc', 'Ascending'],
-              ['desc', 'Descending']
+              [
+                'asc',
+                translate(
+                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.ascending',
+                  'Ascending'
+                )
+              ],
+              [
+                'desc',
+                translate(
+                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.descending',
+                  'Descending'
+                )
+              ]
             ]}
             onChange={onSortDirectionChange}
           />

@@ -2234,7 +2234,52 @@
             "2ddbd6fe8a": "checked",
             "ee81adfcef": "View",
             "4d0b72481c": "Ignore",
-            "9cc26c019d": "Remove"
+            "9cc26c019d": "Remove",
+            "0e2d235c63": "Inactive workspace scan ready",
+            "4a35c08764": "Review",
+            "47123d0108": "Scanning inactive workspaces. You can close this and come back.",
+            "9a3be9f2df": "Scanning inactive workspaces. New rows appear here as they finish. You can close this and come back.",
+            "3d957ff117": "No workspaces match these filters.",
+            "e94b1f8bb4": "Clear filters",
+            "efb3843e75": "Filter and sort workspaces",
+            "93b7381d50": "Filters",
+            "a615e24679": "Sort",
+            "4cc5b73efe": "Finding inactive workspaces...",
+            "5bf2e88480": "{{value0}}/{{value1}} {{value2}} scanned",
+            "searchWorkspaces": "Search workspaces",
+            "age": "Age",
+            "review": "Review",
+            "git": "Git",
+            "context": "Context",
+            "sortBy": "Sort by",
+            "direction": "Direction",
+            "anyAge": "Any age",
+            "archived": "Archived",
+            "anyReview": "Any review",
+            "noPrMr": "No PR/MR",
+            "hasPrMr": "Has PR/MR",
+            "open": "Open",
+            "closed": "Closed",
+            "anyGit": "Any git",
+            "clean": "Clean",
+            "dirty": "Dirty",
+            "unpushed": "Unpushed",
+            "unknown": "Unknown",
+            "anyContext": "Any context",
+            "hasContext": "Has context",
+            "noContext": "No context",
+            "activity": "Activity",
+            "name": "Name",
+            "repo": "Repo",
+            "ascending": "Ascending",
+            "descending": "Descending"
+          },
+          "presentation": {
+            "fixtures": {
+              "reviewAlphaCleanup": "Review alpha cleanup"
+            },
+            "gitlabMrNumber": "MR #{{value0}}",
+            "githubPrNumber": "PR #{{value0}}"
           }
         }
       },
@@ -4018,7 +4063,8 @@
           "groupDeleteFailed": "Failed to delete group",
           "groupDeleteFailedDesc": "Something went wrong while deleting the group. No projects were removed.",
           "failedNestWorkspace": "Failed to nest workspace",
-          "sidebarRowMissing": "Target no longer exists"
+          "sidebarRowMissing": "Target no longer exists",
+          "mobileCreateWorkspace": "Create workspace"
         },
         "WorktreeMetaDialog": {
           "3db0a2a593": "Cancel",

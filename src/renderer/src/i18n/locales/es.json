@@ -2234,7 +2234,52 @@
             "2ddbd6fe8a": "comprobado",
             "ee81adfcef": "Vista",
             "4d0b72481c": "Ignorar",
-            "9cc26c019d": "Eliminar"
+            "9cc26c019d": "Eliminar",
+            "0e2d235c63": "Escaneo de espacios de trabajo inactivos listo",
+            "4a35c08764": "Revisión",
+            "47123d0108": "Escaneando espacios de trabajo inactivos. Puedes cerrar esto y volver más tarde.",
+            "9a3be9f2df": "Escaneando espacios de trabajo inactivos. Las filas nuevas aparecerán aquí a medida que terminen. Puedes cerrar esto y volver más tarde.",
+            "3d957ff117": "Ningún espacio de trabajo coincide con estos filtros.",
+            "e94b1f8bb4": "Borrar filtros",
+            "efb3843e75": "Filtrar y ordenar espacios de trabajo",
+            "93b7381d50": "Filtros",
+            "a615e24679": "Ordenar",
+            "4cc5b73efe": "Buscando espacios de trabajo inactivos...",
+            "5bf2e88480": "{{value0}}/{{value1}} {{value2}} escaneados",
+            "searchWorkspaces": "Buscar espacios de trabajo",
+            "age": "Antigüedad",
+            "review": "Revisión",
+            "git": "Git",
+            "context": "Contexto",
+            "sortBy": "Ordenar por",
+            "direction": "Dirección",
+            "anyAge": "Cualquier antigüedad",
+            "archived": "Archivado",
+            "anyReview": "Cualquier revisión",
+            "noPrMr": "Sin PR/MR",
+            "hasPrMr": "Con PR/MR",
+            "open": "Abierto",
+            "closed": "Cerrado",
+            "anyGit": "Cualquier estado de Git",
+            "clean": "Limpio",
+            "dirty": "Con cambios",
+            "unpushed": "Sin subir",
+            "unknown": "Desconocido",
+            "anyContext": "Cualquier contexto",
+            "hasContext": "Con contexto",
+            "noContext": "Sin contexto",
+            "activity": "Actividad",
+            "name": "Nombre",
+            "repo": "Repositorio",
+            "ascending": "Ascendente",
+            "descending": "Descendente"
+          },
+          "presentation": {
+            "fixtures": {
+              "reviewAlphaCleanup": "Revisar limpieza de alpha"
+            },
+            "gitlabMrNumber": "MR n.º {{value0}}",
+            "githubPrNumber": "PR n.º {{value0}}"
           }
         }
       },
@@ -4004,7 +4049,8 @@
           "hostAuthNeeded": "Autenticación requerida",
           "hostDisconnected": "Desconectado",
           "failedNestWorkspace": "No se pudo anidar el espacio de trabajo",
-          "sidebarRowMissing": "El destino ya no existe"
+          "sidebarRowMissing": "El destino ya no existe",
+          "mobileCreateWorkspace": "Crear espacio de trabajo"
         },
         "WorktreeMetaDialog": {
           "3db0a2a593": "Cancelar",

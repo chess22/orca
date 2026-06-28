@@ -39,6 +39,29 @@ describe('openWorkspaceCreationComposerWithTourHandoff', () => {
     expect(requestContextualTourWhenReady).not.toHaveBeenCalled()
   })
 
+  it('preserves an initial repo when opening through the handoff path', () => {
+    const openModal = vi.fn()
+    vi.spyOn(useAppStore, 'getState').mockImplementation(
+      () =>
+        ({
+          activeContextualTourId: null,
+          activeContextualTourStepIndex: 0,
+          activeContextualTourSource: null,
+          activeModal: 'none',
+          contextualToursSeenIds: [],
+          repos: [{ id: 'repo-1' }],
+          openModal
+        }) as unknown as ReturnType<typeof useAppStore.getState>
+    )
+
+    openWorkspaceCreationComposerWithTourHandoff({ initialRepoId: 'repo-1' })
+
+    expect(openModal).toHaveBeenCalledWith('new-workspace-composer', {
+      telemetrySource: 'sidebar',
+      initialRepoId: 'repo-1'
+    })
+  })
+
   it('hands off from the agent sessions create-worktree step to the workspace-creation tour', () => {
     const openModal = vi.fn()
     const detachContextualTourSource = vi.fn()

@@ -23,6 +23,36 @@
    them visible while pointer devices preserve the reveal-on-hover behavior. */
 @custom-variant can-hover (@media (hover: hover));
 
+.worktree-create-touch-hidden {
+  display: none;
+}
+
+@media (hover: hover) {
+  .worktree-create-touch-hidden {
+    display: inline-flex;
+  }
+}
+
+.worktree-mobile-create-fab {
+  display: block;
+}
+
+@media (hover: hover) {
+  .worktree-mobile-create-fab {
+    display: none;
+  }
+}
+
+.worktree-mobile-create-scroll-padding {
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+}
+
+@media (hover: hover) {
+  .worktree-mobile-create-scroll-padding {
+    padding-bottom: 0;
+  }
+}
+
 .theme-transition-disabled *,
 .theme-transition-disabled *::before,
 .theme-transition-disabled *::after {

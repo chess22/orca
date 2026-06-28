@@ -4,6 +4,7 @@ import type { AppState } from '@/store/types'
 import type { HostedReviewInfo, HostedReviewProvider } from '../../../../shared/hosted-review'
 import type { Repo, Worktree } from '../../../../shared/types'
 import type { WorkspaceCleanupCandidate } from '../../../../shared/workspace-cleanup'
+import { translate } from '@/i18n/i18n'
 
 export type WorkspaceCleanupSortKey = 'activity' | 'name' | 'repo' | 'review' | 'git'
 export type WorkspaceCleanupSortDirection = 'asc' | 'desc'
@@ -110,10 +111,28 @@ function getLinkedReviewFallback(worktree: Worktree | null): {
     return null
   }
   if (worktree.linkedGitLabMR != null) {
-    return { label: `MR #${worktree.linkedGitLabMR}`, provider: 'gitlab' }
+    return {
+      label: translate(
+        'auto.components.workspace.cleanup.presentation.gitlabMrNumber',
+        'MR #{{value0}}',
+        {
+          value0: worktree.linkedGitLabMR
+        }
+      ),
+      provider: 'gitlab'
+    }
   }
   if (worktree.linkedPR != null) {
-    return { label: `PR #${worktree.linkedPR}`, provider: 'github' }
+    return {
+      label: translate(
+        'auto.components.workspace.cleanup.presentation.githubPrNumber',
+        'PR #{{value0}}',
+        {
+          value0: worktree.linkedPR
+        }
+      ),
+      provider: 'github'
+    }
   }
   return null
 }

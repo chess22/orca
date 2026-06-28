@@ -274,6 +274,11 @@ import {
   getProjectGroupExecutionHostIdForRows
 } from './worktree-list-host-filtering'
 import { getFolderWorkspaceCardPrDisplay } from './folder-workspace-card-pr-display'
+import { openWorkspaceCreationComposerWithTourHandoff } from '../contextual-tours/workspace-creation-tour-handoff'
+import {
+  chooseMobileWorktreeCreateTarget,
+  shouldShowMobileWorktreeCreateFab
+} from './mobile-worktree-create-target'
 
 export {
   getScrollTopToRevealBounds,
@@ -290,6 +295,10 @@ type ProjectGroupDeleteDialogState = {
   removeContainedProjects: boolean
 }
 
+type MobileWorktreeCreateFabProps = {
+  onCreate: () => void
+}
+
 // How long to wait after a sortEpoch bump before actually re-sorting.
 // Prevents jarring position shifts when background events (AI starting work,
 // terminal title changes) trigger score recalculations.
@@ -303,6 +312,7 @@ const EMPTY_PTY_IDS_BY_TAB_ID: AppState['ptyIdsByTabId'] = {}
 const EMPTY_RUNTIME_PANE_TITLES_BY_TAB_ID: AppState['runtimePaneTitlesByTabId'] = {}
 const EXPANDING_CARD_MEASUREMENT_ADJUSTMENT_SUPPRESS_MS = 300
 const NOOP_WORKSPACE_BOARD_DRAG_PREVIEW_CALLBACK = (): void => {}
+const REPO_HEADER_CREATE_TOUCH_HIDE_CLASS = 'worktree-create-touch-hidden'
 const WORKTREE_SIDEBAR_SCROLL_STYLE: React.CSSProperties = {
   // Why: TanStack Virtual owns scroll correction. Native browser anchoring can
   // fight virtual row measurement/remounts and produce visible jumps.
@@ -594,6 +604,41 @@ function getWorktreeVisibilityMenuLabel(repo: Repo): string {
 }
 
 const SIDEBAR_POINTER_DRAG_THRESHOLD_PX = 4
+
+function MobileWorktreeCreateFab({ onCreate }: MobileWorktreeCreateFabProps): React.JSX.Element {
+  return (
+    <div
+      className="worktree-mobile-create-fab pointer-events-none absolute bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-40"
+      data-mobile-worktree-add-fab=""
+    >
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="default"
+            size="icon-lg"
+            className="pointer-events-auto size-11 rounded-full border border-worktree-sidebar-border bg-sidebar-primary text-sidebar-primary-foreground shadow-[0_10px_24px_rgba(0,0,0,0.18)] hover:bg-sidebar-primary/90 focus-visible:ring-worktree-sidebar-ring"
+            aria-label={translate(
+              'auto.components.sidebar.WorktreeList.mobileCreateWorkspace',
+              'Create workspace'
+            )}
+            data-contextual-tour-target="workspace-create-control"
+            onClick={onCreate}
+          >
+            <Plus className="size-5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top" sideOffset={4}>
+          {translate(
+            'auto.components.sidebar.WorktreeList.mobileCreateWorkspace',
+            'Create workspace'
+          )}
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  )
+}
+
 type VirtualizedWorktreeViewportProps = {
   rows: HostSectionRow[]
   activeWorktreeId: string | null
@@ -603,6 +648,9 @@ type VirtualizedWorktreeViewportProps = {
   toggleGroup: (key: string) => void
   collapsedGroups: Set<string>
   handleCreateForRepo: (projectId: string) => void
+  handleMobileCreateWorkspace: (targetRepoId: string | null) => void
+  mobileCreateTargetRepoId: string | null
+  showMobileCreateFab: boolean
   handleOpenRepoSettings: (projectId: string, sectionId?: string) => void
   handleOpenWorktreeVisibility: (projectId: string) => void
   handleShowImportedWorktrees: (projectId: string) => void
@@ -1242,6 +1290,9 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
   toggleGroup,
   collapsedGroups,
   handleCreateForRepo,
+  handleMobileCreateWorkspace,
+  mobileCreateTargetRepoId,
+  showMobileCreateFab,
   handleOpenRepoSettings,
   handleOpenWorktreeVisibility,
   handleShowImportedWorktrees,
@@ -3834,7 +3885,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
         onWheel={markDirectScrollInput}
         onDragOver={handleWorktreeDragOver}
         onDrop={handleWorktreeDrop}
-        className="worktree-sidebar-scrollbar h-full overflow-y-scroll overflow-x-hidden pl-1 scrollbar-sleek outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset pt-px"
+        className="worktree-mobile-create-scroll-padding worktree-sidebar-scrollbar h-full overflow-y-scroll overflow-x-hidden pl-1 scrollbar-sleek outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset pt-px"
         style={WORKTREE_SIDEBAR_SCROLL_STYLE}
       >
         <div
@@ -4442,7 +4493,8 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                               <span
                                 className={cn(
                                   'inline-flex cursor-not-allowed transition-[margin,max-width,opacity]',
-                                  REPO_HEADER_ACTION_REVEAL_CLASS
+                                  REPO_HEADER_ACTION_REVEAL_CLASS,
+                                  REPO_HEADER_CREATE_TOUCH_HIDE_CLASS
                                 )}
                                 data-repo-header-action=""
                                 tabIndex={0}
@@ -4467,7 +4519,10 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                                 type="button"
                                 variant="ghost"
                                 size="icon-xs"
-                                className={REPO_HEADER_ACTION_BUTTON_CLASS}
+                                className={cn(
+                                  REPO_HEADER_ACTION_BUTTON_CLASS,
+                                  REPO_HEADER_CREATE_TOUCH_HIDE_CLASS
+                                )}
                                 data-repo-header-action=""
                                 aria-label={
                                   createState?.ariaLabel ??
@@ -4945,6 +5000,11 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
           })}
         </div>
       </div>
+      {showMobileCreateFab ? (
+        <MobileWorktreeCreateFab
+          onCreate={() => handleMobileCreateWorkspace(mobileCreateTargetRepoId)}
+        />
+      ) : null}
     </div>
   )
 })
@@ -4979,6 +5039,7 @@ const WorktreeList = React.memo(function WorktreeList({
   const workspaceLineageByChildKey = useAppStore((s) => s.workspaceLineageByChildKey)
   const worktreesByRepo = useAppStore((s) => s.worktreesByRepo)
   const detectedWorktreesByRepo = useAppStore((s) => s.detectedWorktreesByRepo)
+  const activeRepoId = useAppStore((s) => s.activeRepoId)
   const activeWorktreeId = useAppStore((s) => s.activeWorktreeId)
   const currentSidebarWorktreeId = activeWorktreeId
   const groupBy = useAppStore((s) => s.groupBy)
@@ -5481,6 +5542,13 @@ const WorktreeList = React.memo(function WorktreeList({
       return visibleHostIdSet.has(hostId)
     })
   }, [defaultHostId, repos, visibleHostIdSet])
+  const mobileCreateReposForRows = useMemo(() => {
+    if (filterRepoIds.length === 0) {
+      return visibleReposForRows
+    }
+    const selectedRepoIds = new Set(filterRepoIds)
+    return visibleReposForRows.filter((repo) => selectedRepoIds.has(repo.id))
+  }, [filterRepoIds, visibleReposForRows])
   const visibleProjectGroupsForRows = useMemo(() => {
     if (!visibleHostIdSet) {
       return projectGroups
@@ -5490,6 +5558,26 @@ const WorktreeList = React.memo(function WorktreeList({
       return visibleHostIdSet.has(hostId)
     })
   }, [defaultHostId, projectGroups, visibleHostIdSet])
+  const mobileCreateEligibleRepoIds = useMemo(
+    () => new Set(mobileCreateReposForRows.map((repo) => repo.id)),
+    [mobileCreateReposForRows]
+  )
+  const mobileCreateTargetRepoId = useMemo(() => {
+    const contextualRepoId = chooseMobileWorktreeCreateTarget({
+      activeRepoId,
+      activeWorktreeId,
+      eligibleRepoIds: mobileCreateEligibleRepoIds,
+      worktreeById: worktreeMap
+    })
+    return contextualRepoId ?? mobileCreateReposForRows[0]?.id ?? null
+  }, [
+    activeRepoId,
+    activeWorktreeId,
+    mobileCreateEligibleRepoIds,
+    mobileCreateReposForRows,
+    worktreeMap
+  ])
+  const showMobileCreateFab = shouldShowMobileWorktreeCreateFab(mobileCreateReposForRows.length)
   const visibleFolderWorkspacesForRows = useMemo(() => {
     if (!visibleHostIdSet) {
       return folderWorkspaces
@@ -5851,6 +5939,14 @@ const WorktreeList = React.memo(function WorktreeList({
     },
     [openModal]
   )
+  const handleMobileCreateWorkspace = useCallback((targetRepoId: string | null) => {
+    openWorkspaceCreationComposerWithTourHandoff(
+      targetRepoId ? { initialRepoId: targetRepoId } : {}
+    )
+  }, [])
+  const handleMobileCreateFabClick = useCallback(() => {
+    handleMobileCreateWorkspace(mobileCreateTargetRepoId)
+  }, [handleMobileCreateWorkspace, mobileCreateTargetRepoId])
 
   const handleOpenRepoSettings = useCallback(
     (projectId: string, sectionId?: string) => {
@@ -6547,6 +6643,9 @@ const WorktreeList = React.memo(function WorktreeList({
             )}
           </div>
         </div>
+        {showMobileCreateFab ? (
+          <MobileWorktreeCreateFab onCreate={handleMobileCreateFabClick} />
+        ) : null}
       </div>
     )
   }
@@ -6645,6 +6744,9 @@ const WorktreeList = React.memo(function WorktreeList({
         toggleGroup={toggleGroup}
         collapsedGroups={effectiveCollapsedGroups}
         handleCreateForRepo={handleCreateForRepo}
+        handleMobileCreateWorkspace={handleMobileCreateWorkspace}
+        mobileCreateTargetRepoId={mobileCreateTargetRepoId}
+        showMobileCreateFab={showMobileCreateFab}
         handleOpenRepoSettings={handleOpenRepoSettings}
         handleOpenWorktreeVisibility={handleOpenWorktreeVisibility}
         handleShowImportedWorktrees={handleShowImportedWorktrees}

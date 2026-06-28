@@ -3,6 +3,7 @@ import type { HostedReviewInfo } from '../../../../shared/hosted-review'
 import type { Repo, Worktree } from '../../../../shared/types'
 import type { WorkspaceCleanupCandidate } from '../../../../shared/workspace-cleanup'
 import type { WorkspaceCleanupFilters } from './workspace-cleanup-presentation'
+import { translate } from '@/i18n/i18n'
 
 export const NOW = 1_700_000_000_000
 
@@ -84,7 +85,10 @@ export function makeReview(overrides: Partial<HostedReviewInfo> = {}): HostedRev
   return {
     provider: 'github',
     number: 42,
-    title: 'Review alpha cleanup',
+    title: translate(
+      'auto.components.workspace.cleanup.presentation.fixtures.reviewAlphaCleanup',
+      'Review alpha cleanup'
+    ),
     state: 'open',
     url: 'https://example.test/review/42',
     status: 'neutral',
