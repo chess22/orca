@@ -42,8 +42,27 @@ const PENDING_TITLE_MAX_TTL_MS = Math.max(30_000, PENDING_TITLE_TTL_MS)
 const COMPLETION_REPLAY_GUARD_MS = 1_000
 const HOOK_DONE_QUIET_MS = 1_500
 
+// Why: mirror the main-side TOOL_PROGRESS_HOOK_EVENTS (src/main/agent-hooks/
+// server.ts) so a tool-lifecycle 'working' frame is not mistaken for a new
+// user turn. Plugins like Claude-Mem run background tool/Stop hooks on the same
+// pane after the user's turn already finished; those must not re-arm a second
+// completion notification.
+const TOOL_PROGRESS_HOOK_EVENTS = new Set(['PreToolUse', 'PostToolUse', 'PostToolUseFailure'])
+
 function isCompletionHookState(state: ParsedAgentStatusPayload['state']): boolean {
   return state === 'done' || state === 'waiting' || state === 'blocked'
+}
+
+// Why: a 'working' frame only starts a genuine new turn when it carries an
+// explicit user prompt or a non-tool-progress hook event (e.g.
+// UserPromptSubmit / SessionStart). Background plugin churn arrives as
+// PreToolUse/PostToolUse with no explicit prompt and must not re-arm.
+function isBackgroundToolProgressWorkingFrame(payload: AgentCompletionStatusSnapshot): boolean {
+  return (
+    payload.hasExplicitPrompt !== true &&
+    payload.hookEventName !== undefined &&
+    TOOL_PROGRESS_HOOK_EVENTS.has(payload.hookEventName)
+  )
 }
 
 export function createAgentCompletionCoordinator(
@@ -63,6 +82,11 @@ export function createAgentCompletionCoordinator(
   let lastCompletionIdentity: LastCompletionIdentity | null = null
   let lastForegroundAgent: RecognizedAgentProcess | null = null
   let requiresFreshWorking = false
+  // Why: the turn number for which we suppressed a background tool-progress
+  // 'working' frame (e.g. Claude-Mem). While set, the matching background
+  // 'done' must not re-arm via the done-only new-turn branch. Cleared by any
+  // genuine new turn. null when no background churn is being suppressed.
+  let suppressedBackgroundTurn: number | null = null
   let pollTimer: ReturnType<typeof setTimeout> | null = null
   let pendingTitleTimer: ReturnType<typeof setTimeout> | null = null
   let pendingHookDoneTimer: ReturnType<typeof setTimeout> | null = null
@@ -524,6 +548,16 @@ export function createAgentCompletionCoordinator(
     ) {
       return false
     }
+    if (suppressedBackgroundTurn === currentTurn && lastCompletedTurn === currentTurn) {
+      // Why: while a background plugin (e.g. Claude-Mem) writes memory after the
+      // turn finished, Claude re-renders a working spinner then reverts to idle.
+      // That title flicker belongs to the already-notified turn, not a new one —
+      // re-arming would re-fire the completion the user already saw. The 1s
+      // replay guard above is far too short for multi-second memory writes, so
+      // key off turn identity instead. A genuine new turn clears
+      // suppressedBackgroundTurn via the hook working path before this runs.
+      return false
+    }
     workingStatusObserved = true
     requiresFreshWorking = false
     lastCompletionIdentityByPaneKey.delete(options.paneKey)
@@ -614,9 +648,27 @@ export function createAgentCompletionCoordinator(
       establishAgentEvidence()
     }
     if (payload.state === 'working') {
+      // Why: after we already notified completion for this turn, a background
+      // plugin (e.g. Claude-Mem) can fire tool-progress hooks on the same pane
+      // with no explicit user prompt. Treating those as a new turn re-arms a
+      // duplicate completion notification on the next 'done'. Suppress the
+      // re-arm for that case only; real new turns (explicit prompt / a non-tool
+      // hook event) and sources that emit no hook event name still re-arm.
+      if (
+        isBackgroundToolProgressWorkingFrame(payload) &&
+        !workingStatusObserved &&
+        lastCompletionSource === 'hook' &&
+        lastCompletedTurn === currentTurn
+      ) {
+        suppressedBackgroundTurn = currentTurn
+        clearPendingHookDone()
+        dropPendingTitle()
+        return
+      }
       clearPendingHookDone()
       workingStatusObserved = true
       requiresFreshWorking = false
+      suppressedBackgroundTurn = null
       lastCompletionIdentity = null
       currentTurn += 1
       dropPendingTitle()
@@ -640,6 +692,19 @@ export function createAgentCompletionCoordinator(
         if (payload.state === 'done' && pendingHookDoneTimer !== null) {
           scheduleHookDoneCompletion(payload.agentType ?? options.paneKey, payload)
         }
+        return
+      }
+      if (
+        suppressedBackgroundTurn === currentTurn &&
+        payload.state === 'done' &&
+        payload.hasExplicitPrompt !== true &&
+        !workingStatusObserved &&
+        lastCompletedTurn === currentTurn
+      ) {
+        // Why: this 'done' terminates a background plugin turn (e.g. Claude-Mem's
+        // memory write) whose 'working' frame we suppressed above. Do NOT treat
+        // it as a new turn — that would re-fire the completion notification the
+        // user already saw for this turn.
         return
       }
       if (
@@ -708,6 +773,7 @@ export function createAgentCompletionCoordinator(
     lastCompletionSource = null
     lastCompletionIdentity = null
     lastForegroundAgent = null
+    suppressedBackgroundTurn = null
     requiresFreshWorking = options.requireFreshWorking ?? false
     inspectionGeneration += 1
   }

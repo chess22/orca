@@ -816,6 +816,8 @@ function openMainWindow(): BrowserWindow {
       stateStartedAt,
       launchToken,
       providerSession,
+      hookEventName,
+      hasExplicitPrompt,
       isReplay
     }) => {
       if (mainWindow?.isDestroyed()) {
@@ -834,6 +836,11 @@ function openMainWindow(): BrowserWindow {
         connectionId,
         receivedAt,
         stateStartedAt,
+        // Why: forward the turn-boundary signals so the renderer's completion
+        // coordinator can distinguish a real user turn from background plugin
+        // hook churn (e.g. Claude-Mem memory writes) and not re-notify.
+        ...(hookEventName ? { hookEventName } : {}),
+        ...(hasExplicitPrompt === true ? { hasExplicitPrompt: true } : {}),
         ...(providerSession ? { providerSession } : {}),
         ...(orchestration ? { orchestration } : {})
       })
