@@ -391,6 +391,7 @@ import type {
   WorkspaceCleanupLocalProcessArgs,
   WorkspaceCleanupLocalProcessResult,
   WorkspaceCleanupScanArgs,
+  WorkspaceCleanupScanProgress,
   WorkspaceCleanupScanResult
 } from '../shared/workspace-cleanup'
 import type { KeybindingActionId, KeybindingFileSnapshot } from '../shared/keybindings'
@@ -989,7 +990,10 @@ export type PreloadApi = {
     ) => () => void
   }
   workspaceCleanup: {
-    scan: (args?: WorkspaceCleanupScanArgs) => Promise<WorkspaceCleanupScanResult>
+    scan: (
+      args?: WorkspaceCleanupScanArgs,
+      onProgress?: (progress: WorkspaceCleanupScanProgress) => void
+    ) => Promise<WorkspaceCleanupScanResult>
     dismiss: (args: WorkspaceCleanupDismissArgs) => Promise<void>
     clearDismissals: () => Promise<void>
     hasKillableLocalProcesses: (
@@ -1072,6 +1076,7 @@ export type PreloadApi = {
       cwd?: string | null
       seq?: number
       source?: 'headless' | 'renderer'
+      alternateScreen?: boolean
     } | null>
     getRendererDeliveryDebugSnapshot: () => Promise<{
       pendingPtyCount: number
