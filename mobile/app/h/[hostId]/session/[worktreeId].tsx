@@ -118,7 +118,7 @@ import {
   shouldRecoverTerminalOnAppStateChange
 } from '../../../../src/terminal/terminal-foreground-recovery'
 import { MobileBrowserPane } from '../../../../src/browser/MobileBrowserPane'
-import { isBlankBrowserUrl, normalizeBrowserUrl } from '../../../../src/browser/browser-url'
+import { normalizeBrowserUrl } from '../../../../src/browser/browser-url'
 import { StatusDot } from '../../../../src/components/StatusDot'
 import { ActionSheetModal } from '../../../../src/components/ActionSheetModal'
 import { MobileAgentIcon } from '../../../../src/components/MobileAgentIcon'
@@ -153,6 +153,10 @@ import {
   mobileSessionTabsEqual,
   terminalRecordsEqual
 } from '../../../../src/session/mobile-terminal-records'
+import {
+  getMobileSessionTabTitle,
+  resolveMobileTerminalTabAgentId
+} from '../../../../src/session/mobile-terminal-tab-agent'
 import {
   buildMobileNewTabAgentOptions,
   type MobileNewTabAgentOption,
@@ -288,26 +292,6 @@ function getActiveTabIdForHandle(
         tab.type === 'terminal' && tab.terminal === terminalHandle
     )?.id ?? terminalHandle
   )
-}
-
-function getMobileSessionTabTitle(tab: MobileSessionTab): string {
-  if (tab.type === 'browser') {
-    const title = tab.title.trim()
-    if (title && !isBlankBrowserUrl(title)) {
-      return title
-    }
-    if (isBlankBrowserUrl(tab.url)) {
-      return 'New Browser'
-    }
-    return 'Browser'
-  }
-  if (tab.type === 'markdown') {
-    return tab.title || 'Markdown'
-  }
-  if (tab.type === 'file') {
-    return tab.title || 'File'
-  }
-  return tab.title || 'Terminal'
 }
 
 function MarkdownReader({
@@ -4693,6 +4677,11 @@ export default function SessionScreen() {
                       {t.type === 'file' && (
                         <File size={13} color={colors.textSecondary} strokeWidth={2.1} />
                       )}
+                      {t.type === 'terminal' &&
+                        (() => {
+                          const agentId = resolveMobileTerminalTabAgentId(t)
+                          return agentId ? <MobileAgentIcon agentId={agentId} size={13} /> : null
+                        })()}
                       <Text
                         style={[
                           styles.tabText,
