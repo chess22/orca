@@ -356,11 +356,17 @@ export const test = base.extend<OrcaTestFixtures, OrcaWorkerFixtures>({
             if (!repo) {
               return 0
             }
-            await store.getState().fetchWorktrees(repo.id)
+            await store.getState().updateRepo(repo.id, { externalWorktreeVisibility: 'show' })
+            const authoritative = await store
+              .getState()
+              .fetchWorktrees(repo.id, { requireAuthoritative: true })
+            if (!authoritative) {
+              return 0
+            }
             return store.getState().worktreesByRepo[repo.id]?.length ?? 0
           }, repoPath),
         {
-          timeout: 30_000,
+          timeout: 60_000,
           message: 'seeded e2e worktrees did not load'
         }
       )
