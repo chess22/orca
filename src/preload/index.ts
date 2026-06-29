@@ -451,10 +451,9 @@ const api = {
     reload: (): Promise<void> => ipcRenderer.invoke('app:reload'),
     awaitFirstWindowStartupServices: (): Promise<void> =>
       ipcRenderer.invoke('app:awaitFirstWindowStartupServices'),
-    // Why: on macOS this returns AppleCurrentKeyboardLayoutInputSourceID so
-    // the renderer's keyboard-layout probe can distinguish Polish Pro / US
-    // Extended / ABC Extended / IME Roman modes from plain US QWERTY (see
-    // src/renderer/src/lib/keyboard-layout/input-source-id.ts, issue #1205).
+    // Why: on macOS this returns the active input mode, or the layout ID when
+    // no IME mode is selected, so renderer keyboard workarounds can distinguish
+    // CJK IMEs and compose layouts from plain US QWERTY (see issue #1205).
     // Returns null on non-Darwin or when the defaults read fails.
     getKeyboardInputSourceId: (): Promise<string | null> =>
       ipcRenderer.invoke('app:getKeyboardInputSourceId'),

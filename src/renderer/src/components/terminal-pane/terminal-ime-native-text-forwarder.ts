@@ -162,10 +162,10 @@ export function isImeNativeTextKeydownCandidate(
   if (isSyntheticUnicodeTextKey(event)) {
     return true
   }
-  if (
-    inputSourceFeatures.forwardAsciiPunctuation &&
-    (isAsciiPunctuationKey(event.key) || isCjkDirectPunctuationKey(event.key))
-  ) {
+  if (isCjkDirectPunctuationKey(event.key)) {
+    return true
+  }
+  if (inputSourceFeatures.forwardAsciiPunctuation && isAsciiPunctuationKey(event.key)) {
     return true
   }
   return (
@@ -278,7 +278,10 @@ export function installTerminalImeNativeTextForwarder(args: {
   }
 
   const forwardCommittedText = (event: Event): void => {
-    if (!pendingForward || !(event instanceof InputEvent)) {
+    if (!(event instanceof InputEvent)) {
+      return
+    }
+    if (!pendingForward) {
       return
     }
     if (event.inputType !== 'insertText') {

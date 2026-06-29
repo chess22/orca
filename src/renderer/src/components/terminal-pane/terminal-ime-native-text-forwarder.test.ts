@@ -58,6 +58,16 @@ describe('isImeNativeTextKeydownCandidate', () => {
     }
   })
 
+  it('accepts direct CJK punctuation keydown when the input source probe is stale', () => {
+    expect(
+      isImeNativeTextKeydownCandidate(
+        keyEvent({ key: '，', code: 'Comma' }),
+        false,
+        DISABLED_FEATURES
+      )
+    ).toBe(true)
+  })
+
   it('accepts Vietnamese short replacement keys without enabling punctuation', () => {
     expect(
       isImeNativeTextKeydownCandidate(

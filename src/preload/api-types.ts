@@ -799,10 +799,11 @@ export type AppApi = {
   /** Resolves when the daemon PTY provider and hook receiver have either
    *  started or failed open for the first BrowserWindow. */
   awaitFirstWindowStartupServices: () => Promise<void>
-  /** Returns the macOS `AppleCurrentKeyboardLayoutInputSourceID` when
-   *  available (e.g. `com.apple.keylayout.PolishPro`). Used by the
-   *  keyboard-layout probe to distinguish layouts whose base layer matches
-   *  US QWERTY but whose Option layer composes characters (issue #1205).
+  /** Returns the macOS active input mode, or layout ID when no IME mode is
+   *  selected (e.g. `com.apple.keylayout.PolishPro`). Used by the
+   *  keyboard-layout probe to distinguish CJK IMEs and layouts whose base
+   *  layer matches US QWERTY but whose Option layer composes characters
+   *  (issue #1205).
    *  Returns null on non-Darwin platforms or when the defaults read fails. */
   getKeyboardInputSourceId: () => Promise<string | null>
   /** Updates the macOS Dock unread badge. No-op on Windows/Linux. */
