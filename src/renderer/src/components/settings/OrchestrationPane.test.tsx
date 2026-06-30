@@ -14,6 +14,7 @@ const UPDATE_COMMAND = 'npx skills update orchestration --global'
 const mocks = vi.hoisted(() => ({
   dialogProps: [] as Record<string, unknown>[],
   panelProps: [] as Record<string, unknown>[],
+  refreshOrchestrationSkill: vi.fn(),
   skillInstalled: true
 }))
 
@@ -70,7 +71,7 @@ vi.mock('@/hooks/useInstalledAgentSkills', () => ({
         updatedAt: null
       }
     ],
-    refresh: vi.fn()
+    refresh: mocks.refreshOrchestrationSkill
   })
 }))
 
@@ -108,6 +109,7 @@ describe('OrchestrationPane', () => {
     container = null
     mocks.dialogProps.length = 0
     mocks.panelProps.length = 0
+    mocks.refreshOrchestrationSkill.mockReset()
     mocks.skillInstalled = true
   })
 
@@ -179,5 +181,27 @@ describe('OrchestrationPane', () => {
       })
     )
     expect(rendered.textContent).toContain(INSTALL_COMMAND)
+  })
+
+  it('re-checks the copied install command path when the prompt closes', async () => {
+    mocks.skillInstalled = false
+    const rendered = await renderPane()
+    const copyButton = Array.from(rendered.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Copy install command'
+    )
+
+    await act(async () => {
+      copyButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const onOpenChange = mocks.dialogProps.at(-1)?.onOpenChange
+    expect(onOpenChange).toEqual(expect.any(Function))
+    const closePrompt = onOpenChange as (open: boolean) => void
+
+    await act(async () => {
+      closePrompt(false)
+    })
+
+    expect(mocks.refreshOrchestrationSkill).toHaveBeenCalledTimes(1)
   })
 })

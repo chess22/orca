@@ -68,6 +68,15 @@ export function OrchestrationPane(): React.JSX.Element {
     sourceKinds: GLOBAL_AGENT_SKILL_SOURCE_KINDS
   })
 
+  const handleSkillPromptOpenChange = (open: boolean): void => {
+    setSkillPromptOpen(open)
+    if (!open) {
+      // Why: copied install commands run outside the inline terminal, so closing
+      // the dialog is the explicit moment to re-check disk state.
+      void refreshOrchestrationSkill()
+    }
+  }
+
   if (!showOrchestration) {
     return <div />
   }
@@ -155,7 +164,7 @@ export function OrchestrationPane(): React.JSX.Element {
       <OrchestrationSkillPromptDialog
         command={orchestrationInstallCommand}
         open={skillPromptOpen}
-        onOpenChange={setSkillPromptOpen}
+        onOpenChange={handleSkillPromptOpenChange}
       />
 
       <div className="space-y-4 border-t border-border/60 pt-6">

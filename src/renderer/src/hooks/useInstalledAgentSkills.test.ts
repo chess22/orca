@@ -223,6 +223,38 @@ describe('discoverInstalledAgentSkills', () => {
     await expect(forcedRefresh).resolves.toBe(freshResult)
   })
 
+  it('starts a post-pending scan when explicit re-check requires current disk state', async () => {
+    const firstScan = deferred<SkillDiscoveryResult>()
+    const secondScan = deferred<SkillDiscoveryResult>()
+    const discover = vi.fn<() => Promise<SkillDiscoveryResult>>()
+    discover.mockReturnValueOnce(firstScan.promise)
+    discover.mockReturnValueOnce(secondScan.promise)
+    vi.stubGlobal('window', {
+      api: { skills: { discover } }
+    })
+
+    const surfaceRefresh =
+      _installedAgentSkillDiscoveryInternalsForTests.discoverInstalledAgentSkills(true)
+    const terminalExitRefresh =
+      _installedAgentSkillDiscoveryInternalsForTests.discoverInstalledAgentSkills(
+        true,
+        undefined,
+        true
+      )
+
+    expect(discover).toHaveBeenCalledTimes(1)
+
+    const staleResult = discoveryResult([])
+    firstScan.resolve(staleResult)
+    await expect(surfaceRefresh).resolves.toBe(staleResult)
+
+    expect(discover).toHaveBeenCalledTimes(2)
+
+    const freshResult = discoveryResult([skill({ name: 'orca-cli' })])
+    secondScan.resolve(freshResult)
+    await expect(terminalExitRefresh).resolves.toBe(freshResult)
+  })
+
   it('caches host and WSL discovery results separately', async () => {
     const hostResult = discoveryResult([skill({ name: 'host-skill' })])
     const wslResult = discoveryResult([skill({ name: 'wsl-skill' })])

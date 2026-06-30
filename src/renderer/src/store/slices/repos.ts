@@ -58,7 +58,6 @@ import { buildDismissedOnboardingFolderAgentStartup } from '@/lib/onboarding-fol
 import { markOnboardingProjectAdded } from '@/lib/onboarding-project-checklist'
 import { getSettingsForRepoRuntimeOwner } from '@/lib/repo-runtime-owner'
 import { filterSetupScriptPromptDismissalsToValidRepos } from '@/lib/setup-script-prompt'
-import { notifyInstalledAgentSkillsChanged } from '@/hooks/useInstalledAgentSkills'
 import { translate } from '@/i18n/i18n'
 import {
   getRepoExecutionHostId,
@@ -2271,7 +2270,6 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
       }))
       if (runtimePreferenceChanged) {
         get().clearLocalDetectedAgents()
-        notifyInstalledAgentSkillsChanged()
       }
       return true
     } catch (err) {

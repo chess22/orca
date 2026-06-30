@@ -154,7 +154,12 @@ function SelectedStepAction(props: FeatureWallSetupChecklistProps): React.JSX.El
     return <WorkspacesAction done={activeDone} />
   }
   if (activeStep.id === 'browser') {
-    return <BrowserAction done={activeDone} />
+    return (
+      <BrowserAction
+        done={activeDone}
+        onBrowserUseSkillInstalledChange={props.onBrowserUseSkillInstalledChange}
+      />
+    )
   }
   if (activeStep.id === 'task-sources') {
     return <TaskSourcesAction />

@@ -24,7 +24,6 @@ const projectsDeleteHostSetup = vi.fn()
 const reposList = vi.fn()
 const runtimeEnvironmentCall = vi.fn()
 const runtimeEnvironmentTransportCall = vi.fn()
-const dispatchEventMock = vi.fn()
 
 beforeEach(() => {
   clearRuntimeCompatibilityCacheForTests()
@@ -37,7 +36,6 @@ beforeEach(() => {
   reposList.mockReset()
   runtimeEnvironmentCall.mockReset()
   runtimeEnvironmentTransportCall.mockReset()
-  dispatchEventMock.mockReset()
   runtimeEnvironmentTransportCall.mockImplementation((args: RuntimeEnvironmentCallRequest) => {
     return createCompatibleRuntimeStatusResponseIfNeeded(args) ?? runtimeEnvironmentCall(args)
   })
@@ -56,18 +54,9 @@ beforeEach(() => {
         deleteHostSetup: projectsDeleteHostSetup
       },
       runtimeEnvironments: { call: runtimeEnvironmentTransportCall }
-    },
-    dispatchEvent: dispatchEventMock
+    }
   })
 })
-
-function expectInstalledSkillRefreshEvent(): void {
-  expect(
-    dispatchEventMock.mock.calls.some(([event]) => {
-      return event instanceof CustomEvent && event.type === 'orca:installed-agent-skills-changed'
-    })
-  ).toBe(true)
-}
 
 describe('repo slice project runtime updates', () => {
   it('clears local runtime-scoped detection state when project runtime changes', async () => {
@@ -98,7 +87,6 @@ describe('repo slice project runtime updates', () => {
     expect(store.getState().detectedAgentIds).toBeNull()
     expect(store.getState().isDetectingAgents).toBe(false)
     expect(store.getState().isRefreshingAgents).toBe(false)
-    expectInstalledSkillRefreshEvent()
   })
 
   it('hydrates projects from local IPC when the project API is available', async () => {

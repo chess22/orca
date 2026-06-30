@@ -19,6 +19,8 @@ import {
 let root: Root | null = null
 let container: HTMLDivElement | null = null
 let latestState: InstalledAgentSkillState | null = null
+let latestPrimaryState: InstalledAgentSkillState | null = null
+let latestSiblingState: InstalledAgentSkillState | null = null
 
 function skill(overrides: Partial<DiscoveredSkill>): DiscoveredSkill {
   return {
@@ -82,6 +84,16 @@ function Probe({ discoveryTarget }: { discoveryTarget?: SkillDiscoveryTarget }):
   return null
 }
 
+function SiblingProbe(): null {
+  latestPrimaryState = useInstalledAgentSkillNames(['orca-cli'], {
+    sourceKinds: GLOBAL_AGENT_SKILL_SOURCE_KINDS
+  })
+  latestSiblingState = useInstalledAgentSkillNames(['computer-use'], {
+    sourceKinds: GLOBAL_AGENT_SKILL_SOURCE_KINDS
+  })
+  return null
+}
+
 async function renderProbe(discoveryTarget?: SkillDiscoveryTarget): Promise<void> {
   if (!container) {
     container = document.createElement('div')
@@ -90,6 +102,17 @@ async function renderProbe(discoveryTarget?: SkillDiscoveryTarget): Promise<void
   }
   await act(async () => {
     root?.render(<Probe discoveryTarget={discoveryTarget} />)
+  })
+}
+
+async function renderSiblingProbe(): Promise<void> {
+  if (!container) {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  }
+  await act(async () => {
+    root?.render(<SiblingProbe />)
   })
 }
 
@@ -103,6 +126,8 @@ afterEach(async () => {
   container?.remove()
   container = null
   latestState = null
+  latestPrimaryState = null
+  latestSiblingState = null
   _installedAgentSkillDiscoveryInternalsForTests.reset()
   vi.restoreAllMocks()
   Reflect.deleteProperty(window, 'api')
@@ -141,12 +166,12 @@ describe('useInstalledAgentSkill', () => {
     expect(discover).toHaveBeenNthCalledWith(2, { runtime: 'wsl', wslDistro: 'Fedora' })
   })
 
-  it('ignores same-target background discovery results when a forced refresh is waiting', async () => {
-    const backgroundScan = deferred<SkillDiscoveryResult>()
+  it('starts a fresh scan for manual refresh after an in-flight surface scan settles', async () => {
+    const surfaceScan = deferred<SkillDiscoveryResult>()
     const forcedScan = deferred<SkillDiscoveryResult>()
     const discover = vi
       .fn<(target?: SkillDiscoveryTarget) => Promise<SkillDiscoveryResult>>()
-      .mockReturnValueOnce(backgroundScan.promise)
+      .mockReturnValueOnce(surfaceScan.promise)
       .mockReturnValueOnce(forcedScan.promise)
     Object.defineProperty(window, 'api', {
       configurable: true,
@@ -157,31 +182,31 @@ describe('useInstalledAgentSkill', () => {
 
     const forcedRefresh = latestState?.refresh() ?? Promise.resolve()
 
-    backgroundScan.resolve(discoveryResult([skill({ name: 'linear-tickets' })]))
+    surfaceScan.resolve(discoveryResult([]))
     await act(async () => {
-      await backgroundScan.promise
+      await surfaceScan.promise
       await Promise.resolve()
     })
 
-    expect(latestState?.installed).toBe(false)
     expect(discover).toHaveBeenCalledTimes(2)
 
-    forcedScan.resolve(discoveryResult([]))
+    forcedScan.resolve(discoveryResult([skill({ name: 'linear-tickets' })]))
     await act(async () => {
       await forcedRefresh
     })
 
-    expect(latestState?.installed).toBe(false)
+    await expect(forcedRefresh).resolves.toBe(true)
+    expect(latestState?.installed).toBe(true)
     expect(discover).toHaveBeenNthCalledWith(1, undefined)
     expect(discover).toHaveBeenNthCalledWith(2, undefined)
   })
 
   it('returns installed from refresh when a legacy Linear skill is discovered', async () => {
-    const backgroundScan = deferred<SkillDiscoveryResult>()
+    const surfaceScan = deferred<SkillDiscoveryResult>()
     const forcedScan = deferred<SkillDiscoveryResult>()
     const discover = vi
       .fn<(target?: SkillDiscoveryTarget) => Promise<SkillDiscoveryResult>>()
-      .mockReturnValueOnce(backgroundScan.promise)
+      .mockReturnValueOnce(surfaceScan.promise)
       .mockReturnValueOnce(forcedScan.promise)
     Object.defineProperty(window, 'api', {
       configurable: true,
@@ -190,12 +215,12 @@ describe('useInstalledAgentSkill', () => {
 
     await renderProbe()
 
-    const forcedRefresh = latestState?.refresh() ?? Promise.resolve(false)
-    backgroundScan.resolve(discoveryResult([]))
+    surfaceScan.resolve(discoveryResult([]))
     await act(async () => {
-      await backgroundScan.promise
+      await surfaceScan.promise
     })
 
+    const forcedRefresh = latestState?.refresh() ?? Promise.resolve(false)
     forcedScan.resolve(discoveryResult([skill({ name: 'linear-tickets' })]))
     let installed = false
     await act(async () => {
@@ -204,6 +229,79 @@ describe('useInstalledAgentSkill', () => {
 
     expect(installed).toBe(true)
     expect(latestState?.installed).toBe(true)
+  })
+
+  it('updates sibling hook instances after one hook refreshes discovery', async () => {
+    const surfaceScan = deferred<SkillDiscoveryResult>()
+    const forcedScan = deferred<SkillDiscoveryResult>()
+    const discover = vi
+      .fn<(target?: SkillDiscoveryTarget) => Promise<SkillDiscoveryResult>>()
+      .mockReturnValueOnce(surfaceScan.promise)
+      .mockReturnValueOnce(forcedScan.promise)
+    Object.defineProperty(window, 'api', {
+      configurable: true,
+      value: { skills: { discover } }
+    })
+
+    await renderSiblingProbe()
+
+    const forcedRefresh = latestPrimaryState?.refresh() ?? Promise.resolve(true)
+    surfaceScan.resolve(discoveryResult([]))
+    await act(async () => {
+      await surfaceScan.promise
+      await Promise.resolve()
+    })
+
+    expect(latestPrimaryState?.loading).toBe(true)
+    expect(latestSiblingState?.loading).toBe(true)
+    expect(latestPrimaryState?.installed).toBe(false)
+    expect(latestSiblingState?.installed).toBe(false)
+
+    forcedScan.resolve(discoveryResult([skill({ name: 'computer-use' })]))
+    await act(async () => {
+      await forcedRefresh
+    })
+
+    expect(latestPrimaryState?.installed).toBe(false)
+    expect(latestSiblingState?.installed).toBe(true)
+    expect(discover).toHaveBeenCalledTimes(2)
+  })
+
+  it('clears sibling hook loading when a post-pending refresh fails', async () => {
+    const surfaceScan = deferred<SkillDiscoveryResult>()
+    const forcedScan = deferred<SkillDiscoveryResult>()
+    const discover = vi
+      .fn<(target?: SkillDiscoveryTarget) => Promise<SkillDiscoveryResult>>()
+      .mockReturnValueOnce(surfaceScan.promise)
+      .mockReturnValueOnce(forcedScan.promise)
+    Object.defineProperty(window, 'api', {
+      configurable: true,
+      value: { skills: { discover } }
+    })
+
+    await renderSiblingProbe()
+
+    const forcedRefresh = latestPrimaryState?.refresh() ?? Promise.resolve(true)
+    surfaceScan.resolve(discoveryResult([]))
+    await act(async () => {
+      await surfaceScan.promise
+      await Promise.resolve()
+    })
+
+    expect(latestPrimaryState?.loading).toBe(true)
+    expect(latestSiblingState?.loading).toBe(true)
+
+    forcedScan.reject(new Error('scan failed'))
+    await act(async () => {
+      await forcedRefresh
+      await Promise.resolve()
+    })
+
+    expect(latestPrimaryState?.loading).toBe(false)
+    expect(latestSiblingState?.loading).toBe(false)
+    expect(latestPrimaryState?.error).toBe('scan failed')
+    expect(latestSiblingState?.error).toBe('scan failed')
+    expect(discover).toHaveBeenCalledTimes(2)
   })
 
   it('detects a legacy Linear install through WSL skill discovery', async () => {

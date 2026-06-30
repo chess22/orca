@@ -15,6 +15,7 @@ type AgentFeatureSetupStepProps = {
   featureSetupCommandSelection: OnboardingFeatureSetupSelection | null
   setupBusyLabel: string | null
   onStartFeatureSetup: () => void
+  onTerminalExit?: () => void
 }
 
 export function AgentFeatureSetupStep({
@@ -23,7 +24,8 @@ export function AgentFeatureSetupStep({
   featureSetupCommand,
   featureSetupCommandSelection,
   setupBusyLabel,
-  onStartFeatureSetup
+  onStartFeatureSetup,
+  onTerminalExit
 }: AgentFeatureSetupStepProps): React.JSX.Element {
   const hasSelectedFeatures = hasSelectedOnboardingFeatureSetup(featureSetup)
   const showSetupAction = !featureSetupCommand
@@ -56,6 +58,7 @@ export function AgentFeatureSetupStep({
       {featureSetupCommand ? (
         <FeatureSetupInlineTerminal
           command={featureSetupCommand}
+          onTerminalExit={onTerminalExit}
           selection={featureSetupCommandSelection ?? featureSetup}
         />
       ) : null}

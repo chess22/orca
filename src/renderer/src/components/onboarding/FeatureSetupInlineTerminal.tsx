@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useRef, type KeyboardEvent } from 'react'
 import { track } from '@/lib/telemetry'
-import { notifyInstalledAgentSkillsChanged } from '@/hooks/useInstalledAgentSkills'
 import { OnboardingInlineCommandTerminal } from './OnboardingInlineCommandTerminal'
 import {
   onboardingFeatureSetupTelemetrySelection,
@@ -10,11 +9,13 @@ import { translate } from '@/i18n/i18n'
 
 type FeatureSetupInlineTerminalProps = {
   command: string
+  onTerminalExit?: () => void
   selection: OnboardingFeatureSetupSelection
 }
 
 export function FeatureSetupInlineTerminal({
   command,
+  onTerminalExit,
   selection
 }: FeatureSetupInlineTerminalProps): React.JSX.Element {
   const terminalOpenedTrackedRef = useRef(false)
@@ -74,7 +75,7 @@ export function FeatureSetupInlineTerminal({
       autoScrollIntoView={false}
       onOpened={trackTerminalOpened}
       onInteracted={trackTerminalInteraction}
-      onTerminalExit={notifyInstalledAgentSkillsChanged}
+      onTerminalExit={onTerminalExit}
     />
   )
 }

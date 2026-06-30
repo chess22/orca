@@ -128,6 +128,7 @@ export function AgentCapabilitiesSetupAction(props: {
         setupBusyLabel={setupBusyLabel}
         onStartFeatureSetup={() => void handleStartFeatureSetup()}
         installStatus={capabilitySetupStatus.installStatus}
+        onTerminalExit={() => void capabilitySetupStatus.refreshInstalledSkills()}
       />
     </div>
   )
@@ -199,6 +200,7 @@ function AgentCapabilitySetupControls(props: {
   setupBusyLabel: string | null
   onStartFeatureSetup: () => void
   installStatus: Record<OnboardingFeatureSetupId, AgentCapabilityInstallStatus>
+  onTerminalExit: () => void
 }): React.JSX.Element {
   const hasSelectedFeatures = hasSelectedOnboardingFeatureSetup(props.featureSetup)
   const showSetupAction = !props.featureSetupCommand
@@ -236,6 +238,7 @@ function AgentCapabilitySetupControls(props: {
       {props.featureSetupCommand ? (
         <FeatureSetupInlineTerminal
           command={props.featureSetupCommand}
+          onTerminalExit={props.onTerminalExit}
           selection={props.featureSetupCommandSelection ?? props.featureSetup}
         />
       ) : null}

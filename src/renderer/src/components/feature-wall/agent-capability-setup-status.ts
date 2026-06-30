@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type {
   OnboardingFeatureSetupId,
   OnboardingFeatureSetupSelection
@@ -38,6 +38,7 @@ export type AgentCapabilityReadiness = {
 export type AgentCapabilitySetupStatus = {
   readiness: AgentCapabilityReadiness
   installStatus: Record<OnboardingFeatureSetupId, AgentCapabilityInstallStatus>
+  refreshInstalledSkills: () => Promise<void>
 }
 
 export function useAgentCapabilitySetupStatus(): AgentCapabilitySetupStatus {
@@ -54,6 +55,11 @@ export function useAgentCapabilitySetupStatus(): AgentCapabilitySetupStatus {
     discoveryTarget: activeSkillRuntime.discoveryTarget,
     sourceKinds: GLOBAL_AGENT_SKILL_SOURCE_KINDS
   })
+  const refreshInstalledSkills = useCallback(async (): Promise<void> => {
+    // Why: all three capability hooks share one discovery target; one forced
+    // scan updates the sibling hooks through the installed-skills cache.
+    await browserUseSkill.refresh()
+  }, [browserUseSkill])
   const computerUsePermissionStatus = useComputerUsePermissionStatus(computerUseSkill.installed)
   const readiness: AgentCapabilityReadiness = useMemo(
     () => ({
@@ -92,7 +98,7 @@ export function useAgentCapabilitySetupStatus(): AgentCapabilitySetupStatus {
     [browserUseSkill, computerUsePermissionStatus, computerUseSkill, orchestrationSkill]
   )
 
-  return { readiness, installStatus }
+  return { readiness, installStatus, refreshInstalledSkills }
 }
 
 export function getDefaultAgentCapabilitySetupSelection(

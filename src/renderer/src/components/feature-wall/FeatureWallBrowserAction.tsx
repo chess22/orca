@@ -2,6 +2,12 @@ import { useCallback, useState } from 'react'
 import { ArrowUpRight, Loader2, Terminal } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import {
+  GLOBAL_AGENT_SKILL_SOURCE_KINDS,
+  useInstalledAgentSkill
+} from '@/hooks/useInstalledAgentSkills'
+import { useActiveProjectSkillRuntime } from '@/hooks/useActiveProjectSkillRuntime'
+import { ORCA_CLI_SKILL_NAME } from '@/lib/agent-feature-install-commands'
 import { translate } from '@/i18n/i18n'
 import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { useAppStore } from '@/store'
@@ -15,7 +21,10 @@ import {
   useSetupTargetWorktree
 } from './FeatureWallSetupWorkflowActions'
 
-export function BrowserAction(props: { done: boolean }): React.JSX.Element {
+export function BrowserAction(props: {
+  done: boolean
+  onBrowserUseSkillInstalledChange: (installed: boolean) => void
+}): React.JSX.Element {
   const targetWorktree = useSetupTargetWorktree()
   const openModal = useAppStore((s) => s.openModal)
   const closeModal = useAppStore((s) => s.closeModal)
@@ -65,7 +74,9 @@ export function BrowserAction(props: { done: boolean }): React.JSX.Element {
           )}
         </Button>
       )}
-      <BrowserSkillInstallButton />
+      <BrowserSkillInstallButton
+        onBrowserUseSkillInstalledChange={props.onBrowserUseSkillInstalledChange}
+      />
     </div>
   )
 }
@@ -81,8 +92,15 @@ const BROWSER_ONLY_FEATURE_SETUP: OnboardingFeatureSetupSelection = {
 
 // The grab→agent flow relies on the Orca CLI and browser skill, so offer the same
 // install action the Enable Orca CLI step uses, scoped to just browser use.
-function BrowserSkillInstallButton(): React.JSX.Element {
+function BrowserSkillInstallButton(props: {
+  onBrowserUseSkillInstalledChange: (installed: boolean) => void
+}): React.JSX.Element {
   const recordFeatureInteraction = useAppStore((s) => s.recordFeatureInteraction)
+  const activeSkillRuntime = useActiveProjectSkillRuntime()
+  const browserUseSkill = useInstalledAgentSkill(ORCA_CLI_SKILL_NAME, {
+    discoveryTarget: activeSkillRuntime.discoveryTarget,
+    sourceKinds: GLOBAL_AGENT_SKILL_SOURCE_KINDS
+  })
   const [command, setCommand] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -143,7 +161,15 @@ function BrowserSkillInstallButton(): React.JSX.Element {
   }, [busy, command, recordFeatureInteraction])
 
   if (command) {
-    return <FeatureSetupInlineTerminal command={command} selection={BROWSER_ONLY_FEATURE_SETUP} />
+    return (
+      <FeatureSetupInlineTerminal
+        command={command}
+        onTerminalExit={() => {
+          void browserUseSkill.refresh().then(props.onBrowserUseSkillInstalledChange)
+        }}
+        selection={BROWSER_ONLY_FEATURE_SETUP}
+      />
+    )
   }
 
   return (

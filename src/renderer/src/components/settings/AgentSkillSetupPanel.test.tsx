@@ -12,7 +12,7 @@ const UPDATE_COMMAND = 'npx skills update orca-cli --global'
 
 const mocks = vi.hoisted(() => ({
   clipboardWrite: vi.fn(),
-  terminalProps: [] as { command: string; description: string }[],
+  terminalProps: [] as { command: string; description: string; onTerminalExit?: () => void }[],
   toastError: vi.fn(),
   toastSuccess: vi.fn()
 }))
@@ -25,7 +25,11 @@ vi.mock('sonner', () => ({
 }))
 
 vi.mock('../onboarding/OnboardingInlineCommandTerminal', () => ({
-  OnboardingInlineCommandTerminal: (props: { command: string; description: string }) => {
+  OnboardingInlineCommandTerminal: (props: {
+    command: string
+    description: string
+    onTerminalExit?: () => void
+  }) => {
     mocks.terminalProps.push(props)
     return (
       <div
@@ -264,6 +268,18 @@ describe('AgentSkillSetupPanel', () => {
     expect(container?.textContent).toContain(INSTALL_COMMAND)
     expect(container?.textContent).not.toContain(UPDATE_COMMAND)
     expect(mocks.terminalProps.at(-1)).toMatchObject({ command: INSTALL_COMMAND })
+  })
+
+  it('re-checks the panel when its setup terminal exits', async () => {
+    const onRecheck = vi.fn()
+    await renderInteractivePanel({ onRecheck })
+
+    await clickButton('Install')
+    await act(async () => {
+      mocks.terminalProps.at(-1)?.onTerminalExit?.()
+    })
+
+    expect(onRecheck).toHaveBeenCalledTimes(1)
   })
 
   it('falls back to the install command for installed callers without installedCommand', async () => {
