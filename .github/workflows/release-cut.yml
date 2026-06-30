@@ -67,6 +67,7 @@ jobs:
     outputs:
       tag: ${{ steps.tag.outputs.tag || steps.version.outputs.recovered_tag }}
       should_release: ${{ steps.tag.outputs.tag != '' || steps.version.outputs.recovered_tag != '' }}
+      previous_tag: ${{ steps.previous_tag.outputs.previous_tag }}
       latest_published_rc_tag: ${{ steps.publish_drafts.outputs.latest_published_tag }}
     steps:
       - name: Checkout ref
@@ -493,6 +494,23 @@ jobs:
             git push origin "$TAG"
           fi
 
+      # Why: cut already has a full tag checkout, so resolve the notes
+      # boundary here instead of spending extra GitHub API calls later.
+      - name: Resolve previous desktop tag
+        id: previous_tag
+        if: steps.tag.outputs.tag != '' || steps.version.outputs.recovered_tag != ''
+        env:
+          TAG: ${{ steps.tag.outputs.tag || steps.version.outputs.recovered_tag }}
+        run: |
+          set -euo pipefail
+          previous_tag="$(node config/scripts/previous-desktop-release-tag.mjs "$TAG")"
+          echo "previous_tag=$previous_tag" >>"$GITHUB_OUTPUT"
+          if [[ -n "$previous_tag" ]]; then
+            echo "Previous desktop release tag: $previous_tag"
+          else
+            echo "No previous desktop release tag for $TAG."
+          fi
+
       - name: Release E2E signal summary
         if: always()
         run: |
@@ -521,6 +539,7 @@ jobs:
       - name: Create draft release with bounded generated notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PREVIOUS_TAG: ${{ needs.cut.outputs.previous_tag }}
           TAG: ${{ needs.cut.outputs.tag }}
         run: |
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then

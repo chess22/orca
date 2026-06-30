@@ -198,6 +198,32 @@ describe('Electron runtime package contract', () => {
     expect(versionStep.run).toContain('git rev-parse "$existing_rc_tag"')
   })
 
+  it('passes the locally resolved previous desktop tag to draft release creation', () => {
+    const releaseWorkflow = parse(
+      readFileSync(join(projectDir, '.github/workflows/release-cut.yml'), 'utf8')
+    )
+    const previousTagStep = releaseWorkflow.jobs.cut.steps.find(
+      (step) => step.name === 'Resolve previous desktop tag'
+    )
+    const createReleaseStep = releaseWorkflow.jobs['create-release'].steps.find(
+      (step) => step.name === 'Create draft release with bounded generated notes'
+    )
+
+    expect(releaseWorkflow.jobs.cut.outputs.previous_tag).toBe(
+      '${{ steps.previous_tag.outputs.previous_tag }}'
+    )
+    expect(previousTagStep.if).toContain("steps.tag.outputs.tag != ''")
+    expect(previousTagStep.if).toContain("steps.version.outputs.recovered_tag != ''")
+    expect(previousTagStep.env.TAG).toBe(
+      '${{ steps.tag.outputs.tag || steps.version.outputs.recovered_tag }}'
+    )
+    expect(previousTagStep.run).toContain(
+      'node config/scripts/previous-desktop-release-tag.mjs "$TAG"'
+    )
+    expect(createReleaseStep.env.PREVIOUS_TAG).toBe('${{ needs.cut.outputs.previous_tag }}')
+    expect(createReleaseStep.run).toContain('node config/scripts/create-draft-release.mjs "$TAG"')
+  })
+
   it('bumps separate Homebrew casks for stable and RC desktop tags', () => {
     const releaseWorkflow = parse(
       readFileSync(join(projectDir, '.github/workflows/release-cut.yml'), 'utf8')
