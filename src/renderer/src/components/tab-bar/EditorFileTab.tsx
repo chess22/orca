@@ -12,6 +12,7 @@ import { useRepoById, useWorktreeById } from '@/store/selectors'
 import { useAppStore } from '@/store'
 import { STATUS_COLORS, STATUS_LABELS } from '../right-sidebar/status-display'
 import type { GitFileStatus } from '../../../../shared/types'
+import type { KeybindingActionId } from '../../../../shared/keybindings'
 import type { OpenFile } from '../../store/slices/editor'
 import { getUntitledFileRoot } from '@/components/editor/untitled-file-rename-path'
 import { preventMiddleButtonDefault } from './middle-button-default-guard'
@@ -40,6 +41,7 @@ export default function EditorFileTab({
   onClose,
   onCloseToRight,
   onCloseAll,
+  closeAllShortcutActionId,
   onMakePermanent,
   onTogglePin,
   dragData,
@@ -55,6 +57,7 @@ export default function EditorFileTab({
   onClose: () => void
   onCloseToRight: () => void
   onCloseAll: () => void
+  closeAllShortcutActionId?: KeybindingActionId
   onMakePermanent?: () => void
   onTogglePin: () => void
   dragData: TabDragItemData
@@ -396,6 +399,7 @@ export default function EditorFileTab({
         onTogglePin={onTogglePin}
         onClose={onClose}
         onCloseAll={onCloseAll}
+        closeAllShortcutActionId={closeAllShortcutActionId}
         onCloseToRight={onCloseToRight}
         onOpenMarkdownPreview={openMarkdownPreview}
       />
