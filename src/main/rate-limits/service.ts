@@ -26,6 +26,7 @@ import {
   type CodexAccountSelectionTarget,
   type NormalizedCodexAccountSelectionTarget
 } from '../codex-accounts/runtime-selection'
+import { hasLiveClaudePtys, onClaudePtyExited } from '../claude-accounts/live-pty-gate'
 
 export type InactiveCodexAccountInfo = {
   id: string
@@ -105,6 +106,7 @@ export class RateLimitService {
   private pollInterval: number = DEFAULT_POLL_MS
   private timer: ReturnType<typeof setInterval> | null = null
   private deferredStartupRefreshTimer: ReturnType<typeof setTimeout> | null = null
+  private detachClaudePtyExitListener: (() => void) | null = null
   // Why: after the first recovery attempt, repeated focus/show/restore events
   // during the same outage should not create a tight provider retry loop.
   private lastActiveFailureRetryAtByProvider: Record<ActiveRateLimitProvider, number> = {
@@ -224,6 +226,7 @@ export class RateLimitService {
   }
 
   start(options: { fetchImmediately?: boolean } = {}): void {
+    this.startClaudePtyExitRefreshListener()
     if (options.fetchImmediately !== false) {
       void this.fetchAll()
     } else {
@@ -235,6 +238,8 @@ export class RateLimitService {
   stop(): void {
     this.stopTimer()
     this.clearDeferredStartupRefresh()
+    this.detachClaudePtyExitListener?.()
+    this.detachClaudePtyExitListener = null
     this.detachWindowListeners?.()
     this.detachWindowListeners = null
     this.mainWindow = null
@@ -590,6 +595,25 @@ export class RateLimitService {
       }
       void this.fetchAll()
     }, this.pollInterval)
+  }
+
+  private startClaudePtyExitRefreshListener(): void {
+    if (this.detachClaudePtyExitListener) {
+      return
+    }
+    this.detachClaudePtyExitListener = onClaudePtyExited(() => {
+      const claude = this.state.claude
+      if (
+        hasLiveClaudePtys() ||
+        claude?.status !== 'error' ||
+        !claude.usageMetadata?.deferredByLiveClaudeSession
+      ) {
+        return
+      }
+      // Why: this is an actual readiness signal from the process that owned
+      // credential rotation, so recover without waiting for focus or polling.
+      void this.fetchClaudeOnly({ force: true })
+    })
   }
 
   private stopTimer(): void {

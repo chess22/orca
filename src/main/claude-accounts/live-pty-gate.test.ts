@@ -4,7 +4,8 @@ import {
   endClaudeAuthSwitch,
   isClaudeAuthSwitchInProgress,
   markClaudePtyExited,
-  markClaudePtySpawned
+  markClaudePtySpawned,
+  onClaudePtyExited
 } from './live-pty-gate'
 
 describe('Claude live PTY gate', () => {
@@ -25,5 +26,24 @@ describe('Claude live PTY gate', () => {
     beginClaudeAuthSwitch()
 
     expect(() => beginClaudeAuthSwitch()).toThrow('already in progress')
+  })
+
+  it('notifies listeners only for tracked Claude PTY exits', () => {
+    let calls = 0
+    const unsubscribe = onClaudePtyExited(() => {
+      calls += 1
+    })
+
+    markClaudePtyExited('missing-pty')
+    expect(calls).toBe(0)
+
+    markClaudePtySpawned('live-claude-pty')
+    markClaudePtyExited('live-claude-pty')
+    expect(calls).toBe(1)
+
+    unsubscribe()
+    markClaudePtySpawned('live-claude-pty')
+    markClaudePtyExited('live-claude-pty')
+    expect(calls).toBe(1)
   })
 })

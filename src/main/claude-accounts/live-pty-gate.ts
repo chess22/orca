@@ -1,4 +1,5 @@
 const liveClaudePtyIds = new Set<string>()
+const claudePtyExitListeners = new Set<() => void>()
 let switchInProgress = false
 
 export function markClaudePtySpawned(ptyId: string): void {
@@ -6,7 +7,19 @@ export function markClaudePtySpawned(ptyId: string): void {
 }
 
 export function markClaudePtyExited(ptyId: string): void {
-  liveClaudePtyIds.delete(ptyId)
+  if (!liveClaudePtyIds.delete(ptyId)) {
+    return
+  }
+  for (const listener of claudePtyExitListeners) {
+    listener()
+  }
+}
+
+export function onClaudePtyExited(listener: () => void): () => void {
+  claudePtyExitListeners.add(listener)
+  return () => {
+    claudePtyExitListeners.delete(listener)
+  }
 }
 
 export function hasLiveClaudePtys(): boolean {

@@ -11,6 +11,7 @@ import { fetchCodexRateLimits } from './codex-fetcher'
 import { fetchGeminiRateLimits } from './gemini-usage-fetcher'
 import { fetchKimiRateLimits } from './kimi-fetcher'
 import { fetchOpenCodeGoRateLimits } from './opencode-go-usage-fetcher'
+import { markClaudePtyExited, markClaudePtySpawned } from '../claude-accounts/live-pty-gate'
 
 vi.mock('./claude-fetcher', () => ({
   fetchClaudeRateLimits: vi.fn(),
@@ -68,7 +69,8 @@ function okProvider(
 
 function errorProvider(
   provider: ProviderRateLimits['provider'],
-  message: string
+  message: string,
+  usageMetadata?: ProviderRateLimits['usageMetadata']
 ): ProviderRateLimits {
   return {
     provider,
@@ -76,7 +78,8 @@ function errorProvider(
     weekly: null,
     updatedAt: Date.now(),
     error: message,
-    status: 'error'
+    status: 'error',
+    usageMetadata
   }
 }
 
@@ -411,6 +414,113 @@ describe('RateLimitService', () => {
 
       service.stop()
     } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('refreshes Claude when the live Claude session that deferred credentials exits', async () => {
+    vi.useFakeTimers()
+    const ptyId = 'deferred-claude-refresh'
+    try {
+      markClaudePtySpawned(ptyId)
+      vi.mocked(fetchClaudeRateLimits)
+        .mockResolvedValueOnce(
+          errorProvider('claude', 'waiting for live Claude', {
+            deferredByLiveClaudeSession: true
+          })
+        )
+        .mockResolvedValueOnce(okProvider('claude', 12))
+      vi.mocked(fetchCodexRateLimits).mockResolvedValue(okProvider('codex', 24))
+
+      const service = new RateLimitService()
+      const window = new FakeRateLimitWindow()
+      service.attach(asRateLimitWindow(window))
+      service.start({ fetchImmediately: false })
+
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(fetchClaudeRateLimits).toHaveBeenCalledTimes(1)
+      expect(service.getState().claude?.status).toBe('error')
+
+      markClaudePtyExited(ptyId)
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(fetchClaudeRateLimits).toHaveBeenCalledTimes(2)
+      expect(fetchCodexRateLimits).toHaveBeenCalledTimes(1)
+      expect(service.getState().claude?.status).toBe('ok')
+
+      service.stop()
+    } finally {
+      markClaudePtyExited(ptyId)
+      vi.useRealTimers()
+    }
+  })
+
+  it('waits for the last live Claude session before refreshing deferred credentials', async () => {
+    vi.useFakeTimers()
+    const firstPtyId = 'deferred-claude-refresh-first'
+    const secondPtyId = 'deferred-claude-refresh-second'
+    try {
+      markClaudePtySpawned(firstPtyId)
+      markClaudePtySpawned(secondPtyId)
+      vi.mocked(fetchClaudeRateLimits)
+        .mockResolvedValueOnce(
+          errorProvider('claude', 'waiting for live Claude', {
+            deferredByLiveClaudeSession: true
+          })
+        )
+        .mockResolvedValueOnce(okProvider('claude', 12))
+      vi.mocked(fetchCodexRateLimits).mockResolvedValue(okProvider('codex', 24))
+
+      const service = new RateLimitService()
+      const window = new FakeRateLimitWindow()
+      service.attach(asRateLimitWindow(window))
+      service.start({ fetchImmediately: false })
+
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(fetchClaudeRateLimits).toHaveBeenCalledTimes(1)
+
+      markClaudePtyExited(firstPtyId)
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(fetchClaudeRateLimits).toHaveBeenCalledTimes(1)
+
+      markClaudePtyExited(secondPtyId)
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(fetchClaudeRateLimits).toHaveBeenCalledTimes(2)
+
+      service.stop()
+    } finally {
+      markClaudePtyExited(firstPtyId)
+      markClaudePtyExited(secondPtyId)
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not refresh generic Claude failures when a live Claude session exits', async () => {
+    vi.useFakeTimers()
+    const ptyId = 'generic-claude-failure'
+    try {
+      markClaudePtySpawned(ptyId)
+      vi.mocked(fetchClaudeRateLimits).mockResolvedValue(errorProvider('claude', 'network down'))
+      vi.mocked(fetchCodexRateLimits).mockResolvedValue(okProvider('codex', 24))
+
+      const service = new RateLimitService()
+      const window = new FakeRateLimitWindow()
+      service.attach(asRateLimitWindow(window))
+      service.start({ fetchImmediately: false })
+
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(fetchClaudeRateLimits).toHaveBeenCalledTimes(1)
+
+      markClaudePtyExited(ptyId)
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(fetchClaudeRateLimits).toHaveBeenCalledTimes(1)
+
+      service.stop()
+    } finally {
+      markClaudePtyExited(ptyId)
       vi.useRealTimers()
     }
   })
