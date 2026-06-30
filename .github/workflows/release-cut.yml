@@ -1102,9 +1102,9 @@ jobs:
       - cut
       - create-release
     if: needs.cut.outputs.should_release == 'true'
-    # Why: SignPath validates all jobs that can influence its artifact. Keep
-    # the non-GitHub-hosted Blacksmith macOS build out of the Windows matrix.
-    runs-on: blacksmith-6vcpu-macos-15
+    # Why: SignPath validates the release workflow provenance before signing
+    # Windows. Keep every release-producing job on GitHub-hosted runners.
+    runs-on: macos-15
     permissions:
       actions: read
       contents: write

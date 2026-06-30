@@ -99,16 +99,21 @@ describe('Electron runtime package contract', () => {
     expect(windowsReleaseEntry.os).toBe('windows-2022')
   })
 
-  it('keeps the Blacksmith macOS release build out of the SignPath Windows matrix', () => {
+  it('keeps release-cut signing provenance on GitHub-hosted runners', () => {
     const releaseWorkflow = parse(
       readFileSync(join(projectDir, '.github/workflows/release-cut.yml'), 'utf8')
     )
     const buildMatrixRunners = releaseWorkflow.jobs.build.strategy.matrix.include.map(
       ({ os }) => os
     )
+    const releaseWorkflowText = readFileSync(
+      join(projectDir, '.github/workflows/release-cut.yml'),
+      'utf8'
+    )
 
+    expect(releaseWorkflowText).not.toContain('blacksmith-')
+    expect(releaseWorkflow.jobs['build-mac']['runs-on']).toBe('macos-15')
     expect(buildMatrixRunners).not.toContain('blacksmith-6vcpu-macos-15')
-    expect(releaseWorkflow.jobs['build-mac']['runs-on']).toBe('blacksmith-6vcpu-macos-15')
     expect(releaseWorkflow.jobs['publish-release'].needs).toContain('build')
     expect(releaseWorkflow.jobs['publish-release'].needs).toContain('build-mac')
   })
