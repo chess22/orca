@@ -9,6 +9,7 @@ import type { AgentCompletionStatusSnapshot } from './agent-completion-coordinat
 import {
   countReposNeedingNotificationDisambiguation,
   getPaneKeyTabId,
+  hasActiveOrchestrationChildForPaneKey,
   hasLivePtyForNotification,
   isCurrentKnownPaneKey,
   isCurrentLivePaneKey
@@ -135,7 +136,18 @@ export function dispatchTerminalNotification(
     }
   }
 
-  if (event.suppressOsNotification) {
+  const isCompletionOsNotification =
+    event.source === 'agent-task-complete' &&
+    (!agentStatus || agentStatus.state === 'done' || eventAgentStatusSnapshot?.state === 'done')
+  const shouldSuppressOsNotification =
+    event.suppressOsNotification === true ||
+    (isCompletionOsNotification &&
+      Boolean(
+        event.paneKey && hasActiveOrchestrationChildForPaneKey(state, worktreeId, event.paneKey)
+      ))
+  // Why: orchestration children are explicit task-tree state; keep in-app
+  // attention but avoid a false native "done" banner while a child is active.
+  if (shouldSuppressOsNotification) {
     return
   }
 
