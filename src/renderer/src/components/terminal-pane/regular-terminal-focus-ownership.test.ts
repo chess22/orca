@@ -110,6 +110,54 @@ describe('regular terminal focus ownership', () => {
     expect(document.activeElement).toBe(helper)
   })
 
+  it('reclaims mirror and refocuses the helper when window blur dropped focus to body', () => {
+    const pane = appendPane()
+    const helper = appendHelper(pane)
+    const syncFocused = vi.fn()
+    const focus = vi.spyOn(helper, 'focus')
+    helper.focus()
+
+    releaseTerminalFocusForWindowBlur({
+      container: pane,
+      activeElement: helper,
+      syncFocused
+    })
+    syncFocused.mockClear()
+    document.body.focus()
+    focus.mockClear()
+
+    const synced = resyncTerminalFocusForWindowFocus({
+      container: pane,
+      activeElement: document.activeElement,
+      syncFocused,
+      releasedMirrorOnWindowBlur: true,
+      isMac: false
+    })
+
+    expect(synced).toBe(true)
+    expect(syncFocused).toHaveBeenCalledWith(true)
+    expect(focus).toHaveBeenCalledOnce()
+    expect(document.activeElement).toBe(helper)
+  })
+
+  it('does not reclaim focus on window focus without a prior blur mirror release', () => {
+    const pane = appendPane()
+    appendHelper(pane)
+    const syncFocused = vi.fn()
+    document.body.focus()
+
+    const synced = resyncTerminalFocusForWindowFocus({
+      container: pane,
+      activeElement: document.activeElement,
+      syncFocused,
+      releasedMirrorOnWindowBlur: false,
+      isMac: false
+    })
+
+    expect(synced).toBe(false)
+    expect(syncFocused).not.toHaveBeenCalled()
+  })
+
   it('resyncs terminal ownership on renderer focus when the same helper remains active', () => {
     const pane = appendPane()
     const helper = appendHelper(pane)

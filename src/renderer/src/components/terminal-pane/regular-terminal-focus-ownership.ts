@@ -35,6 +35,15 @@ export function getPaneOwnedActiveHelperTextarea(
   return activeElement
 }
 
+function getPaneHelperTextarea(container: HTMLElement): HTMLElement | null {
+  const helper = container.querySelector('.xterm-helper-textarea')
+  return helper instanceof HTMLElement ? helper : null
+}
+
+function isDocumentBodyOrNull(activeElement: Element | null, ownerDocument: Document): boolean {
+  return activeElement === null || activeElement === ownerDocument.body
+}
+
 export function releaseTerminalFocusForOutsidePointerDown(args: {
   container: HTMLElement
   activeElement: Element | null
@@ -72,17 +81,42 @@ export function resyncTerminalFocusForWindowFocus(args: {
   container: HTMLElement
   activeElement: Element | null
   syncFocused: TerminalInputFocusSync
+  /**
+   * Set when this pane cleared the shortcut mirror on window blur while the
+   * helper was still (or had been) the typing surface — allows reclaim after
+   * Chromium moves focus to body/null on app reactivation.
+   */
+  releasedMirrorOnWindowBlur?: boolean
   /** Override the macOS check (tests). Defaults to the navigator user agent. */
   isMac?: boolean
   /** Override the refocus scheduler (tests). Defaults to requestAnimationFrame. */
   scheduleRefocus?: RefocusScheduler
 }): boolean {
-  const helper = getPaneOwnedActiveHelperTextarea(args.container, args.activeElement)
+  const ownedActive = getPaneOwnedActiveHelperTextarea(args.container, args.activeElement)
+  let helper = ownedActive
+  let needsProgrammaticFocus = false
+
   if (!helper) {
-    return false
+    const ownerDocument = args.container.ownerDocument
+    if (
+      args.releasedMirrorOnWindowBlur &&
+      isDocumentBodyOrNull(args.activeElement, ownerDocument)
+    ) {
+      helper = getPaneHelperTextarea(args.container)
+      if (!helper) {
+        return false
+      }
+      needsProgrammaticFocus = true
+    } else {
+      return false
+    }
   }
 
   args.syncFocused(true)
+
+  if (needsProgrammaticFocus) {
+    helper.focus()
+  }
 
   // Why: on macOS, reactivating the app leaves Chromium's NSTextInputContext
   // stale on the still-focused helper textarea, so the IME is stranded in ASCII
