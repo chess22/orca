@@ -3164,14 +3164,12 @@ export function connectPanePty(
         isForeground: foreground,
         isInPlaceRewrite: renderRefreshDecision.inPlaceRewrite
       })
-      // Why: latch keystroke proximity when a synchronized foreground frame opens
-      // so its split end marker stays latency-sensitive; a frame already active
-      // keeps the latch, otherwise reset it once we leave synchronized output.
-      if (
-        synchronizedForegroundOutput &&
-        synchronizedOutputStarted &&
-        !synchronizedForegroundOutputActive
-      ) {
+      // Why: recompute the latch on every synchronized START so each frame's
+      // interactivity is judged by its own open time vs the last keystroke and
+      // can't leak across a same-chunk close+open; an active frame with no new
+      // start retains it (the split-end-marker headline fix), and we only clear
+      // it once we leave synchronized output on a chunk that is not the end.
+      if (synchronizedForegroundOutput && synchronizedOutputStarted) {
         synchronizedForegroundFrameInteractive =
           performance.now() - lastTerminalInputAt <=
           FOREGROUND_SYNCHRONIZED_FRAME_INTERACTIVE_WINDOW_MS

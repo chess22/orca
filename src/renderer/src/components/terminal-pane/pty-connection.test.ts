@@ -8259,6 +8259,128 @@ describe('connectPanePty', () => {
     }
   })
 
+  it('does not leak the interactive latch across a same-chunk close+open to a stale frame', async () => {
+    // Why (STA-1041 hardening): a single chunk can close the active submit frame
+    // and open a new one (`…?2026l…?2026h…`). The new frame opened long after the
+    // keystroke, so it must NOT inherit the prior frame's interactive latch and
+    // fast-path; it must coalesce behind the 1s fallback. Without first opening a
+    // genuinely interactive frame, there is no latch to leak and the test is moot.
+    const restoreNavigator = temporarilySetNavigatorUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+    )
+    try {
+      const { connectPanePty } = await import('./pty-connection')
+      const transport = createMockTransport()
+      const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
+      transport.connect.mockImplementation(
+        async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+          capturedDataCallback.current = callbacks.onData ?? null
+          return 'pty-id'
+        }
+      )
+      transportFactoryQueue.push(transport)
+
+      const pane = createPane(1)
+      connectPanePty(pane as never, createManager(1) as never, createDeps() as never)
+      await flushAsyncTicks(6)
+
+      vi.useFakeTimers()
+      // Load-bearing setup: Enter submits and opens an INTERACTIVE frame so the
+      // latch (synchronizedForegroundFrameInteractive) genuinely becomes true. The
+      // frame stays OPEN (active) — no end marker yet — which is the precondition
+      // for the leak: the buggy set-branch is gated on !active.
+      sendTerminalInputThroughPane(pane, '\r')
+      const repaintBody = 'opencode repaint '.repeat(200)
+      expect(repaintBody.length).toBeGreaterThan(2048)
+      capturedDataCallback.current?.(`\x1b[?2026h${repaintBody}`)
+      // Move well past the 400ms interactive window WITHOUT closing the frame, so
+      // any NEW frame opening now must be classified non-interactive.
+      vi.advanceTimersByTime(500)
+      pane.terminal.write.mockClear()
+
+      // A single chunk closes the still-active prior frame AND opens a new one.
+      // The new frame opened ~500ms after the keystroke. Pre-hardening, the prior
+      // frame's active flag skips the set-branch and the end marker skips the
+      // reset-branch, so the new frame leaks interactive=true; the recompute must
+      // judge it from its own open time and yield false.
+      capturedDataCallback.current?.(`\x1b[?2026l\x1b[?2026h${repaintBody}`)
+      vi.advanceTimersByTime(40)
+      pane.terminal.write.mockClear()
+
+      // The new frame's split restore + end marker arrive in a later chunk.
+      const staleEndChunk = `${repaintBody}\x1b[?25l\x1b[13;14H\x1b[?25h\x1b[?2026l`
+      expect(staleEndChunk.length).toBeGreaterThan(2048)
+      capturedDataCallback.current?.(staleEndChunk)
+
+      // The fast ~16ms window must NOT flush this stale non-interactive frame.
+      vi.advanceTimersByTime(20)
+      expect(pane.terminal.write).not.toHaveBeenCalled()
+
+      // Only the full 1s coalesce fallback drains it, restoring the protection.
+      vi.advanceTimersByTime(1000)
+      expect(pane.terminal.write).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+      restoreNavigator()
+    }
+  })
+
+  it('coalesces a second synchronized frame that opens after the window with no keystroke', async () => {
+    // Why (STA-1041 hardening, complementary guard): two synchronized frames in
+    // SEPARATE chunks — the first interactive (recent keystroke), the second
+    // opening after the 400ms window with no keystroke. The second frame's START
+    // must re-evaluate interactivity from its own open time and coalesce behind
+    // the 1s fallback. Passes pre- and post-hardening; guards against regressions.
+    const restoreNavigator = temporarilySetNavigatorUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+    )
+    try {
+      const { connectPanePty } = await import('./pty-connection')
+      const transport = createMockTransport()
+      const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
+      transport.connect.mockImplementation(
+        async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+          capturedDataCallback.current = callbacks.onData ?? null
+          return 'pty-id'
+        }
+      )
+      transportFactoryQueue.push(transport)
+
+      const pane = createPane(1)
+      connectPanePty(pane as never, createManager(1) as never, createDeps() as never)
+      await flushAsyncTicks(6)
+
+      vi.useFakeTimers()
+      // Frame 1: submit-driven and interactive; opens and closes cleanly.
+      sendTerminalInputThroughPane(pane, '\r')
+      const repaintBody = 'opencode repaint '.repeat(200)
+      expect(repaintBody.length).toBeGreaterThan(2048)
+      capturedDataCallback.current?.(`\x1b[?2026h${repaintBody}\x1b[?2026l`)
+      vi.advanceTimersByTime(40)
+
+      // Move past the 400ms window with no further keystroke, then open frame 2.
+      vi.advanceTimersByTime(500)
+      capturedDataCallback.current?.(`\x1b[?2026h${repaintBody}`)
+      vi.advanceTimersByTime(40)
+      pane.terminal.write.mockClear()
+
+      // Frame 2's split cursor restore + end marker arrive in a later chunk.
+      const secondEndChunk = `${repaintBody}\x1b[?25l\x1b[13;14H\x1b[?25h\x1b[?2026l`
+      capturedDataCallback.current?.(secondEndChunk)
+
+      // The fast ~16ms window must NOT flush this non-interactive second frame.
+      vi.advanceTimersByTime(20)
+      expect(pane.terminal.write).not.toHaveBeenCalled()
+
+      // The full 1s coalesce fallback drains it so the frame is never lost.
+      vi.advanceTimersByTime(1000)
+      expect(pane.terminal.write).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+      restoreNavigator()
+    }
+  })
+
   it('keeps terminal UI drawing glyphs on the active renderer', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport()
