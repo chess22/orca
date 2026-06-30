@@ -63,6 +63,13 @@ import {
   shouldInstallManagedHooks
 } from './startup/configure-process'
 import { ensureVirtualDisplayForHeadlessServe } from './startup/ensure-virtual-display'
+import { consumeGpuFallbackMarker, writeGpuFallbackMarker } from './startup/gpu-fallback-marker'
+import {
+  DEFAULT_GPU_CRASH_FALLBACK_THRESHOLD,
+  DEFAULT_GPU_CRASH_FALLBACK_WINDOW_MS,
+  GpuCrashFallbackTracker,
+  isGpuChildProcessType
+} from './crash-reporting/gpu-crash-fallback-decision'
 import {
   shouldSuppressDevEducation,
   suppressDevEducationForStore
@@ -188,6 +195,14 @@ let automations: AutomationService | null = null
 let keybindings: KeybindingService | null = null
 let expectedRendererReload: { webContentsId: number; until: number } | null = null
 let firstWindowStartupServicesReady: Promise<void> = Promise.resolve()
+// Why: GPU child crashes clustered right after launch indicate a broken driver;
+// track them so Orca can relaunch once with hardware acceleration disabled.
+const gpuLaunchTimeMs = Date.now()
+const gpuCrashFallbackTracker = new GpuCrashFallbackTracker({
+  windowMs: DEFAULT_GPU_CRASH_FALLBACK_WINDOW_MS,
+  threshold: DEFAULT_GPU_CRASH_FALLBACK_THRESHOLD
+})
+let gpuFallbackActiveThisLaunch = false
 let localPtyStartupReady: Promise<void> = Promise.resolve()
 const AGENT_STATE_CRASH_BREADCRUMB_MIN_INTERVAL_MS = 30_000
 const isServeMode = process.argv.includes('--serve')
@@ -513,6 +528,7 @@ if (hasSingleInstanceLock) {
   })
   configureElectronNetworkCompatibility()
   enableMainProcessGpuFeatures()
+  maybeApplyGpuFallbackForThisLaunch()
   // Why: headless serve backs browser panes with offscreen BrowserWindows, which
   // need an X display on Linux. Ensure one (Xvfb) before whenReady; the result
   // gates whether the offscreen backend is installed so capability stays honest.
@@ -979,6 +995,56 @@ async function presentRendererRecoveryPrompt(recentRecoveryCount: number): Promi
     isQuitting = true
     app.quit()
   }
+}
+
+// Why: the GPU-fallback marker must be read before app.whenReady() resolves so
+// app.disableHardwareAcceleration() can take effect. Desktop only; headless
+// serve already runs software rendering on the platforms that need it.
+function maybeApplyGpuFallbackForThisLaunch(): void {
+  if (isServeMode) {
+    return
+  }
+  const marker = consumeGpuFallbackMarker(app.getPath('userData'))
+  if (!marker) {
+    return
+  }
+  app.disableHardwareAcceleration()
+  app.commandLine.appendSwitch('disable-gpu')
+  gpuFallbackActiveThisLaunch = true
+  recordCrashBreadcrumb('gpu_fallback_applied', {
+    crashesInWindow: marker.crashesInWindow
+  })
+}
+
+// Why: a burst of GPU child crashes right after launch means hardware
+// acceleration is unusable on this machine. Persist a marker and relaunch once
+// with software rendering instead of letting the GPU keep crashing.
+function handleGpuChildCrash(reason: string, exitCode: number | null): void {
+  // Software rendering already active or shutting down: nothing more to do.
+  if (gpuFallbackActiveThisLaunch || isQuitting || isServeMode) {
+    return
+  }
+  const result = gpuCrashFallbackTracker.recordGpuCrash(Date.now() - gpuLaunchTimeMs)
+  if (!result.shouldEngageFallback) {
+    return
+  }
+  recordCrashBreadcrumb('gpu_fallback_engaged', {
+    reason,
+    exitCode,
+    crashesInWindow: result.crashesInWindow
+  })
+  try {
+    writeGpuFallbackMarker(app.getPath('userData'), {
+      engagedAt: Date.now(),
+      crashesInWindow: result.crashesInWindow
+    })
+  } catch (error) {
+    console.warn('[gpu-fallback] failed to persist marker:', error)
+    return
+  }
+  isQuitting = true
+  app.relaunch()
+  app.exit(0)
 }
 
 function recordProcessGoneCrash(
@@ -1655,6 +1721,9 @@ app.whenReady().then(async () => {
       serviceName: details.serviceName,
       type: details.type
     })
+    if (isGpuChildProcessType(details.type)) {
+      handleGpuChildCrash(details.reason, details.exitCode ?? null)
+    }
   })
 
   logStartupMilestone('services-initialized')
