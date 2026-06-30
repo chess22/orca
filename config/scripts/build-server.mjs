@@ -10,9 +10,9 @@
  * bundle is truly Electron-free.
  */
 import { build } from 'esbuild'
-import { mkdirSync, writeFileSync, readFileSync, copyFileSync } from 'fs'
-import { join, dirname } from 'path'
-import { fileURLToPath } from 'url'
+import { mkdirSync, writeFileSync, readFileSync, copyFileSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..', '..')
