@@ -977,8 +977,8 @@ export function ResourceUsageStatusSegment({
     ]
   )
 
-  // Why: orphanCount drives the trigger badge (always visible in the status
-  // bar, popover open or not) so it must compute outside the open-gate.
+  // Why: orphan detection needs daemon inventory. Keep it open-only so the
+  // closed badge never reintroduces a background global session scan.
   const orphanCount = useMemo(() => {
     if (!open || !workspaceSessionReady || runtimeEnvironmentActive) {
       return 0
@@ -992,7 +992,11 @@ export function ResourceUsageStatusSegment({
     }
     return buildResourceSessionBindingIndex(resourceSessionBindings).boundPtyIds.size
   }, [resourceSessionBindings, workspaceSessionReady, runtimeEnvironmentActive])
-  const triggerSessionCount = open ? sessions.length : closedSessionCount
+  const triggerSessionCount = runtimeEnvironmentActive
+    ? 0
+    : open
+      ? sessions.length
+      : closedSessionCount
 
   const { totalMemory, totalCpu, hostShare, memBadgeLabel } = useMemo(() => {
     const memory = resourceSnapshot?.totalMemory ?? 0
@@ -1007,10 +1011,8 @@ export function ResourceUsageStatusSegment({
   }, [resourceSnapshot])
 
   // Why: memorySnapshotError is null both for "last fetch succeeded" and
-  // "never fetched". When the segment is mounted but the popover hasn't
-  // been opened, fetchMemorySnapshot has never run, so a sessions IPC
-  // failure on the always-on poll would otherwise be silent. Treat the
-  // absence of any snapshot plus a sessions error as unreachable too.
+  // "never fetched". If session refresh fails before a memory snapshot exists,
+  // treat that as daemon-unreachable too.
   const daemonUnreachable =
     !runtimeEnvironmentActive &&
     sessionsError &&
