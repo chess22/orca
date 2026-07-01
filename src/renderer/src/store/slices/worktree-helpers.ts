@@ -30,6 +30,7 @@ export { getRepoIdFromWorktreeId } from '../../../../shared/worktree-id'
 
 export type WorktreeDeleteState = {
   isDeleting: boolean
+  phase?: 'deleting' | 'queued'
   error: string | null
   canForceDelete: boolean
 }
@@ -180,6 +181,7 @@ export type WorktreeSlice = {
     force?: boolean
   ) => Promise<({ ok: true } & RemoveWorktreeResult) | { ok: false; error: string }>
   markWorktreesDeleting: (worktreeIds: readonly string[]) => void
+  markWorktreesQueuedForDeletion: (worktreeIds: readonly string[]) => void
   forceDeletePreservedBranch: (
     worktreeId: string,
     branchName: string,

@@ -4,8 +4,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
-  Check,
-  EyeOff,
   Loader2,
   RefreshCcw,
   Search,
@@ -38,6 +36,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
+import { Progress } from '@/components/ui/progress'
 import RepoMultiCombobox from '@/components/ui/repo-multi-combobox'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -48,16 +47,13 @@ import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { isGitRepoKind } from '../../../../shared/repo-kind'
 import {
   canQueueWorkspaceCleanupCandidate,
-  type WorkspaceCleanupBlocker,
   type WorkspaceCleanupCandidate,
   type WorkspaceCleanupScanError,
   type WorkspaceCleanupScanProgress
 } from '../../../../shared/workspace-cleanup'
 import {
   filterWorkspaceCleanupCandidates,
-  getWorkspaceCleanupGitLabel,
   getWorkspaceCleanupReviewInfo,
-  hasWorkspaceCleanupLocalContext,
   sortWorkspaceCleanupCandidates,
   type WorkspaceCleanupContextFilter,
   type WorkspaceCleanupFilters,
@@ -68,6 +64,18 @@ import {
   type WorkspaceCleanupSortKey,
   type WorkspaceCleanupTimeFilter
 } from './workspace-cleanup-presentation'
+import {
+  startWorkspaceCleanupBackgroundRemoval,
+  type WorkspaceCleanupRemovalProgress
+} from './workspace-cleanup-background-removal'
+import { CandidateRow } from './workspace-cleanup-candidate-row'
+import {
+  getCandidateStatus,
+  getContextPillLabel,
+  getDirtyGitLabel,
+  getReviewPillTone
+} from './workspace-cleanup-candidate-row-data'
+import { StatusPill } from './workspace-cleanup-status-pill'
 import {
   resolveWorkspaceCleanupActiveView,
   type WorkspaceCleanupView,
@@ -89,25 +97,6 @@ const EMPTY_REVIEW_INFO: WorkspaceCleanupReviewInfo = {
   state: null,
   provider: null,
   title: null
-}
-
-const BLOCKER_LABELS: Record<WorkspaceCleanupBlocker, string> = {
-  'main-worktree': 'Main workspace',
-  'folder-repo': 'Folder project',
-  pinned: 'Pinned',
-  'active-workspace': 'Active workspace',
-  'running-terminal': 'Running terminal process',
-  'terminal-liveness-unknown': 'Terminal liveness unknown',
-  'dirty-editor-buffer': 'Unsaved editor buffer',
-  'volatile-local-context': 'Volatile local context',
-  'recent-visible-context': 'Recently visited tabs',
-  'live-agent': 'Active agent',
-  'ssh-disconnected': 'Remote unavailable',
-  'git-status-error': 'Git status unavailable',
-  'dirty-files': 'Changed files',
-  'unpushed-commits': 'Unpushed commits',
-  'unknown-base': 'Could not verify unpushed commits',
-  dismissed: 'Ignored'
 }
 
 function formatRelativeTime(timestamp: number): string {
@@ -204,13 +193,19 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
   const dismissCandidates = useAppStore((s) => s.dismissWorkspaceCleanupCandidates)
   const resetDismissals = useAppStore((s) => s.resetWorkspaceCleanupDismissals)
   const removeCandidates = useAppStore((s) => s.removeWorkspaceCleanupCandidates)
+  const markWorktreesQueuedForDeletion = useAppStore((s) => s.markWorktreesQueuedForDeletion)
+  const clearWorktreeDeleteState = useAppStore((s) => s.clearWorktreeDeleteState)
 
   const open = activeModal === 'workspace-cleanup'
   const openRef = useRef(open)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [expandedRowIds, setExpandedRowIds] = useState<Set<string>>(() => new Set())
   const [activeView, setActiveView] = useState<WorkspaceCleanupView>('ready')
   const [confirming, setConfirming] = useState(false)
-  const [removing, setRemoving] = useState(false)
+  const [confirmCandidates, setConfirmCandidates] = useState<WorkspaceCleanupCandidate[]>([])
+  const [removalProgress, setRemovalProgress] = useState<WorkspaceCleanupRemovalProgress | null>(
+    null
+  )
   const [rowFailures, setRowFailures] = useState<Record<string, string>>({})
   const [repoSelection, setRepoSelection] = useState<ReadonlySet<string>>(() => new Set())
   const [filters, setFilters] = useState<WorkspaceCleanupFilters>(DEFAULT_FILTERS)
@@ -220,6 +215,7 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
   const autoScanAttemptedForOpenRef = useRef(false)
   const latestReadyToastScanAtRef = useRef<number | null>(null)
   const wasOpenRef = useRef(false)
+  const removalInFlightRef = useRef(false)
   const mountedRef = useMountedRef()
   const eligibleRepos = useMemo(() => repos.filter((repo) => isGitRepoKind(repo)), [repos])
   const eligibleRepoIds = useMemo(() => eligibleRepos.map((repo) => repo.id), [eligibleRepos])
@@ -289,14 +285,16 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
     if (!wasOpenRef.current) {
       wasOpenRef.current = true
       autoScanAttemptedForOpenRef.current = false
-      setActiveView('ready')
-      setConfirming(false)
-      setRowFailures({})
-      setFilters(DEFAULT_FILTERS)
-      setSortKey('activity')
-      setSortDirection('asc')
-      if (scan) {
-        setSelectedIds(getDefaultSelectedWorkspaceCleanupIds(scan.candidates))
+      if (!removalInFlightRef.current) {
+        setActiveView('ready')
+        setConfirming(false)
+        setRowFailures({})
+        setFilters(DEFAULT_FILTERS)
+        setSortKey('activity')
+        setSortDirection('asc')
+        if (scan) {
+          setSelectedIds(getDefaultSelectedWorkspaceCleanupIds(scan.candidates))
+        }
       }
     }
     if (!loading && !autoScanAttemptedForOpenRef.current) {
@@ -341,6 +339,9 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
       return
     }
     selectedDefaultsScanAtRef.current = scan.scannedAt
+    if (removalInFlightRef.current) {
+      return
+    }
     setSelectedIds(getDefaultSelectedWorkspaceCleanupIds(scan.candidates))
     setConfirming(false)
     setRowFailures({})
@@ -443,11 +444,11 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
 
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
-      if (!nextOpen && !removing) {
+      if (!nextOpen) {
         closeModal()
       }
     },
-    [closeModal, removing]
+    [closeModal]
   )
 
   const refresh = useCallback(() => {
@@ -483,65 +484,81 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
     [dismissCandidates, mountedRef]
   )
 
-  const confirmRemove = useCallback(async () => {
-    if (selectedCandidates.length === 0) {
+  const toggleExpandedRow = useCallback((worktreeId: string) => {
+    setExpandedRowIds((current) => toggleSetMember(current, worktreeId))
+  }, [])
+
+  const openConfirmRemove = useCallback((candidates: readonly WorkspaceCleanupCandidate[]) => {
+    setConfirmCandidates([...candidates])
+    setConfirming(true)
+  }, [])
+
+  const cancelConfirmRemove = useCallback(() => {
+    if (removalProgress) {
+      closeModal()
       return
     }
-    setRemoving(true)
-    setRowFailures({})
-    try {
-      const result = await removeCandidates(
-        selectedCandidates.map((candidate) => candidate.worktreeId)
-      )
-      const nextFailures: Record<string, string> = {}
-      for (const failure of result.failures) {
-        nextFailures[failure.worktreeId] = failure.message
-      }
-      if (mountedRef.current) {
-        setRowFailures(nextFailures)
-        setSelectedIds((current) => {
-          const next = new Set(current)
-          for (const id of result.removedIds) {
-            next.delete(id)
-          }
-          return next
-        })
-      }
-      if (result.removedIds.length > 0) {
-        if (mountedRef.current) {
-          toast.success(
-            translate(
-              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.0f00612b6d',
-              'Removed {{value0}} workspace{{value1}}',
-              {
-                value0: result.removedIds.length,
-                value1: result.removedIds.length === 1 ? '' : 's'
-              }
-            )
-          )
-        }
-      }
-      if (result.failures.length > 0) {
-        if (mountedRef.current) {
-          toast.error(
-            translate(
-              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.41d594d01e',
-              '{{value0}} workspace{{value1}} could not be removed',
-              { value0: result.failures.length, value1: result.failures.length === 1 ? '' : 's' }
-            )
-          )
-        }
-      } else {
-        if (mountedRef.current) {
-          setConfirming(false)
-        }
-      }
-    } finally {
-      if (mountedRef.current) {
-        setRemoving(false)
-      }
+    setConfirming(false)
+    setConfirmCandidates([])
+  }, [closeModal, removalProgress])
+
+  const confirmRemove = useCallback(() => {
+    if (confirmCandidates.length === 0 || removalInFlightRef.current) {
+      return
     }
-  }, [mountedRef, removeCandidates, selectedCandidates])
+    removalInFlightRef.current = true
+    setRowFailures({})
+    markWorktreesQueuedForDeletion(confirmCandidates.map((candidate) => candidate.worktreeId))
+    startWorkspaceCleanupBackgroundRemoval({
+      candidates: confirmCandidates,
+      removeCandidates,
+      onProgress: (progress) => {
+        if (mountedRef.current) {
+          setRemovalProgress(progress)
+        }
+      },
+      onResult: (result) => {
+        const nextFailures: Record<string, string> = {}
+        for (const failure of result.failures) {
+          nextFailures[failure.worktreeId] = failure.message
+          clearWorktreeDeleteState(failure.worktreeId)
+        }
+        if (mountedRef.current) {
+          setRowFailures(nextFailures)
+          setSelectedIds((current) => {
+            const next = new Set(current)
+            for (const id of result.removedIds) {
+              next.delete(id)
+            }
+            return next
+          })
+        }
+        if (mountedRef.current) {
+          setRemovalProgress(null)
+          setConfirming(false)
+          setConfirmCandidates([])
+        }
+        removalInFlightRef.current = false
+      },
+      onError: () => {
+        for (const candidate of confirmCandidates) {
+          clearWorktreeDeleteState(candidate.worktreeId)
+        }
+        if (mountedRef.current) {
+          setRemovalProgress(null)
+          setConfirming(false)
+          setConfirmCandidates([])
+        }
+        removalInFlightRef.current = false
+      }
+    })
+  }, [
+    clearWorktreeDeleteState,
+    confirmCandidates,
+    markWorktreesQueuedForDeletion,
+    mountedRef,
+    removeCandidates
+  ])
 
   const selectedCount = selectedCandidates.length
 
@@ -594,7 +611,6 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
                       'Close'
                     )}
                     onClick={() => closeModal()}
-                    disabled={removing}
                   >
                     <X className="size-4" />
                   </Button>
@@ -649,7 +665,7 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
                   <Button
                     variant="destructive"
                     size="sm"
-                    onClick={() => setConfirming(true)}
+                    onClick={() => openConfirmRemove(selectedCandidates)}
                     disabled={selectedCount === 0}
                   >
                     <Trash2 className="size-3.5" />
@@ -792,9 +808,12 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
                         reviewInfo={
                           reviewInfoByWorktreeId.get(candidate.worktreeId) ?? EMPTY_REVIEW_INFO
                         }
-                        last={index === activeRows.length - 1}
+                        last={activeRows.length > 1 && index === activeRows.length - 1}
+                        expanded={expandedRowIds.has(candidate.worktreeId)}
+                        lastActivityLabel={formatRelativeTime(candidate.lastActivityAt)}
                         selected={selectedIds.has(candidate.worktreeId)}
                         failure={rowFailures[candidate.worktreeId]}
+                        onToggleExpanded={toggleExpandedRow}
                         onToggleSelected={(id) =>
                           setSelectedIds((current) => toggleSetMember(current, id))
                         }
@@ -802,7 +821,7 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
                         onIgnore={ignoreCandidate}
                         onRemove={(candidate) => {
                           setSelectedIds(new Set([candidate.worktreeId]))
-                          setConfirming(true)
+                          openConfirmRemove([candidate])
                         }}
                       />
                     ))}
@@ -813,11 +832,11 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
           </>
         ) : (
           <ConfirmRemove
-            candidates={selectedCandidates}
+            candidates={confirmCandidates}
             reviewInfoByWorktreeId={reviewInfoByWorktreeId}
-            removing={removing}
-            onCancel={() => setConfirming(false)}
-            onConfirm={() => void confirmRemove()}
+            progress={removalProgress}
+            onCancel={cancelConfirmRemove}
+            onConfirm={confirmRemove}
           />
         )}
       </DialogContent>
@@ -829,28 +848,6 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
     closeModal()
     activateAndRevealWorktree(candidate.worktreeId)
   }
-}
-
-function StatusPill({
-  children,
-  tone = 'neutral'
-}: {
-  children: React.ReactNode
-  tone?: 'neutral' | 'ready' | 'review' | 'destructive'
-}): React.JSX.Element {
-  return (
-    <span
-      className={cn(
-        'inline-flex h-5 items-center rounded-full border px-2 text-[11px] font-medium',
-        tone === 'neutral' && 'border-border bg-background text-muted-foreground',
-        tone === 'ready' && 'border-border text-[var(--git-decoration-added)]',
-        tone === 'review' && 'border-border text-[var(--git-decoration-modified)]',
-        tone === 'destructive' && 'border-destructive/30 text-destructive'
-      )}
-    >
-      {children}
-    </span>
-  )
 }
 
 function WorkspaceCleanupFilterToolbar({
@@ -1163,357 +1160,87 @@ function CleanupViewNav({
   )
 }
 
-function CandidateRow({
-  candidate,
-  reviewInfo,
-  last,
-  selected,
-  failure,
-  onToggleSelected,
-  onView,
-  onIgnore,
-  onRemove
-}: {
-  candidate: WorkspaceCleanupCandidate
-  reviewInfo: WorkspaceCleanupReviewInfo
-  last: boolean
-  selected: boolean
-  failure?: string
-  onToggleSelected: (worktreeId: string) => void
-  onView: (candidate: WorkspaceCleanupCandidate) => void
-  onIgnore: (candidate: WorkspaceCleanupCandidate) => void
-  onRemove: (candidate: WorkspaceCleanupCandidate) => void
-}): React.JSX.Element {
-  const selectable = canQueueWorkspaceCleanupCandidate(candidate)
-  const ignored = candidate.blockers.includes('dismissed')
-  const blockers = candidate.blockers.map((blocker) => BLOCKER_LABELS[blocker])
-  const contextDetails = formatContextDetails(candidate)
-  const branchSafetyDetails = formatBranchSafetyDetails(candidate)
-  const status = getCandidateStatus(candidate)
-  const gitLabel = getWorkspaceCleanupGitLabel(candidate)
-  const contextPillLabel = getContextPillLabel(candidate)
-
-  return (
-    <div
-      className={cn(
-        'group w-full border-b border-border/60 px-3 py-3 text-left text-foreground transition-colors hover:bg-accent/40',
-        last && 'border-b-0'
-      )}
-    >
-      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2.5 gap-y-1 md:grid-cols-[auto_minmax(0,1fr)_auto]">
-        {selectable ? (
-          <button
-            type="button"
-            role="checkbox"
-            aria-checked={selected}
-            aria-label={translate(
-              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.bbb1ab6a6f',
-              'Select {{value0}}',
-              { value0: candidate.displayName }
-            )}
-            onClick={() => onToggleSelected(candidate.worktreeId)}
-            className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border border-border bg-background text-primary hover:bg-accent"
-          >
-            {selected ? <Check className="size-3" strokeWidth={3} /> : null}
-          </button>
-        ) : (
-          <div className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-        )}
-        <div className="min-w-0">
-          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-            <span className="min-w-0 truncate text-sm font-medium">{candidate.displayName}</span>
-            <StatusPill tone={status.tone}>{status.label}</StatusPill>
-            {reviewInfo.label ? (
-              <StatusPill tone={getReviewPillTone(reviewInfo)}>{reviewInfo.label}</StatusPill>
-            ) : null}
-            <StatusPill tone={gitLabel === 'Clean' ? 'ready' : 'review'}>{gitLabel}</StatusPill>
-            {contextPillLabel ? <StatusPill>{contextPillLabel}</StatusPill> : null}
-            <span className="text-xs text-muted-foreground">
-              {translate(
-                'auto.components.workspace.cleanup.WorkspaceCleanupDialog.352f15d6fc',
-                'Last active'
-              )}{' '}
-              {formatRelativeTime(candidate.lastActivityAt)}
-            </span>
-            {blockers.length > 0 ? (
-              <span className="min-w-0 truncate text-xs text-muted-foreground">
-                {blockers.slice(0, 2).join(', ')}
-              </span>
-            ) : null}
-          </div>
-          <div className="mt-1 min-w-0 truncate font-mono text-[11px] text-muted-foreground">
-            {candidate.path}
-          </div>
-          <div className="mt-1 flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            <span className="min-w-0 truncate">
-              {translate(
-                'auto.components.workspace.cleanup.WorkspaceCleanupDialog.0b1766738a',
-                'Repo'
-              )}{' '}
-              {candidate.repoName}
-            </span>
-            <span className="min-w-0 truncate font-mono">
-              {translate(
-                'auto.components.workspace.cleanup.WorkspaceCleanupDialog.bef0adef9b',
-                'Branch'
-              )}{' '}
-              {candidate.branch}
-            </span>
-            <span>{formatGitStatus(candidate)}</span>
-            {branchSafetyDetails.slice(0, 1).map((detail) => (
-              <span key={detail}>{detail}</span>
-            ))}
-            {contextDetails ? <span className="min-w-0 truncate">{contextDetails}</span> : null}
-          </div>
-          {failure ? (
-            <div className="mt-2 flex items-center gap-1.5 text-xs text-destructive">
-              <AlertTriangle className="size-3.5" />
-              {failure}
-            </div>
-          ) : null}
-        </div>
-        <div className="col-start-2 flex flex-wrap items-center gap-0.5 md:col-start-auto md:justify-end">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label={translate(
-                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.1bffc07ba7',
-                  'View {{value0}}',
-                  { value0: candidate.displayName }
-                )}
-                onClick={() => onView(candidate)}
-              >
-                <Search className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={4}>
-              {translate(
-                'auto.components.workspace.cleanup.WorkspaceCleanupDialog.ee81adfcef',
-                'View'
-              )}
-            </TooltipContent>
-          </Tooltip>
-          {!ignored ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  aria-label={translate(
-                    'auto.components.workspace.cleanup.WorkspaceCleanupDialog.a9957007eb',
-                    'Ignore {{value0}}',
-                    { value0: candidate.displayName }
-                  )}
-                  onClick={() => onIgnore(candidate)}
-                >
-                  <EyeOff className="size-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top" sideOffset={4}>
-                {translate(
-                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.4d0b72481c',
-                  'Ignore'
-                )}
-              </TooltipContent>
-            </Tooltip>
-          ) : null}
-          {selectable ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  aria-label={translate(
-                    'auto.components.workspace.cleanup.WorkspaceCleanupDialog.3828408538',
-                    'Remove {{value0}}',
-                    { value0: candidate.displayName }
-                  )}
-                  className="text-destructive hover:text-destructive"
-                  onClick={() => onRemove(candidate)}
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top" sideOffset={4}>
-                {translate(
-                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.9cc26c019d',
-                  'Remove'
-                )}
-              </TooltipContent>
-            </Tooltip>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function getCandidateStatus(candidate: WorkspaceCleanupCandidate): {
-  label: string
-  tone: 'neutral' | 'ready' | 'review' | 'destructive'
-} {
-  if (candidate.blockers.includes('dismissed')) {
-    return {
-      label: translate(
-        'auto.components.workspace.cleanup.WorkspaceCleanupDialog.e8b3741ff7',
-        'Ignored'
-      ),
-      tone: 'neutral'
-    }
-  }
-  if (candidate.tier === 'ready') {
-    return { label: candidate.reasons.includes('archived') ? 'Archived' : 'Clean', tone: 'ready' }
-  }
-  if (candidate.blockers.length > 0) {
-    return { label: BLOCKER_LABELS[candidate.blockers[0]], tone: 'neutral' }
-  }
-  if (candidate.git.upstreamAhead && candidate.git.upstreamAhead > 0) {
-    return {
-      label: translate(
-        'auto.components.workspace.cleanup.WorkspaceCleanupDialog.9623a5107d',
-        'Unpushed commits'
-      ),
-      tone: 'review'
-    }
-  }
-  if (candidate.git.clean === false) {
-    return {
-      label: translate(
-        'auto.components.workspace.cleanup.WorkspaceCleanupDialog.e97e4580c7',
-        'Dirty'
-      ),
-      tone: 'review'
-    }
-  }
-  if (candidate.tier === 'review') {
-    return {
-      label: translate(
-        'auto.components.workspace.cleanup.WorkspaceCleanupDialog.0a2e3c7cba',
-        'Review'
-      ),
-      tone: 'review'
-    }
-  }
-  return {
-    label: translate(
-      'auto.components.workspace.cleanup.WorkspaceCleanupDialog.c4f4782c02',
-      'Not suggested'
-    ),
-    tone: 'neutral'
-  }
-}
-
-function formatGitStatus(candidate: WorkspaceCleanupCandidate): string {
-  const label = getWorkspaceCleanupGitLabel(candidate)
-  switch (label) {
-    case 'Clean':
-      return 'Clean git'
-    case 'Dirty':
-      return 'Dirty git'
-    case 'Unpushed':
-      return 'Unpushed commits'
-    case 'Unknown':
-      return 'Git unknown'
-  }
-  return 'Git unknown'
-}
-
-function formatBranchSafetyDetails(candidate: WorkspaceCleanupCandidate): string[] {
-  const details: string[] = []
-  if (candidate.git.upstreamAhead !== null) {
-    details.push(
-      candidate.git.upstreamAhead === 0
-        ? 'No unpushed commits'
-        : `${candidate.git.upstreamAhead} unpushed commit${
-            candidate.git.upstreamAhead === 1 ? '' : 's'
-          }`
-    )
-  }
-  return details
-}
-
-function formatContextDetails(candidate: WorkspaceCleanupCandidate): string | null {
-  const parts: string[] = []
-  if (candidate.localContext.terminalTabCount > 0) {
-    parts.push(
-      `${candidate.localContext.terminalTabCount} terminal tab${
-        candidate.localContext.terminalTabCount === 1 ? '' : 's'
-      }`
-    )
-  }
-  if (candidate.localContext.cleanEditorTabCount > 0) {
-    parts.push(
-      `${candidate.localContext.cleanEditorTabCount} editor tab${
-        candidate.localContext.cleanEditorTabCount === 1 ? '' : 's'
-      }`
-    )
-  }
-  if (candidate.localContext.browserTabCount > 0) {
-    parts.push(
-      `${candidate.localContext.browserTabCount} browser tab${
-        candidate.localContext.browserTabCount === 1 ? '' : 's'
-      }`
-    )
-  }
-  if (candidate.localContext.diffCommentCount > 0) {
-    parts.push(
-      `${candidate.localContext.diffCommentCount} diff note${
-        candidate.localContext.diffCommentCount === 1 ? '' : 's'
-      }`
-    )
-  }
-  if (candidate.localContext.retainedDoneAgentCount > 0) {
-    parts.push(
-      `${candidate.localContext.retainedDoneAgentCount} completed agent${
-        candidate.localContext.retainedDoneAgentCount === 1 ? '' : 's'
-      }`
-    )
-  }
-  return parts.length > 0 ? parts.join(', ') : null
-}
-
 function ConfirmRemove({
   candidates,
   reviewInfoByWorktreeId,
-  removing,
+  progress,
   onCancel,
   onConfirm
 }: {
   candidates: WorkspaceCleanupCandidate[]
   reviewInfoByWorktreeId: ReadonlyMap<string, WorkspaceCleanupReviewInfo>
-  removing: boolean
+  progress: WorkspaceCleanupRemovalProgress | null
   onCancel: () => void
   onConfirm: () => void
 }): React.JSX.Element {
   const count = candidates.length
   const noun = count === 1 ? 'workspace' : 'workspaces'
+  const deleting = progress !== null
+  const progressValue = progress
+    ? Math.min(100, Math.max(0, (progress.processedCount / progress.totalCount) * 100))
+    : 0
   return (
     <>
       <DialogHeader className="border-b border-border px-5 py-4">
-        <div className="flex items-start gap-3">
-          <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-destructive/25 bg-destructive/10 text-destructive">
-            <AlertTriangle className="size-4" />
-          </div>
-          <div className="min-w-0">
-            <DialogTitle className="text-base">
-              {translate(
-                'auto.components.workspace.cleanup.WorkspaceCleanupDialog.cbf2f664e2',
-                'Delete'
-              )}{' '}
-              {count} {noun}?
-            </DialogTitle>
-            <DialogDescription className="mt-1.5 text-xs leading-5">
-              {translate(
-                'auto.components.workspace.cleanup.WorkspaceCleanupDialog.38ca0b1400',
-                "This permanently deletes their local files. You can't undo this."
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-destructive/25 bg-destructive/10 text-destructive">
+              {deleting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <AlertTriangle className="size-4" />
               )}
-            </DialogDescription>
+            </div>
+            <div className="min-w-0">
+              <DialogTitle className="text-base">
+                {deleting
+                  ? `${translate(
+                      'auto.components.workspace.cleanup.WorkspaceCleanupDialog.e50c4da067',
+                      'Deleting'
+                    )} ${count} ${noun}`
+                  : `${translate(
+                      'auto.components.workspace.cleanup.WorkspaceCleanupDialog.cbf2f664e2',
+                      'Delete'
+                    )} ${count} ${noun}?`}
+              </DialogTitle>
+              <DialogDescription className="mt-1.5 text-xs leading-5">
+                {deleting
+                  ? translate(
+                      'auto.components.workspace.cleanup.WorkspaceCleanupDialog.1d3503357d',
+                      'You can close this and come back while deletion continues.'
+                    )
+                  : translate(
+                      'auto.components.workspace.cleanup.WorkspaceCleanupDialog.38ca0b1400',
+                      "This permanently deletes their local files. You can't undo this."
+                    )}
+              </DialogDescription>
+            </div>
           </div>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={translate(
+              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.191f0bc98e',
+              'Close'
+            )}
+            onClick={onCancel}
+          >
+            <X className="size-4" />
+          </Button>
         </div>
       </DialogHeader>
       <div className="flex min-h-0 flex-1 flex-col">
+        {progress ? (
+          <div className="border-b border-border bg-muted/25 px-5 py-3">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="size-3.5 shrink-0 animate-spin" />
+              <span className="font-medium text-foreground">
+                {formatWorkspaceCleanupRemovalProgress(progress)}
+              </span>
+            </div>
+            <Progress value={progressValue} className="mt-2 h-1.5" />
+          </div>
+        ) : null}
         <div className="flex items-center justify-between border-b border-border px-5 py-2.5">
           <div className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
             {count} {noun}{' '}
@@ -1541,20 +1268,27 @@ function ConfirmRemove({
         </ScrollArea>
       </div>
       <DialogFooter className="border-t border-border px-5 py-3">
-        <Button variant="outline" onClick={onCancel} disabled={removing}>
-          {translate(
-            'auto.components.workspace.cleanup.WorkspaceCleanupDialog.b6bae1eed1',
-            'Cancel'
-          )}
+        <Button variant="outline" onClick={onCancel}>
+          {deleting
+            ? translate(
+                'auto.components.workspace.cleanup.WorkspaceCleanupDialog.191f0bc98e',
+                'Close'
+              )
+            : translate(
+                'auto.components.workspace.cleanup.WorkspaceCleanupDialog.b6bae1eed1',
+                'Cancel'
+              )}
         </Button>
-        <Button variant="destructive" onClick={onConfirm} disabled={removing || count === 0}>
-          {removing ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-          {translate(
-            'auto.components.workspace.cleanup.WorkspaceCleanupDialog.cbf2f664e2',
-            'Delete'
-          )}{' '}
-          {count} {noun}
-        </Button>
+        {!deleting ? (
+          <Button variant="destructive" onClick={onConfirm} disabled={count === 0}>
+            <Trash2 className="size-4" />
+            {translate(
+              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.cbf2f664e2',
+              'Delete'
+            )}{' '}
+            {count} {noun}
+          </Button>
+        ) : null}
       </DialogFooter>
     </>
   )
@@ -1607,55 +1341,6 @@ function ConfirmRemoveRow({
   )
 }
 
-function getDirtyGitLabel(candidate: WorkspaceCleanupCandidate): string | null {
-  if (candidate.blockers.includes('unpushed-commits')) {
-    if (candidate.git.upstreamAhead && candidate.git.upstreamAhead > 0) {
-      return `${candidate.git.upstreamAhead} unpushed commit${
-        candidate.git.upstreamAhead === 1 ? '' : 's'
-      }`
-    }
-    return 'Unpushed commits'
-  }
-  if (candidate.git.upstreamAhead && candidate.git.upstreamAhead > 0) {
-    return `${candidate.git.upstreamAhead} unpushed commit${
-      candidate.git.upstreamAhead === 1 ? '' : 's'
-    }`
-  }
-  if (candidate.git.clean === false) {
-    return 'Uncommitted changes'
-  }
-  if (
-    candidate.git.clean == null ||
-    candidate.blockers.includes('unknown-base') ||
-    candidate.blockers.includes('git-status-error')
-  ) {
-    return 'Git status unknown'
-  }
-  return null
-}
-
-function getReviewPillTone(
-  reviewInfo: WorkspaceCleanupReviewInfo
-): 'neutral' | 'ready' | 'review' | 'destructive' {
-  if (reviewInfo.state === 'open' || reviewInfo.state === 'draft') {
-    return 'review'
-  }
-  return 'neutral'
-}
-
-function getContextPillLabel(candidate: WorkspaceCleanupCandidate): string | null {
-  if (!hasWorkspaceCleanupLocalContext(candidate)) {
-    return null
-  }
-  const count =
-    candidate.localContext.terminalTabCount +
-    candidate.localContext.cleanEditorTabCount +
-    candidate.localContext.browserTabCount +
-    candidate.localContext.diffCommentCount +
-    candidate.localContext.retainedDoneAgentCount
-  return `${count} context`
-}
-
 function hasActiveWorkspaceCleanupFilters(filters: WorkspaceCleanupFilters): boolean {
   return (
     filters.query.trim() !== '' ||
@@ -1703,21 +1388,42 @@ function formatWorkspaceCleanupReadyToastDescription(
   return `${inactiveCount} inactive ${inactiveNoun} found, with ${suggestedCount} cleanup ${suggestedNoun}.`
 }
 
+function formatWorkspaceCleanupRemovalProgress(progress: WorkspaceCleanupRemovalProgress): string {
+  const deletedText = translate(
+    'auto.components.workspace.cleanup.WorkspaceCleanupDialog.4c2990886e',
+    '{{value0}}/{{value1}} deleted',
+    {
+      value0: progress.removedCount,
+      value1: progress.totalCount
+    }
+  )
+  if (progress.failedCount === 0) {
+    return deletedText
+  }
+  return translate(
+    'auto.components.workspace.cleanup.WorkspaceCleanupDialog.86ba852118',
+    '{{value0}}, {{value1}} failed',
+    {
+      value0: deletedText,
+      value1: progress.failedCount
+    }
+  )
+}
+
 function formatWorkspaceCleanupProgress(progress: WorkspaceCleanupScanProgress | null): string {
-  if (!progress || progress.totalWorktreeCount === 0) {
+  if (!progress || progress.scannedWorktreeCount === 0) {
     return translate(
       'auto.components.workspace.cleanup.WorkspaceCleanupDialog.4cc5b73efe',
       'Finding inactive workspaces...'
     )
   }
-  const noun = progress.totalWorktreeCount === 1 ? 'workspace' : 'workspaces'
+  const noun = progress.scannedWorktreeCount === 1 ? 'workspace' : 'workspaces'
   return translate(
-    'auto.components.workspace.cleanup.WorkspaceCleanupDialog.5bf2e88480',
-    '{{value0}}/{{value1}} {{value2}} scanned',
+    'auto.components.workspace.cleanup.WorkspaceCleanupDialog.7b7bde5181',
+    'Checked {{value0}} {{value1}} so far',
     {
       value0: progress.scannedWorktreeCount,
-      value1: progress.totalWorktreeCount,
-      value2: noun
+      value1: noun
     }
   )
 }

@@ -13,6 +13,7 @@ import type {
   WorkspaceCleanupScanProgress,
   WorkspaceCleanupScanResult
 } from '../../shared/workspace-cleanup'
+import { resolveWorkspaceCleanupActivityWorktree } from './workspace-cleanup-activity'
 import {
   buildWorkspaceCleanupCandidate,
   buildWorkspaceCleanupCandidateFromError,
@@ -124,22 +125,28 @@ async function scanRepoWorkspaces(
     return { scannedAt, candidates, errors: [] }
   }
 
-  const worktrees = gitWorktrees
-    .map((gitWorktree) => {
-      const worktreeId = `${repo.id}::${gitWorktree.path}`
-      const meta = store.getWorktreeMeta(worktreeId)
-      return mergeWorktree(repo.id, gitWorktree, meta, repo.displayName)
-    })
-    .filter((worktree) => {
-      if (targetWorktreeId) {
-        return worktree.id === targetWorktreeId
-      }
-      return (
-        !repoIsFolder &&
-        !worktree.isMainWorktree &&
-        isWorkspaceInactiveForCleanup(worktree, scannedAt)
-      )
-    })
+  const mergedWorktrees = gitWorktrees.map((gitWorktree) => {
+    const worktreeId = `${repo.id}::${gitWorktree.path}`
+    const meta = store.getWorktreeMeta(worktreeId)
+    return mergeWorktree(repo.id, gitWorktree, meta, repo.displayName)
+  })
+  // Why: externally-created worktrees can miss Orca activity stamps; local
+  // filesystem metadata is a conservative guard before suggesting deletion.
+  const worktreesWithActivity = await mapWorkspaceCleanupWithConcurrency(
+    mergedWorktrees,
+    WORKTREE_SCAN_CONCURRENCY,
+    (worktree) => resolveWorkspaceCleanupActivityWorktree(repo, worktree)
+  )
+  const worktrees = worktreesWithActivity.filter((worktree) => {
+    if (targetWorktreeId) {
+      return worktree.id === targetWorktreeId
+    }
+    return (
+      !repoIsFolder &&
+      !worktree.isMainWorktree &&
+      isWorkspaceInactiveForCleanup(worktree, scannedAt)
+    )
+  })
 
   onWorktreesDiscovered?.(worktrees.length)
 

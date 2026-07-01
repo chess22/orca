@@ -2972,6 +2972,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
         ...s.deleteStateByWorktreeId,
         [worktreeId]: {
           isDeleting: true,
+          phase: 'deleting',
           error: null,
           canForceDelete: false
         }
@@ -3342,6 +3343,31 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
         }
         nextDeleteState[worktreeId] = {
           isDeleting: true,
+          phase: 'deleting',
+          error: null,
+          canForceDelete: false
+        }
+        changed = true
+      }
+      return changed ? { deleteStateByWorktreeId: nextDeleteState } : {}
+    })
+  },
+
+  markWorktreesQueuedForDeletion: (worktreeIds) => {
+    if (worktreeIds.length === 0) {
+      return
+    }
+    set((s) => {
+      const nextDeleteState = { ...s.deleteStateByWorktreeId }
+      let changed = false
+      for (const worktreeId of new Set(worktreeIds)) {
+        const current = nextDeleteState[worktreeId]
+        if (current?.isDeleting && current.error === null && current.phase === 'queued') {
+          continue
+        }
+        nextDeleteState[worktreeId] = {
+          isDeleting: true,
+          phase: 'queued',
           error: null,
           canForceDelete: false
         }
