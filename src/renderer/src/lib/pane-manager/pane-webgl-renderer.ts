@@ -8,6 +8,17 @@ import {
 export const ENABLE_WEBGL_RENDERER = true
 let suggestedRendererType: 'dom' | undefined
 
+type ReleasableWebglContext = {
+  getExtension(name: 'WEBGL_lose_context'): WEBGL_lose_context | null
+}
+
+type XtermWebglAddonInternals = {
+  _renderer?: {
+    _gl?: ReleasableWebglContext
+    _canvas?: HTMLCanvasElement
+  }
+}
+
 export function resetTerminalWebglSuggestion(): void {
   // Why: toggling GPU settings should let "auto" retry WebGL after an earlier
   // attach failure suggested DOM rendering for this app session.
@@ -50,6 +61,7 @@ export function disposeWebgl(
   if (!pane.webglAddon) {
     return
   }
+  releaseXtermWebglContext(pane.webglAddon)
   try {
     pane.webglAddon.dispose()
   } catch {
@@ -68,6 +80,22 @@ export function disposeWebgl(
         /* ignore — pane may have been disposed in the meantime */
       }
     })
+  }
+}
+
+function releaseXtermWebglContext(webglAddon: ManagedPaneInternal['webglAddon']): void {
+  try {
+    // Why: xterm removes the canvas on dispose, but Windows/ANGLE can keep the
+    // driver context alive long enough for rapid terminal activation to hit
+    // Chromium's active WebGL context budget (#6874).
+    const renderer = (webglAddon as unknown as XtermWebglAddonInternals | null)?._renderer
+    renderer?._gl?.getExtension('WEBGL_lose_context')?.loseContext()
+    if (renderer?._canvas) {
+      renderer._canvas.width = 0
+      renderer._canvas.height = 0
+    }
+  } catch {
+    /* ignore - WebGL teardown must not block fallback to the DOM renderer */
   }
 }
 
