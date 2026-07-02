@@ -178,7 +178,8 @@ export type WorktreeSlice = {
   prefetchWorktreeCreateBase: (repoId: string, baseBranch?: string) => Promise<void>
   removeWorktree: (
     worktreeId: string,
-    force?: boolean
+    force?: boolean,
+    options?: { suppressPreservedBranchToast?: boolean }
   ) => Promise<({ ok: true } & RemoveWorktreeResult) | { ok: false; error: string }>
   markWorktreesDeleting: (worktreeIds: readonly string[]) => void
   markWorktreesQueuedForDeletion: (worktreeIds: readonly string[]) => void

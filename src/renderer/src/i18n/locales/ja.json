@@ -2306,7 +2306,62 @@
             "gitFilter": "Git",
             "contextFilter": "コンテクスト",
             "sortBy": "並べ替え",
-            "sortDirection": "方向"
+            "sortDirection": "方向",
+            "e50c4da067": "削除中",
+            "1d3503357d": "削除の続行中にこれを閉じて後で戻れます。",
+            "4c2990886e": "{{value0}}/{{value1}} 件を削除済み",
+            "86ba852118": "{{value0}}、{{value1}} 件が失敗",
+            "7b7bde5181": "これまでに確認したワークスペース: {{value0}}",
+            "deletingCount": "削除中のワークスペース: {{value0}}",
+            "deleteCount": "ワークスペースを削除しますか: {{value0}}?",
+            "selectedForDeletionCount": "削除対象として選択済み: {{value0}}",
+            "deleteButtonCount": "{{value0}} 件を削除",
+            "archivedStatus": "アーカイブ済み",
+            "readyStatus": "準備完了"
+          },
+          "backgroundRemoval": {
+            "removed": "削除済みワークスペース: {{value0}}",
+            "failed": "削除できなかったワークスペース: {{value0}}",
+            "error": "ワークスペースのクリーンアップに失敗しました",
+            "skippedAncestor": "ネストされたワークスペースを削除できなかったためスキップしました。",
+            "timedOut": "{{value0}} の削除がタイムアウトしました。"
+          },
+          "candidateRow": {
+            "gitLabel": "Git",
+            "commitsLabel": "コミット",
+            "contextLabel": "コンテキスト",
+            "flagsLabel": "フラグ",
+            "collapseDetails": "詳細を折りたたむ",
+            "expandDetails": "詳細を展開",
+            "cleanGit": "Git はクリーン",
+            "dirtyGit": "Git に変更あり",
+            "unpushedCommits": "未プッシュのコミット",
+            "gitUnknown": "Git 不明",
+            "gitStatusUnknown": "Git 状態不明",
+            "noUnpushedCommits": "未プッシュのコミットなし",
+            "unpushedCommitsCount": "未プッシュのコミット: {{value0}}",
+            "uncommittedChanges": "未コミットの変更",
+            "terminalTabsCount": "ターミナルタブ: {{value0}}",
+            "editorTabsCount": "エディタタブ: {{value0}}",
+            "browserTabsCount": "ブラウザタブ: {{value0}}",
+            "diffNotesCount": "差分メモ: {{value0}}",
+            "completedAgentsCount": "完了済みエージェント: {{value0}}",
+            "contextCount": "コンテキスト: {{value0}}",
+            "mainWorkspaceBlocker": "メインワークスペース",
+            "folderProjectBlocker": "フォルダープロジェクト",
+            "pinnedBlocker": "ピン留め済み",
+            "activeWorkspaceBlocker": "アクティブなワークスペース",
+            "runningTerminalBlocker": "実行中のターミナルプロセス",
+            "terminalLivenessUnknownBlocker": "ターミナルの状態不明",
+            "dirtyEditorBufferBlocker": "未保存のエディタバッファ",
+            "volatileLocalContextBlocker": "揮発性のローカルコンテキスト",
+            "recentVisibleContextBlocker": "最近表示したタブ",
+            "liveAgentBlocker": "アクティブなエージェント",
+            "sshDisconnectedBlocker": "リモート利用不可",
+            "gitStatusErrorBlocker": "Git 状態を利用できません",
+            "dirtyFilesBlocker": "変更済みファイル",
+            "unknownBaseBlocker": "未プッシュのコミットを確認できませんでした",
+            "dismissedBlocker": "無視済み"
           }
         }
       },
@@ -3940,7 +3995,8 @@
           "runtimeHostProject": "Orca サーバー上のプロジェクト",
           "automationCreated": "自動化により作成",
           "branchIdentity": "ブランチ",
-          "branchFolderPathIdentity": "ブランチまたはフォルダパス"
+          "branchFolderPathIdentity": "ブランチまたはフォルダパス",
+          "ef18787206": "削除待ち"
         },
         "WorktreeCardAgents": {
           "1b0a156717": "エージェント"

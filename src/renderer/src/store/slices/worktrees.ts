@@ -2966,7 +2966,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
     })
   },
 
-  removeWorktree: async (worktreeId, force) => {
+  removeWorktree: async (worktreeId, force, options) => {
     set((s) => ({
       deleteStateByWorktreeId: {
         ...s.deleteStateByWorktreeId,
@@ -3303,7 +3303,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
       // prune effect cannot be the only stale-draft cleanup path.
       clearSessionCommitDraftForWorktree(worktreeId)
       const preservedBranch = removalResult?.preservedBranch
-      if (preservedBranch) {
+      if (preservedBranch && options?.suppressPreservedBranchToast !== true) {
         showPreservedBranchToast(removalResult, worktreeBeforeRemoval, (branch, expectedHead) => {
           void get().forceDeletePreservedBranch(worktreeId, branch, expectedHead)
         })
@@ -3362,7 +3362,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
       let changed = false
       for (const worktreeId of new Set(worktreeIds)) {
         const current = nextDeleteState[worktreeId]
-        if (current?.isDeleting && current.error === null && current.phase === 'queued') {
+        if (current?.isDeleting && current.error === null && !current.canForceDelete) {
           continue
         }
         nextDeleteState[worktreeId] = {

@@ -2306,7 +2306,62 @@
             "gitFilter": "Git",
             "contextFilter": "Context",
             "sortBy": "Sort by",
-            "sortDirection": "Direction"
+            "sortDirection": "Direction",
+            "e50c4da067": "Deleting",
+            "1d3503357d": "You can close this and come back while deletion continues.",
+            "4c2990886e": "{{value0}}/{{value1}} deleted",
+            "86ba852118": "{{value0}}, {{value1}} failed",
+            "7b7bde5181": "Checked workspaces so far: {{value0}}",
+            "deletingCount": "Deleting workspaces: {{value0}}",
+            "deleteCount": "Delete workspaces: {{value0}}?",
+            "selectedForDeletionCount": "Selected for deletion: {{value0}}",
+            "deleteButtonCount": "Delete {{value0}}",
+            "archivedStatus": "Archived",
+            "readyStatus": "Ready"
+          },
+          "backgroundRemoval": {
+            "removed": "Removed workspaces: {{value0}}",
+            "failed": "Workspaces not removed: {{value0}}",
+            "error": "Workspace cleanup failed",
+            "skippedAncestor": "Skipped because a nested workspace could not be removed.",
+            "timedOut": "Timed out removing {{value0}}."
+          },
+          "candidateRow": {
+            "gitLabel": "Git",
+            "commitsLabel": "Commits",
+            "contextLabel": "Context",
+            "flagsLabel": "Flags",
+            "collapseDetails": "Collapse details",
+            "expandDetails": "Expand details",
+            "cleanGit": "Clean git",
+            "dirtyGit": "Dirty git",
+            "unpushedCommits": "Unpushed commits",
+            "gitUnknown": "Git unknown",
+            "gitStatusUnknown": "Git status unknown",
+            "noUnpushedCommits": "No unpushed commits",
+            "unpushedCommitsCount": "Unpushed commits: {{value0}}",
+            "uncommittedChanges": "Uncommitted changes",
+            "terminalTabsCount": "Terminal tabs: {{value0}}",
+            "editorTabsCount": "Editor tabs: {{value0}}",
+            "browserTabsCount": "Browser tabs: {{value0}}",
+            "diffNotesCount": "Diff notes: {{value0}}",
+            "completedAgentsCount": "Completed agents: {{value0}}",
+            "contextCount": "Context: {{value0}}",
+            "mainWorkspaceBlocker": "Main workspace",
+            "folderProjectBlocker": "Folder project",
+            "pinnedBlocker": "Pinned",
+            "activeWorkspaceBlocker": "Active workspace",
+            "runningTerminalBlocker": "Running terminal process",
+            "terminalLivenessUnknownBlocker": "Terminal liveness unknown",
+            "dirtyEditorBufferBlocker": "Unsaved editor buffer",
+            "volatileLocalContextBlocker": "Volatile local context",
+            "recentVisibleContextBlocker": "Recently visited tabs",
+            "liveAgentBlocker": "Active agent",
+            "sshDisconnectedBlocker": "Remote unavailable",
+            "gitStatusErrorBlocker": "Git status unavailable",
+            "dirtyFilesBlocker": "Changed files",
+            "unknownBaseBlocker": "Could not verify unpushed commits",
+            "dismissedBlocker": "Ignored"
           }
         }
       },
@@ -3982,7 +4037,8 @@
           "runtimeHostProject": "Project on Orca server",
           "automationCreated": "Created by automation",
           "branchIdentity": "Branch",
-          "branchFolderPathIdentity": "Branch or folder path"
+          "branchFolderPathIdentity": "Branch or folder path",
+          "ef18787206": "Queued for deletion"
         },
         "WorktreeCardAgents": {
           "1b0a156717": "Agents"

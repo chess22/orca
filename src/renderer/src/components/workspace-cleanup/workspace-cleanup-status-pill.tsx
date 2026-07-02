@@ -14,8 +14,9 @@ export function StatusPill({
       className={cn(
         'inline-flex h-5 items-center rounded-full border px-2 text-[11px] font-medium',
         tone === 'neutral' && 'border-border bg-background text-muted-foreground',
-        tone === 'ready' && 'border-border text-[var(--git-decoration-added)]',
-        tone === 'review' && 'border-border text-[var(--git-decoration-modified)]',
+        tone === 'ready' &&
+          'border-status-success-border bg-status-success-background text-status-success',
+        tone === 'review' && 'border-border bg-muted text-foreground',
         tone === 'destructive' && 'border-destructive/30 text-destructive'
       )}
     >

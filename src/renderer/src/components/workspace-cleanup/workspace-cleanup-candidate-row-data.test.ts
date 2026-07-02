@@ -19,7 +19,7 @@ describe('workspace cleanup candidate row data', () => {
     expect(shouldShowGitMetadataChip(unknownBase)).toBe(false)
   })
 
-  it('keeps the git metadata chip for ordinary clean and dirty rows', () => {
+  it('keeps the git metadata chip for ordinary clean rows', () => {
     expect(
       shouldShowGitMetadataChip(
         makeCandidate({
@@ -27,12 +27,33 @@ describe('workspace cleanup candidate row data', () => {
         })
       )
     ).toBe(true)
+  })
+
+  it('suppresses the git metadata chip when the status pill already names git risk', () => {
     expect(
       shouldShowGitMetadataChip(
         makeCandidate({
+          blockers: ['unpushed-commits'],
+          git: { clean: true, upstreamAhead: 2, upstreamBehind: 0, checkedAt: 1 }
+        })
+      )
+    ).toBe(false)
+    expect(
+      shouldShowGitMetadataChip(
+        makeCandidate({
+          tier: 'review',
+          blockers: [],
+          git: { clean: true, upstreamAhead: 2, upstreamBehind: 0, checkedAt: 1 }
+        })
+      )
+    ).toBe(false)
+    expect(
+      shouldShowGitMetadataChip(
+        makeCandidate({
+          blockers: ['dirty-files'],
           git: { clean: false, upstreamAhead: 0, upstreamBehind: 0, checkedAt: 1 }
         })
       )
-    ).toBe(true)
+    ).toBe(false)
   })
 })

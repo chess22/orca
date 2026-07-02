@@ -3,7 +3,7 @@ import { listRepoWorktrees, createFolderWorktree } from '../repo-worktrees'
 import { getSshGitProvider } from '../providers/ssh-git-dispatch'
 import type { IGitProvider } from '../providers/types'
 import { isFolderRepo } from '../../shared/repo-kind'
-import type { GitWorktreeInfo, Repo } from '../../shared/types'
+import type { GitWorktreeInfo, Repo, Worktree } from '../../shared/types'
 import { mergeWorktree } from './worktree-logic'
 import { splitWorktreeId } from '../../shared/worktree-id'
 import type {
@@ -130,47 +130,83 @@ async function scanRepoWorkspaces(
     const meta = store.getWorktreeMeta(worktreeId)
     return mergeWorktree(repo.id, gitWorktree, meta, repo.displayName)
   })
-  // Why: externally-created worktrees can miss Orca activity stamps; local
-  // filesystem metadata is a conservative guard before suggesting deletion.
-  const worktreesWithActivity = await mapWorkspaceCleanupWithConcurrency(
-    mergedWorktrees,
-    WORKTREE_SCAN_CONCURRENCY,
-    (worktree) => resolveWorkspaceCleanupActivityWorktree(repo, worktree)
-  )
-  const worktrees = worktreesWithActivity.filter((worktree) => {
-    if (targetWorktreeId) {
-      return worktree.id === targetWorktreeId
-    }
-    return (
-      !repoIsFolder &&
-      !worktree.isMainWorktree &&
-      isWorkspaceInactiveForCleanup(worktree, scannedAt)
-    )
-  })
-
-  onWorktreesDiscovered?.(worktrees.length)
-
-  const candidates = await mapWorkspaceCleanupWithConcurrency(
-    worktrees,
+  const candidateWorktrees = targetWorktreeId
+    ? mergedWorktrees.filter((worktree) => worktree.id === targetWorktreeId)
+    : mergedWorktrees.filter((worktree) =>
+        shouldResolveBroadWorkspaceCleanupActivity(repoIsFolder, worktree, scannedAt)
+      )
+  const candidatesWithSkipped = await mapWorkspaceCleanupWithConcurrency(
+    candidateWorktrees,
     WORKTREE_SCAN_CONCURRENCY,
     async (worktree) => {
+      // Why: externally-created worktrees can miss Orca activity stamps; local
+      // filesystem metadata is a conservative guard before suggesting deletion.
+      const worktreeWithActivity = await resolveCleanupActivityWithTimeout(repo, worktree)
+      if (!targetWorktreeId && !isWorkspaceInactiveForCleanup(worktreeWithActivity, scannedAt)) {
+        return null
+      }
+      onWorktreesDiscovered?.(1)
       const candidate = await buildWorkspaceCleanupCandidate({
         repo,
-        worktree,
+        worktree: worktreeWithActivity,
         scannedAt,
         provider,
-        skipGit: skipGitWorktreeIds.has(worktree.id),
+        skipGit: skipGitWorktreeIds.has(worktreeWithActivity.id),
         forceGitCheck: Boolean(targetWorktreeId)
       }).catch((error) => {
         console.error('Workspace cleanup candidate scan failed', error)
-        return buildWorkspaceCleanupCandidateFromError(repo, worktree, scannedAt)
+        return buildWorkspaceCleanupCandidateFromError(repo, worktreeWithActivity, scannedAt)
       })
       onCandidateScanned?.(candidate)
       return candidate
     }
   )
+  const candidates = candidatesWithSkipped.filter(
+    (candidate): candidate is WorkspaceCleanupCandidate => candidate !== null
+  )
 
   return { scannedAt, candidates, errors }
+}
+
+async function resolveCleanupActivityWithTimeout(
+  repo: Repo,
+  worktree: Worktree
+): Promise<Worktree> {
+  try {
+    return await withWorkspaceCleanupTimeout(
+      () => resolveWorkspaceCleanupActivityWorktree(repo, worktree),
+      WORKSPACE_CLEANUP_GIT_READ_TIMEOUT_MS,
+      'Timed out reading worktree activity.'
+    )
+  } catch (error) {
+    console.warn('Workspace cleanup activity scan failed', error)
+    return worktree
+  }
+}
+
+function shouldResolveBroadWorkspaceCleanupActivity(
+  repoIsFolder: boolean,
+  worktree: Worktree,
+  scannedAt: number
+): boolean {
+  if (repoIsFolder || worktree.isMainWorktree) {
+    return false
+  }
+  return isWorkspaceInactiveForCleanup(
+    {
+      isArchived: worktree.isArchived,
+      lastActivityAt: getPersistedWorkspaceCleanupActivityAt(worktree)
+    },
+    scannedAt
+  )
+}
+
+function getPersistedWorkspaceCleanupActivityAt(
+  worktree: Pick<Worktree, 'createdAt' | 'lastActivityAt'>
+): number {
+  const lastActivityAt = Number.isFinite(worktree.lastActivityAt) ? worktree.lastActivityAt : 0
+  const createdAt = Number.isFinite(worktree.createdAt) ? (worktree.createdAt ?? 0) : 0
+  return Math.max(lastActivityAt, createdAt)
 }
 
 async function listCleanupGitWorktrees(

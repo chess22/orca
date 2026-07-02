@@ -2306,7 +2306,62 @@
             "gitFilter": "Git",
             "contextFilter": "문맥",
             "sortBy": "정렬 기준",
-            "sortDirection": "방향"
+            "sortDirection": "방향",
+            "e50c4da067": "삭제 중",
+            "1d3503357d": "삭제가 계속되는 동안 이 창을 닫고 나중에 돌아올 수 있습니다.",
+            "4c2990886e": "{{value0}}/{{value1}}개 삭제됨",
+            "86ba852118": "{{value0}}, {{value1}}개 실패",
+            "7b7bde5181": "지금까지 확인한 워크스페이스: {{value0}}",
+            "deletingCount": "삭제 중인 워크스페이스: {{value0}}",
+            "deleteCount": "워크스페이스 삭제: {{value0}}?",
+            "selectedForDeletionCount": "삭제 대상으로 선택됨: {{value0}}",
+            "deleteButtonCount": "{{value0}}개 삭제",
+            "archivedStatus": "보관됨",
+            "readyStatus": "준비됨"
+          },
+          "backgroundRemoval": {
+            "removed": "삭제된 워크스페이스: {{value0}}",
+            "failed": "삭제되지 않은 워크스페이스: {{value0}}",
+            "error": "워크스페이스 정리 실패",
+            "skippedAncestor": "중첩된 워크스페이스를 제거할 수 없어 건너뛰었습니다.",
+            "timedOut": "{{value0}} 삭제 시간이 초과되었습니다."
+          },
+          "candidateRow": {
+            "gitLabel": "Git",
+            "commitsLabel": "커밋",
+            "contextLabel": "문맥",
+            "flagsLabel": "플래그",
+            "collapseDetails": "세부 정보 접기",
+            "expandDetails": "세부 정보 펼치기",
+            "cleanGit": "Git 깨끗함",
+            "dirtyGit": "Git 변경 있음",
+            "unpushedCommits": "푸시되지 않은 커밋",
+            "gitUnknown": "Git 알 수 없음",
+            "gitStatusUnknown": "Git 상태 알 수 없음",
+            "noUnpushedCommits": "푸시되지 않은 커밋 없음",
+            "unpushedCommitsCount": "푸시되지 않은 커밋: {{value0}}",
+            "uncommittedChanges": "커밋되지 않은 변경 사항",
+            "terminalTabsCount": "터미널 탭: {{value0}}",
+            "editorTabsCount": "편집기 탭: {{value0}}",
+            "browserTabsCount": "브라우저 탭: {{value0}}",
+            "diffNotesCount": "Diff 메모: {{value0}}",
+            "completedAgentsCount": "완료된 에이전트: {{value0}}",
+            "contextCount": "문맥: {{value0}}",
+            "mainWorkspaceBlocker": "기본 워크스페이스",
+            "folderProjectBlocker": "폴더 프로젝트",
+            "pinnedBlocker": "고정됨",
+            "activeWorkspaceBlocker": "활성 워크스페이스",
+            "runningTerminalBlocker": "실행 중인 터미널 프로세스",
+            "terminalLivenessUnknownBlocker": "터미널 상태 알 수 없음",
+            "dirtyEditorBufferBlocker": "저장되지 않은 편집기 버퍼",
+            "volatileLocalContextBlocker": "휘발성 로컬 문맥",
+            "recentVisibleContextBlocker": "최근 방문한 탭",
+            "liveAgentBlocker": "활성 에이전트",
+            "sshDisconnectedBlocker": "원격을 사용할 수 없음",
+            "gitStatusErrorBlocker": "Git 상태를 사용할 수 없음",
+            "dirtyFilesBlocker": "변경된 파일",
+            "unknownBaseBlocker": "푸시되지 않은 커밋을 확인할 수 없음",
+            "dismissedBlocker": "무시됨"
           }
         }
       },
@@ -3940,7 +3995,8 @@
           "runtimeHostProject": "Orca 서버의 프로젝트",
           "automationCreated": "자동화로 생성됨",
           "branchIdentity": "브랜치",
-          "branchFolderPathIdentity": "브랜치 또는 폴더 경로"
+          "branchFolderPathIdentity": "브랜치 또는 폴더 경로",
+          "ef18787206": "삭제 대기 중"
         },
         "WorktreeCardAgents": {
           "1b0a156717": "에이전트"

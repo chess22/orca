@@ -46,6 +46,7 @@ type CandidateRowProps = {
   failure?: string
   last: boolean
   lastActivityLabel: string
+  removing?: boolean
   reviewInfo: WorkspaceCleanupReviewInfo
   selected: boolean
   onIgnore: (candidate: WorkspaceCleanupCandidate) => void
@@ -75,7 +76,7 @@ function MetadataIconChip({
             'border-border bg-background text-muted-foreground',
             tone === 'ready' &&
               'border-[color:color-mix(in_srgb,var(--git-decoration-added)_45%,transparent)] bg-[color:color-mix(in_srgb,var(--git-decoration-added)_10%,transparent)] text-[var(--git-decoration-added)]',
-            tone === 'review' && 'text-[var(--git-decoration-modified)]',
+            tone === 'review' && 'bg-muted text-foreground',
             tone === 'destructive' && 'border-destructive/30 text-destructive'
           )}
           aria-label={label}
@@ -97,6 +98,7 @@ export function CandidateRow({
   failure,
   last,
   lastActivityLabel,
+  removing = false,
   reviewInfo,
   selected,
   onIgnore,
@@ -105,7 +107,7 @@ export function CandidateRow({
   onToggleSelected,
   onView
 }: CandidateRowProps): React.JSX.Element {
-  const selectable = canQueueWorkspaceCleanupCandidate(candidate)
+  const selectable = canQueueWorkspaceCleanupCandidate(candidate) && !removing
   const ignored = candidate.blockers.includes('dismissed')
   const blockers = getWorkspaceCleanupBlockerLabels(candidate)
   const contextDetails = formatContextDetails(candidate)

@@ -1,15 +1,19 @@
-import { lstat } from 'node:fs/promises'
+import { lstat, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { Repo, Worktree } from '../../shared/types'
+import { parseWslUncPath } from '../../shared/wsl-paths'
+import { toWindowsWslPath } from '../wsl'
 
 type StatPath = (targetPath: string) => Promise<{ mtimeMs: number }>
+type ReadTextFile = (targetPath: string) => Promise<string>
 
 export async function resolveWorkspaceCleanupActivityWorktree(
   repo: Repo,
   worktree: Worktree,
-  statPath: StatPath = statLocalPath
+  statPath: StatPath = statLocalPath,
+  readTextFile: ReadTextFile = readLocalTextFile
 ): Promise<Worktree> {
-  const activityAt = await resolveWorkspaceCleanupActivityAt(repo, worktree, statPath)
+  const activityAt = await resolveWorkspaceCleanupActivityAt(repo, worktree, statPath, readTextFile)
   if (activityAt <= worktree.lastActivityAt) {
     return worktree
   }
@@ -21,10 +25,15 @@ async function statLocalPath(targetPath: string): Promise<{ mtimeMs: number }> {
   return { mtimeMs: Number(stats.mtimeMs) }
 }
 
+async function readLocalTextFile(targetPath: string): Promise<string> {
+  return readFile(targetPath, 'utf8')
+}
+
 async function resolveWorkspaceCleanupActivityAt(
   repo: Repo,
   worktree: Worktree,
-  statPath: StatPath
+  statPath: StatPath,
+  readTextFile: ReadTextFile
 ): Promise<number> {
   const persistedActivityAt = Number.isFinite(worktree.lastActivityAt) ? worktree.lastActivityAt : 0
   const createdAt = Number.isFinite(worktree.createdAt) ? (worktree.createdAt ?? 0) : 0
@@ -32,19 +41,61 @@ async function resolveWorkspaceCleanupActivityAt(
     return Math.max(persistedActivityAt, createdAt)
   }
 
-  const filesystemActivityAt = await getNewestLocalWorktreeStatMtime(worktree.path, statPath)
+  const filesystemActivityAt = await getNewestLocalWorktreeStatMtime(
+    worktree.path,
+    statPath,
+    readTextFile
+  )
   return Math.max(persistedActivityAt, createdAt, filesystemActivityAt)
 }
 
 async function getNewestLocalWorktreeStatMtime(
   worktreePath: string,
-  statPath: StatPath
+  statPath: StatPath,
+  readTextFile: ReadTextFile
 ): Promise<number> {
+  const gitPath = path.join(worktreePath, '.git')
+  const gitDirPath = await readLocalWorktreeGitDir(worktreePath, gitPath, readTextFile)
+  const gitDirMtimePromises = gitDirPath
+    ? [
+        readMtime(gitDirPath, statPath),
+        readMtime(path.join(gitDirPath, 'HEAD'), statPath),
+        readMtime(path.join(gitDirPath, 'logs', 'HEAD'), statPath)
+      ]
+    : []
   const mtimes = await Promise.all([
     readMtime(worktreePath, statPath),
-    readMtime(path.join(worktreePath, '.git'), statPath)
+    readMtime(gitPath, statPath),
+    ...gitDirMtimePromises
   ])
   return Math.max(0, ...mtimes)
+}
+
+async function readLocalWorktreeGitDir(
+  worktreePath: string,
+  gitPath: string,
+  readTextFile: ReadTextFile
+): Promise<string | null> {
+  try {
+    const contents = await readTextFile(gitPath)
+    const match = /^gitdir:\s*(.+)\s*$/im.exec(contents)
+    if (!match) {
+      return null
+    }
+    const gitDir = match[1]?.trim()
+    if (!gitDir) {
+      return null
+    }
+    // Why: linked worktrees keep mutable git state outside the worktree; the
+    // pointer file mtime alone can miss recent external commits.
+    const wslWorktree = parseWslUncPath(worktreePath)
+    if (wslWorktree && gitDir.startsWith('/')) {
+      return toWindowsWslPath(gitDir, wslWorktree.distro)
+    }
+    return path.isAbsolute(gitDir) ? gitDir : path.resolve(worktreePath, gitDir)
+  } catch {
+    return null
+  }
 }
 
 async function readMtime(targetPath: string, statPath: StatPath): Promise<number> {

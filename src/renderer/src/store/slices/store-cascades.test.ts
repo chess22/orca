@@ -216,6 +216,37 @@ describe('removeWorktree cascade', () => {
     })
   })
 
+  it('can suppress preserved branch warning toasts for batched cleanup removal', async () => {
+    const store = createTestStore()
+    const worktreeId = 'repo1::/path/wt1'
+    mockApi.worktrees.remove.mockResolvedValueOnce({
+      preservedBranch: { branchName: 'feature/test', head: 'def456' }
+    })
+
+    seedStore(store, {
+      worktreesByRepo: {
+        repo1: [
+          makeWorktree({
+            id: worktreeId,
+            repoId: 'repo1',
+            path: '/path/wt1',
+            displayName: 'Review cleanup'
+          })
+        ]
+      }
+    })
+
+    const result = await store
+      .getState()
+      .removeWorktree(worktreeId, false, { suppressPreservedBranchToast: true })
+
+    expect(result).toEqual({
+      ok: true,
+      preservedBranch: { branchName: 'feature/test', head: 'def456' }
+    })
+    expect(toast.warning).not.toHaveBeenCalled()
+  })
+
   it('sets delete state with dirty/untracked error and canForceDelete=true on failure', async () => {
     const store = createTestStore()
     const worktreeId = 'repo1::/path/wt1'
@@ -286,6 +317,25 @@ describe('removeWorktree cascade', () => {
     expect(store.getState().deleteStateByWorktreeId).toMatchObject({
       [first]: { isDeleting: true, phase: 'queued', error: null, canForceDelete: false },
       [second]: { isDeleting: true, phase: 'queued', error: null, canForceDelete: false }
+    })
+  })
+
+  it('keeps active deletion state when cleanup queues stale rows', () => {
+    const store = createTestStore()
+    const active = 'repo1::/path/deleting'
+    const queued = 'repo1::/path/queued'
+
+    seedStore(store, {
+      deleteStateByWorktreeId: {
+        [active]: { isDeleting: true, phase: 'deleting', error: null, canForceDelete: false }
+      }
+    })
+
+    store.getState().markWorktreesQueuedForDeletion([active, queued])
+
+    expect(store.getState().deleteStateByWorktreeId).toMatchObject({
+      [active]: { isDeleting: true, phase: 'deleting', error: null, canForceDelete: false },
+      [queued]: { isDeleting: true, phase: 'queued', error: null, canForceDelete: false }
     })
   })
 

@@ -78,6 +78,11 @@ let inFlightWorkspaceCleanupScan: {
   promise: Promise<WorkspaceCleanupScanResult>
 } | null = null
 let latestWorkspaceCleanupScanToken = 0
+let finalizedWorkspaceCleanupScanToken = 0
+let workspaceCleanupProgressQueue: {
+  scanToken: number
+  promise: Promise<void>
+} | null = null
 let workspaceCleanupEnrichmentCache: {
   scanToken: number
   entries: Map<string, WorkspaceCleanupEnrichmentCacheEntry>
@@ -160,10 +165,12 @@ export const createWorkspaceCleanupSlice: StateCreator<AppState, [], [], Workspa
       workspaceCleanupError: null
     })
     const scanToken = ++latestWorkspaceCleanupScanToken
+    finalizedWorkspaceCleanupScanToken = 0
+    workspaceCleanupProgressQueue = null
     workspaceCleanupEnrichmentCache = { scanToken, entries: new Map() }
     const promise = (async () => {
       const scan = await window.api.workspaceCleanup.scan(scanArgs, (progress) => {
-        void applyWorkspaceCleanupProgress(progress, scanToken, get, set)
+        enqueueWorkspaceCleanupProgress(progress, scanToken, get, set)
       })
       const enriched = await enrichWorkspaceCleanupCandidatesForScan(
         scan.candidates,
@@ -172,10 +179,11 @@ export const createWorkspaceCleanupSlice: StateCreator<AppState, [], [], Workspa
       )
       const result = { ...scan, candidates: enriched }
       if (scanToken === latestWorkspaceCleanupScanToken) {
+        finalizedWorkspaceCleanupScanToken = scanToken
         set({
           workspaceCleanupScan: result,
           workspaceCleanupProgress: {
-            scanId: get().workspaceCleanupProgress?.scanId ?? '',
+            scanId: get().workspaceCleanupProgress?.scanId ?? scanArgs.scanId ?? '',
             scannedAt: result.scannedAt,
             scannedWorktreeCount: result.candidates.length,
             totalWorktreeCount: result.candidates.length,
@@ -304,8 +312,10 @@ export const createWorkspaceCleanupSlice: StateCreator<AppState, [], [], Workspa
     }
 
     if (removedIds.length > 0) {
+      invalidateWorkspaceCleanupScanProgress()
       const removedIdSet = new Set(removedIds)
       set((state) => ({
+        workspaceCleanupLoading: false,
         workspaceCleanupScan: state.workspaceCleanupScan
           ? {
               ...state.workspaceCleanupScan,
@@ -325,6 +335,42 @@ function getWorkspaceCleanupScanKey(args: WorkspaceCleanupScanArgs): string {
   return JSON.stringify({
     skipGitWorktreeIds: [...new Set(args.skipGitWorktreeIds ?? [])].sort()
   })
+}
+
+function invalidateWorkspaceCleanupScanProgress(): void {
+  latestWorkspaceCleanupScanToken += 1
+  finalizedWorkspaceCleanupScanToken = 0
+  inFlightWorkspaceCleanupScan = null
+  workspaceCleanupProgressQueue = null
+  workspaceCleanupEnrichmentCache = null
+}
+
+function enqueueWorkspaceCleanupProgress(
+  progress: WorkspaceCleanupScanProgress,
+  scanToken: number,
+  getState: () => AppState,
+  setState: (
+    partial: Partial<AppState> | ((state: AppState) => Partial<AppState>),
+    replace?: false
+  ) => void
+): void {
+  if (
+    scanToken !== latestWorkspaceCleanupScanToken ||
+    scanToken === finalizedWorkspaceCleanupScanToken
+  ) {
+    return
+  }
+  const previous =
+    workspaceCleanupProgressQueue?.scanToken === scanToken
+      ? workspaceCleanupProgressQueue.promise
+      : Promise.resolve()
+  const promise = previous
+    .catch(() => undefined)
+    .then(() => applyWorkspaceCleanupProgress(progress, scanToken, getState, setState))
+    .catch((error: unknown) => {
+      console.error('Workspace cleanup progress update failed', error)
+    })
+  workspaceCleanupProgressQueue = { scanToken, promise }
 }
 
 async function applyWorkspaceCleanupProgress(
@@ -351,7 +397,10 @@ async function applyWorkspaceCleanupProgress(
     progress.candidateMode === 'append'
       ? appendWorkspaceCleanupProgressCandidates(previousCandidates, enrichedProgressCandidates)
       : enrichedProgressCandidates
-  if (scanToken !== latestWorkspaceCleanupScanToken) {
+  if (
+    scanToken !== latestWorkspaceCleanupScanToken ||
+    scanToken === finalizedWorkspaceCleanupScanToken
+  ) {
     return
   }
   setState((state) => {

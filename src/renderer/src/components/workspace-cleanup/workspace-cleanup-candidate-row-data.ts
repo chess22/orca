@@ -1,37 +1,26 @@
 import { translate } from '@/i18n/i18n'
-import type {
-  WorkspaceCleanupBlocker,
-  WorkspaceCleanupCandidate
-} from '../../../../shared/workspace-cleanup'
+import type { WorkspaceCleanupCandidate } from '../../../../shared/workspace-cleanup'
 import {
   getWorkspaceCleanupGitLabel,
   hasWorkspaceCleanupLocalContext,
   type WorkspaceCleanupReviewInfo
 } from './workspace-cleanup-presentation'
+import {
+  formatUnpushedCommitCount,
+  formatWorkspaceCleanupContextCount,
+  formatWorkspaceCleanupContextDetail,
+  formatWorkspaceCleanupGitStatusLabel,
+  getGitStatusUnknownLabel,
+  getNoUnpushedCommitsLabel,
+  getUncommittedChangesLabel,
+  getUnpushedCommitsLabel,
+  getWorkspaceCleanupBlockerLabel
+} from './workspace-cleanup-candidate-labels'
 
 export type StatusPillTone = 'neutral' | 'ready' | 'review' | 'destructive'
 
-const BLOCKER_LABELS: Record<WorkspaceCleanupBlocker, string> = {
-  'main-worktree': 'Main workspace',
-  'folder-repo': 'Folder project',
-  pinned: 'Pinned',
-  'active-workspace': 'Active workspace',
-  'running-terminal': 'Running terminal process',
-  'terminal-liveness-unknown': 'Terminal liveness unknown',
-  'dirty-editor-buffer': 'Unsaved editor buffer',
-  'volatile-local-context': 'Volatile local context',
-  'recent-visible-context': 'Recently visited tabs',
-  'live-agent': 'Active agent',
-  'ssh-disconnected': 'Remote unavailable',
-  'git-status-error': 'Git status unavailable',
-  'dirty-files': 'Changed files',
-  'unpushed-commits': 'Unpushed commits',
-  'unknown-base': 'Could not verify unpushed commits',
-  dismissed: 'Ignored'
-}
-
 export function getWorkspaceCleanupBlockerLabels(candidate: WorkspaceCleanupCandidate): string[] {
-  return candidate.blockers.map((blocker) => BLOCKER_LABELS[blocker])
+  return candidate.blockers.map((blocker) => getWorkspaceCleanupBlockerLabel(blocker))
 }
 
 export function getCandidateStatus(candidate: WorkspaceCleanupCandidate): {
@@ -62,7 +51,7 @@ export function getCandidateStatus(candidate: WorkspaceCleanupCandidate): {
     }
   }
   if (candidate.blockers.length > 0) {
-    return { label: BLOCKER_LABELS[candidate.blockers[0]], tone: 'neutral' }
+    return { label: getWorkspaceCleanupBlockerLabel(candidate.blockers[0]), tone: 'neutral' }
   }
   if (candidate.git.upstreamAhead && candidate.git.upstreamAhead > 0) {
     return {
@@ -101,18 +90,7 @@ export function getCandidateStatus(candidate: WorkspaceCleanupCandidate): {
 }
 
 export function formatGitStatus(candidate: WorkspaceCleanupCandidate): string {
-  const label = getWorkspaceCleanupGitLabel(candidate)
-  switch (label) {
-    case 'Clean':
-      return 'Clean git'
-    case 'Dirty':
-      return 'Dirty git'
-    case 'Unpushed':
-      return 'Unpushed commits'
-    case 'Unknown':
-      return 'Git unknown'
-  }
-  return 'Git unknown'
+  return formatWorkspaceCleanupGitStatusLabel(getWorkspaceCleanupGitLabel(candidate))
 }
 
 export function formatBranchSafetyDetails(candidate: WorkspaceCleanupCandidate): string[] {
@@ -120,10 +98,8 @@ export function formatBranchSafetyDetails(candidate: WorkspaceCleanupCandidate):
   if (candidate.git.upstreamAhead !== null) {
     details.push(
       candidate.git.upstreamAhead === 0
-        ? 'No unpushed commits'
-        : `${candidate.git.upstreamAhead} unpushed commit${
-            candidate.git.upstreamAhead === 1 ? '' : 's'
-          }`
+        ? getNoUnpushedCommitsLabel()
+        : formatUnpushedCommitCount(candidate.git.upstreamAhead)
     )
   }
   return details
@@ -133,37 +109,25 @@ export function formatContextDetails(candidate: WorkspaceCleanupCandidate): stri
   const parts: string[] = []
   if (candidate.localContext.terminalTabCount > 0) {
     parts.push(
-      `${candidate.localContext.terminalTabCount} terminal tab${
-        candidate.localContext.terminalTabCount === 1 ? '' : 's'
-      }`
+      formatWorkspaceCleanupContextDetail('terminal', candidate.localContext.terminalTabCount)
     )
   }
   if (candidate.localContext.cleanEditorTabCount > 0) {
     parts.push(
-      `${candidate.localContext.cleanEditorTabCount} editor tab${
-        candidate.localContext.cleanEditorTabCount === 1 ? '' : 's'
-      }`
+      formatWorkspaceCleanupContextDetail('editor', candidate.localContext.cleanEditorTabCount)
     )
   }
   if (candidate.localContext.browserTabCount > 0) {
     parts.push(
-      `${candidate.localContext.browserTabCount} browser tab${
-        candidate.localContext.browserTabCount === 1 ? '' : 's'
-      }`
+      formatWorkspaceCleanupContextDetail('browser', candidate.localContext.browserTabCount)
     )
   }
   if (candidate.localContext.diffCommentCount > 0) {
-    parts.push(
-      `${candidate.localContext.diffCommentCount} diff note${
-        candidate.localContext.diffCommentCount === 1 ? '' : 's'
-      }`
-    )
+    parts.push(formatWorkspaceCleanupContextDetail('diff', candidate.localContext.diffCommentCount))
   }
   if (candidate.localContext.retainedDoneAgentCount > 0) {
     parts.push(
-      `${candidate.localContext.retainedDoneAgentCount} completed agent${
-        candidate.localContext.retainedDoneAgentCount === 1 ? '' : 's'
-      }`
+      formatWorkspaceCleanupContextDetail('agent', candidate.localContext.retainedDoneAgentCount)
     )
   }
   return parts.length > 0 ? parts.join(', ') : null
@@ -178,30 +142,41 @@ export function getDirtyGitLabel(candidate: WorkspaceCleanupCandidate): string |
   }
   if (candidate.blockers.includes('unpushed-commits')) {
     if (candidate.git.upstreamAhead && candidate.git.upstreamAhead > 0) {
-      return `${candidate.git.upstreamAhead} unpushed commit${
-        candidate.git.upstreamAhead === 1 ? '' : 's'
-      }`
+      return formatUnpushedCommitCount(candidate.git.upstreamAhead)
     }
-    return 'Unpushed commits'
+    return getUnpushedCommitsLabel()
   }
   if (candidate.git.upstreamAhead && candidate.git.upstreamAhead > 0) {
-    return `${candidate.git.upstreamAhead} unpushed commit${
-      candidate.git.upstreamAhead === 1 ? '' : 's'
-    }`
+    return formatUnpushedCommitCount(candidate.git.upstreamAhead)
   }
   if (candidate.git.clean === false) {
-    return 'Uncommitted changes'
+    return getUncommittedChangesLabel()
   }
   if (candidate.git.clean == null) {
-    return 'Git status unknown'
+    return getGitStatusUnknownLabel()
   }
   return null
 }
 
 export function shouldShowGitMetadataChip(candidate: WorkspaceCleanupCandidate): boolean {
   return (
-    !candidate.blockers.includes('unknown-base') && !candidate.blockers.includes('git-status-error')
+    !candidate.blockers.includes('unknown-base') &&
+    !candidate.blockers.includes('git-status-error') &&
+    !hasGitStatusPill(candidate)
   )
+}
+
+function hasGitStatusPill(candidate: WorkspaceCleanupCandidate): boolean {
+  if (
+    candidate.blockers.includes('dirty-files') ||
+    candidate.blockers.includes('unpushed-commits')
+  ) {
+    return true
+  }
+  if (candidate.blockers.length > 0 || candidate.tier === 'ready') {
+    return false
+  }
+  return (candidate.git.upstreamAhead ?? 0) > 0 || candidate.git.clean === false
 }
 
 export function getReviewPillTone(reviewInfo: WorkspaceCleanupReviewInfo): StatusPillTone {
@@ -215,7 +190,7 @@ export function getContextPillLabel(candidate: WorkspaceCleanupCandidate): strin
   if (!hasWorkspaceCleanupLocalContext(candidate)) {
     return null
   }
-  return `${getContextCount(candidate)} context`
+  return formatWorkspaceCleanupContextCount(getContextCount(candidate))
 }
 
 export function getContextCount(candidate: WorkspaceCleanupCandidate): number {

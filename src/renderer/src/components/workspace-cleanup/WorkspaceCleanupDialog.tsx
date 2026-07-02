@@ -73,7 +73,8 @@ import {
   getCandidateStatus,
   getContextPillLabel,
   getDirtyGitLabel,
-  getReviewPillTone
+  getReviewPillTone,
+  shouldShowGitMetadataChip
 } from './workspace-cleanup-candidate-row-data'
 import { StatusPill } from './workspace-cleanup-status-pill'
 import {
@@ -81,6 +82,7 @@ import {
   type WorkspaceCleanupView,
   type WorkspaceCleanupViewCounts
 } from './workspace-cleanup-view-selection'
+import { filterWorkspaceCleanupRemovalCandidates } from './workspace-cleanup-removal-candidates'
 import { translate } from '@/i18n/i18n'
 
 const DEFAULT_FILTERS: WorkspaceCleanupFilters = {
@@ -195,6 +197,16 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
   const removeCandidates = useAppStore((s) => s.removeWorkspaceCleanupCandidates)
   const markWorktreesQueuedForDeletion = useAppStore((s) => s.markWorktreesQueuedForDeletion)
   const clearWorktreeDeleteState = useAppStore((s) => s.clearWorktreeDeleteState)
+  const deletingWorktreeIds = useAppStore(
+    useShallow(
+      (s) =>
+        new Set(
+          Object.entries(s.deleteStateByWorktreeId)
+            .filter(([, state]) => state.isDeleting)
+            .map(([worktreeId]) => worktreeId)
+        )
+    )
+  )
 
   const open = activeModal === 'workspace-cleanup'
   const openRef = useRef(open)
@@ -292,16 +304,14 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
         setFilters(DEFAULT_FILTERS)
         setSortKey('activity')
         setSortDirection('asc')
-        if (scan) {
-          setSelectedIds(getDefaultSelectedWorkspaceCleanupIds(scan.candidates))
-        }
+        setSelectedIds(new Set())
       }
     }
     if (!loading && !autoScanAttemptedForOpenRef.current) {
       autoScanAttemptedForOpenRef.current = true
       startWorkspaceCleanupScan({ notifyWhenReady: true })
     }
-  }, [loading, open, scan, startWorkspaceCleanupScan])
+  }, [loading, open, startWorkspaceCleanupScan])
 
   useEffect(() => {
     if (!open) {
@@ -335,17 +345,17 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
   }, [candidates, effectiveRepoSelection, eligibleRepoIds.length])
 
   useEffect(() => {
-    if (!scan || selectedDefaultsScanAtRef.current === scan.scannedAt) {
+    if (loading || !scan || selectedDefaultsScanAtRef.current === scan.scannedAt) {
       return
     }
     selectedDefaultsScanAtRef.current = scan.scannedAt
     if (removalInFlightRef.current) {
       return
     }
-    setSelectedIds(getDefaultSelectedWorkspaceCleanupIds(scan.candidates))
+    setSelectedIds(getDefaultSelectedWorkspaceCleanupIds(scan.candidates, deletingWorktreeIds))
     setConfirming(false)
     setRowFailures({})
-  }, [scan])
+  }, [deletingWorktreeIds, loading, scan])
 
   const visibleCandidates = useMemo(() => {
     const rows = filteredCandidates.filter((candidate) => !candidate.blockers.includes('dismissed'))
@@ -427,9 +437,11 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
       .map((id) => byId.get(id))
       .filter(
         (candidate): candidate is WorkspaceCleanupCandidate =>
-          candidate != null && canQueueWorkspaceCleanupCandidate(candidate)
+          candidate != null &&
+          canQueueWorkspaceCleanupCandidate(candidate) &&
+          !deletingWorktreeIds.has(candidate.worktreeId)
       )
-  }, [activeRows, selectedIds])
+  }, [activeRows, deletingWorktreeIds, selectedIds])
   useEffect(() => {
     if (!open || confirming) {
       return
@@ -437,10 +449,12 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
     // Why: destructive selection must stay scoped to the rows the user can
     // currently review after tier/filter changes.
     setSelectedIds((current) => {
-      const next = new Set([...current].filter((id) => activeRowIds.has(id)))
+      const next = new Set(
+        [...current].filter((id) => activeRowIds.has(id) && !deletingWorktreeIds.has(id))
+      )
       return next.size === current.size ? current : next
     })
-  }, [activeRowIds, confirming, open])
+  }, [activeRowIds, confirming, deletingWorktreeIds, open])
 
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
@@ -489,7 +503,14 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
   }, [])
 
   const openConfirmRemove = useCallback((candidates: readonly WorkspaceCleanupCandidate[]) => {
-    setConfirmCandidates([...candidates])
+    const nextCandidates = filterWorkspaceCleanupRemovalCandidates(
+      candidates,
+      useAppStore.getState().deleteStateByWorktreeId
+    )
+    if (nextCandidates.length === 0) {
+      return
+    }
+    setConfirmCandidates(nextCandidates)
     setConfirming(true)
   }, [])
 
@@ -506,11 +527,20 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
     if (confirmCandidates.length === 0 || removalInFlightRef.current) {
       return
     }
+    const removableCandidates = filterWorkspaceCleanupRemovalCandidates(
+      confirmCandidates,
+      useAppStore.getState().deleteStateByWorktreeId
+    )
+    if (removableCandidates.length === 0) {
+      setConfirming(false)
+      setConfirmCandidates([])
+      return
+    }
     removalInFlightRef.current = true
     setRowFailures({})
-    markWorktreesQueuedForDeletion(confirmCandidates.map((candidate) => candidate.worktreeId))
+    markWorktreesQueuedForDeletion(removableCandidates.map((candidate) => candidate.worktreeId))
     startWorkspaceCleanupBackgroundRemoval({
-      candidates: confirmCandidates,
+      candidates: removableCandidates,
       removeCandidates,
       onProgress: (progress) => {
         if (mountedRef.current) {
@@ -521,7 +551,14 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
         const nextFailures: Record<string, string> = {}
         for (const failure of result.failures) {
           nextFailures[failure.worktreeId] = failure.message
-          clearWorktreeDeleteState(failure.worktreeId)
+          const deleteState = useAppStore.getState().deleteStateByWorktreeId[failure.worktreeId]
+          if (
+            deleteState?.isDeleting &&
+            deleteState.error === null &&
+            deleteState.phase === 'queued'
+          ) {
+            clearWorktreeDeleteState(failure.worktreeId)
+          }
         }
         if (mountedRef.current) {
           setRowFailures(nextFailures)
@@ -541,7 +578,7 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
         removalInFlightRef.current = false
       },
       onError: () => {
-        for (const candidate of confirmCandidates) {
+        for (const candidate of removableCandidates) {
           clearWorktreeDeleteState(candidate.worktreeId)
         }
         if (mountedRef.current) {
@@ -666,7 +703,7 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
                     variant="destructive"
                     size="sm"
                     onClick={() => openConfirmRemove(selectedCandidates)}
-                    disabled={selectedCount === 0}
+                    disabled={selectedCount === 0 || loading}
                   >
                     <Trash2 className="size-3.5" />
                     {translate(
@@ -811,7 +848,12 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
                         last={activeRows.length > 1 && index === activeRows.length - 1}
                         expanded={expandedRowIds.has(candidate.worktreeId)}
                         lastActivityLabel={formatRelativeTime(candidate.lastActivityAt)}
-                        selected={selectedIds.has(candidate.worktreeId)}
+                        removing={loading || deletingWorktreeIds.has(candidate.worktreeId)}
+                        selected={
+                          selectedIds.has(candidate.worktreeId) &&
+                          !loading &&
+                          !deletingWorktreeIds.has(candidate.worktreeId)
+                        }
                         failure={rowFailures[candidate.worktreeId]}
                         onToggleExpanded={toggleExpandedRow}
                         onToggleSelected={(id) =>
@@ -820,6 +862,9 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
                         onView={closeAndView}
                         onIgnore={ignoreCandidate}
                         onRemove={(candidate) => {
+                          if (loading) {
+                            return
+                          }
                           setSelectedIds(new Set([candidate.worktreeId]))
                           openConfirmRemove([candidate])
                         }}
@@ -1174,7 +1219,6 @@ function ConfirmRemove({
   onConfirm: () => void
 }): React.JSX.Element {
   const count = candidates.length
-  const noun = count === 1 ? 'workspace' : 'workspaces'
   const deleting = progress !== null
   const progressValue = progress
     ? Math.min(100, Math.max(0, (progress.processedCount / progress.totalCount) * 100))
@@ -1194,14 +1238,16 @@ function ConfirmRemove({
             <div className="min-w-0">
               <DialogTitle className="text-base">
                 {deleting
-                  ? `${translate(
-                      'auto.components.workspace.cleanup.WorkspaceCleanupDialog.e50c4da067',
-                      'Deleting'
-                    )} ${count} ${noun}`
-                  : `${translate(
-                      'auto.components.workspace.cleanup.WorkspaceCleanupDialog.cbf2f664e2',
-                      'Delete'
-                    )} ${count} ${noun}?`}
+                  ? translate(
+                      'auto.components.workspace.cleanup.WorkspaceCleanupDialog.deletingCount',
+                      'Deleting workspaces: {{value0}}',
+                      { value0: count }
+                    )
+                  : translate(
+                      'auto.components.workspace.cleanup.WorkspaceCleanupDialog.deleteCount',
+                      'Delete workspaces: {{value0}}?',
+                      { value0: count }
+                    )}
               </DialogTitle>
               <DialogDescription className="mt-1.5 text-xs leading-5">
                 {deleting
@@ -1243,10 +1289,10 @@ function ConfirmRemove({
         ) : null}
         <div className="flex items-center justify-between border-b border-border px-5 py-2.5">
           <div className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
-            {count} {noun}{' '}
             {translate(
-              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.dba753e94f',
-              'to delete'
+              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.selectedForDeletionCount',
+              'Selected for deletion: {{value0}}',
+              { value0: count }
             )}
           </div>
           <div className="text-xs text-muted-foreground">
@@ -1283,10 +1329,10 @@ function ConfirmRemove({
           <Button variant="destructive" onClick={onConfirm} disabled={count === 0}>
             <Trash2 className="size-4" />
             {translate(
-              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.cbf2f664e2',
-              'Delete'
-            )}{' '}
-            {count} {noun}
+              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.deleteButtonCount',
+              'Delete {{value0}}',
+              { value0: count }
+            )}
           </Button>
         ) : null}
       </DialogFooter>
@@ -1306,6 +1352,7 @@ function ConfirmRemoveRow({
   const dirtyLabel = getDirtyGitLabel(candidate)
   const branchDiffersFromName = candidate.branch !== candidate.displayName
   const contextPillLabel = getContextPillLabel(candidate)
+  const showGitMetadataChip = shouldShowGitMetadataChip(candidate)
   const status = getCandidateStatus(candidate)
   return (
     <div className={cn('border-b border-border/60 px-5 py-2.5', last && 'border-b-0')}>
@@ -1323,7 +1370,9 @@ function ConfirmRemoveRow({
           <StatusPill tone={getReviewPillTone(reviewInfo)}>{reviewInfo.label}</StatusPill>
         ) : null}
         {contextPillLabel ? <StatusPill>{contextPillLabel}</StatusPill> : null}
-        {dirtyLabel ? <StatusPill tone="destructive">{dirtyLabel}</StatusPill> : null}
+        {dirtyLabel && showGitMetadataChip ? (
+          <StatusPill tone="destructive">{dirtyLabel}</StatusPill>
+        ) : null}
       </div>
       <div className="mt-0.5 flex min-w-0 flex-wrap items-baseline gap-x-2 text-xs text-muted-foreground">
         <span className="min-w-0 truncate">{candidate.repoName}</span>
@@ -1367,11 +1416,14 @@ function hasActiveWorkspaceCleanupPanelControls(
 }
 
 function getDefaultSelectedWorkspaceCleanupIds(
-  candidates: readonly WorkspaceCleanupCandidate[]
+  candidates: readonly WorkspaceCleanupCandidate[],
+  deletingWorktreeIds: ReadonlySet<string> = new Set()
 ): Set<string> {
   return new Set(
     candidates
-      .filter((candidate) => candidate.selectedByDefault)
+      .filter(
+        (candidate) => candidate.selectedByDefault && !deletingWorktreeIds.has(candidate.worktreeId)
+      )
       .map((candidate) => candidate.worktreeId)
   )
 }
@@ -1417,13 +1469,11 @@ function formatWorkspaceCleanupProgress(progress: WorkspaceCleanupScanProgress |
       'Finding inactive workspaces...'
     )
   }
-  const noun = progress.scannedWorktreeCount === 1 ? 'workspace' : 'workspaces'
   return translate(
     'auto.components.workspace.cleanup.WorkspaceCleanupDialog.7b7bde5181',
-    'Checked {{value0}} {{value1}} so far',
+    'Checked workspaces so far: {{value0}}',
     {
-      value0: progress.scannedWorktreeCount,
-      value1: noun
+      value0: progress.scannedWorktreeCount
     }
   )
 }

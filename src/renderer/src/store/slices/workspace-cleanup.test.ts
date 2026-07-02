@@ -291,6 +291,281 @@ describe('workspace cleanup viewed rows', () => {
     expect(getForegroundProcess).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps append progress rows when terminal enrichment resolves out of order', async () => {
+    const pending = deferred<WorkspaceCleanupScanResult>()
+    const terminalProbe = deferred<boolean>()
+    let onProgress: ((progress: WorkspaceCleanupScanProgress) => void) | undefined
+    const terminalCandidate = makeCandidate({ worktreeId: 'repo1::/tmp/terminal' })
+    const laterCandidate = makeCandidate({ worktreeId: 'repo1::/tmp/later' })
+    const scan = vi.fn((_args, progressCallback) => {
+      onProgress = progressCallback
+      return pending.promise
+    })
+    installWorkspaceCleanupApi(scan)
+    const hasChildProcesses = vi.fn().mockReturnValue(terminalProbe.promise)
+    const getForegroundProcess = vi.fn().mockResolvedValue('zsh')
+    ;(
+      globalThis.window as unknown as {
+        api: {
+          pty?: {
+            hasChildProcesses: typeof hasChildProcesses
+            getForegroundProcess: typeof getForegroundProcess
+          }
+        }
+      }
+    ).api.pty = { hasChildProcesses, getForegroundProcess }
+    const store = createCleanupTestStore()
+    store.setState({
+      tabsByWorktree: {
+        'repo1::/tmp/terminal': [
+          { id: 'tab-1', title: 'zsh' }
+        ] as AppState['tabsByWorktree'][string]
+      },
+      ptyIdsByTabId: { 'tab-1': ['pty-1'] }
+    } as Partial<AppState>)
+
+    const scanPromise = store.getState().scanWorkspaceCleanup()
+    onProgress?.({
+      scanId: 'scan-1',
+      scannedAt: NOW,
+      scannedWorktreeCount: 1,
+      totalWorktreeCount: 2,
+      candidates: [terminalCandidate],
+      errors: [],
+      candidateMode: 'append'
+    })
+    await vi.waitFor(() => {
+      expect(hasChildProcesses).toHaveBeenCalledTimes(1)
+    })
+
+    onProgress?.({
+      scanId: 'scan-1',
+      scannedAt: NOW,
+      scannedWorktreeCount: 2,
+      totalWorktreeCount: 2,
+      candidates: [laterCandidate],
+      errors: [],
+      candidateMode: 'append'
+    })
+    await Promise.resolve()
+    expect(store.getState().workspaceCleanupProgress).toBeNull()
+
+    terminalProbe.resolve(false)
+    await vi.waitFor(() => {
+      expect(store.getState().workspaceCleanupProgress?.scannedWorktreeCount).toBe(2)
+    })
+    expect(
+      store.getState().workspaceCleanupScan?.candidates.map((candidate) => candidate.worktreeId)
+    ).toEqual(['repo1::/tmp/terminal', 'repo1::/tmp/later'])
+
+    pending.resolve({
+      scannedAt: NOW,
+      candidates: [terminalCandidate, laterCandidate],
+      errors: []
+    })
+    await scanPromise
+  })
+
+  it('publishes the final scan result without waiting for queued progress', async () => {
+    const pending = deferred<WorkspaceCleanupScanResult>()
+    const terminalProbe = deferred<boolean>()
+    let scanSettled = false
+    let onProgress: ((progress: WorkspaceCleanupScanProgress) => void) | undefined
+    const terminalCandidate = makeCandidate({ worktreeId: 'repo1::/tmp/terminal' })
+    const finalCandidate = makeCandidate({ worktreeId: 'repo1::/tmp/final' })
+    const scan = vi.fn((_args, progressCallback) => {
+      onProgress = progressCallback
+      return pending.promise
+    })
+    installWorkspaceCleanupApi(scan)
+    const hasChildProcesses = vi.fn().mockReturnValue(terminalProbe.promise)
+    const getForegroundProcess = vi.fn().mockResolvedValue('zsh')
+    ;(
+      globalThis.window as unknown as {
+        api: {
+          pty?: {
+            hasChildProcesses: typeof hasChildProcesses
+            getForegroundProcess: typeof getForegroundProcess
+          }
+        }
+      }
+    ).api.pty = { hasChildProcesses, getForegroundProcess }
+    const store = createCleanupTestStore()
+    store.setState({
+      tabsByWorktree: {
+        'repo1::/tmp/terminal': [
+          { id: 'tab-1', title: 'zsh' }
+        ] as AppState['tabsByWorktree'][string]
+      },
+      ptyIdsByTabId: { 'tab-1': ['pty-1'] }
+    } as Partial<AppState>)
+
+    const scanPromise = store
+      .getState()
+      .scanWorkspaceCleanup()
+      .finally(() => {
+        scanSettled = true
+      })
+    onProgress?.({
+      scanId: 'scan-1',
+      scannedAt: NOW,
+      scannedWorktreeCount: 1,
+      totalWorktreeCount: 2,
+      candidates: [terminalCandidate],
+      errors: [],
+      candidateMode: 'append'
+    })
+    await vi.waitFor(() => {
+      expect(hasChildProcesses).toHaveBeenCalledTimes(1)
+    })
+
+    pending.resolve({
+      scannedAt: NOW,
+      candidates: [finalCandidate],
+      errors: []
+    })
+    await scanPromise
+    expect(scanSettled).toBe(true)
+
+    terminalProbe.resolve(false)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(
+      store.getState().workspaceCleanupScan?.candidates.map((candidate) => candidate.worktreeId)
+    ).toEqual(['repo1::/tmp/final'])
+    expect(store.getState().workspaceCleanupProgress).toMatchObject({
+      scannedWorktreeCount: 1,
+      totalWorktreeCount: 1
+    })
+  })
+
+  it('ignores stale progress without replacing the active scan progress queue', async () => {
+    const firstPending = deferred<WorkspaceCleanupScanResult>()
+    const secondPending = deferred<WorkspaceCleanupScanResult>()
+    const terminalProbe = deferred<boolean>()
+    const progressCallbacks: ((progress: WorkspaceCleanupScanProgress) => void)[] = []
+    let secondScanSettled = false
+    const firstCandidate = makeCandidate({ worktreeId: 'repo1::/tmp/first' })
+    const terminalCandidate = makeCandidate({ worktreeId: 'repo1::/tmp/terminal' })
+    const finalCandidate = makeCandidate({ worktreeId: 'repo1::/tmp/final' })
+    const scan = vi.fn((args, progressCallback) => {
+      progressCallbacks.push(progressCallback)
+      return args?.skipGitWorktreeIds?.includes('second')
+        ? secondPending.promise
+        : firstPending.promise
+    })
+    installWorkspaceCleanupApi(scan)
+    const hasChildProcesses = vi.fn().mockReturnValue(terminalProbe.promise)
+    const getForegroundProcess = vi.fn().mockResolvedValue('zsh')
+    ;(
+      globalThis.window as unknown as {
+        api: {
+          pty?: {
+            hasChildProcesses: typeof hasChildProcesses
+            getForegroundProcess: typeof getForegroundProcess
+          }
+        }
+      }
+    ).api.pty = { hasChildProcesses, getForegroundProcess }
+    const store = createCleanupTestStore()
+    store.setState({
+      tabsByWorktree: {
+        'repo1::/tmp/terminal': [
+          { id: 'tab-1', title: 'zsh' }
+        ] as AppState['tabsByWorktree'][string]
+      },
+      ptyIdsByTabId: { 'tab-1': ['pty-1'] }
+    } as Partial<AppState>)
+
+    const firstScan = store.getState().scanWorkspaceCleanup({ skipGitWorktreeIds: ['first'] })
+    const secondScan = store
+      .getState()
+      .scanWorkspaceCleanup({ skipGitWorktreeIds: ['second'] })
+      .finally(() => {
+        secondScanSettled = true
+      })
+
+    progressCallbacks[1]?.({
+      scanId: 'scan-2',
+      scannedAt: NOW,
+      scannedWorktreeCount: 1,
+      totalWorktreeCount: 2,
+      candidates: [terminalCandidate],
+      errors: [],
+      candidateMode: 'append'
+    })
+    await vi.waitFor(() => {
+      expect(hasChildProcesses).toHaveBeenCalledTimes(1)
+    })
+    progressCallbacks[0]?.({
+      scanId: 'scan-1',
+      scannedAt: NOW - 1,
+      scannedWorktreeCount: 1,
+      totalWorktreeCount: 1,
+      candidates: [firstCandidate],
+      errors: [],
+      candidateMode: 'append'
+    })
+
+    secondPending.resolve({
+      scannedAt: NOW,
+      candidates: [terminalCandidate, finalCandidate],
+      errors: []
+    })
+    await Promise.resolve()
+    expect(secondScanSettled).toBe(false)
+
+    terminalProbe.resolve(false)
+    await secondScan
+    firstPending.resolve({ scannedAt: NOW - 1, candidates: [firstCandidate], errors: [] })
+    await firstScan
+
+    expect(
+      store.getState().workspaceCleanupScan?.candidates.map((candidate) => candidate.worktreeId)
+    ).toEqual(['repo1::/tmp/terminal', 'repo1::/tmp/final'])
+  })
+
+  it('does not let an in-flight broad scan revive removed cleanup rows', async () => {
+    const firstBroadScan = deferred<WorkspaceCleanupScanResult>()
+    const secondBroadScan = deferred<WorkspaceCleanupScanResult>()
+    const candidate = makeCandidate()
+    const refreshedCandidate = makeCandidate({ worktreeId: 'repo1::/tmp/refreshed' })
+    const broadScans = [firstBroadScan, secondBroadScan]
+    const scan = vi.fn((args?: { worktreeId?: string }) => {
+      if (args?.worktreeId) {
+        return Promise.resolve({ scannedAt: NOW, candidates: [candidate], errors: [] })
+      }
+      const nextBroadScan = broadScans.shift()
+      if (!nextBroadScan) {
+        throw new Error('unexpected broad scan')
+      }
+      return nextBroadScan.promise
+    })
+    installWorkspaceCleanupApi(scan)
+    const removeWorktree = vi.fn().mockResolvedValue({ ok: true })
+    const store = createCleanupTestStore(removeWorktree)
+    store.setState({
+      workspaceCleanupScan: { scannedAt: NOW - 1, candidates: [candidate], errors: [] }
+    } as Partial<AppState>)
+
+    const pendingRefresh = store.getState().scanWorkspaceCleanup()
+    await store.getState().removeWorkspaceCleanupCandidates([candidate.worktreeId])
+    const replacementRefresh = store.getState().scanWorkspaceCleanup()
+
+    expect(scan).toHaveBeenCalledTimes(3)
+
+    secondBroadScan.resolve({ scannedAt: NOW, candidates: [refreshedCandidate], errors: [] })
+    await expect(replacementRefresh).resolves.toMatchObject({
+      candidates: [refreshedCandidate]
+    })
+
+    firstBroadScan.resolve({ scannedAt: NOW - 1, candidates: [candidate], errors: [] })
+    await pendingRefresh
+
+    expect(store.getState().workspaceCleanupLoading).toBe(false)
+    expect(store.getState().workspaceCleanupScan?.candidates).toEqual([refreshedCandidate])
+  })
+
   it('does not join broad cleanup scans with different explicit args', async () => {
     const firstPending = deferred<WorkspaceCleanupScanResult>()
     const secondPending = deferred<WorkspaceCleanupScanResult>()

@@ -2306,7 +2306,62 @@
             "gitFilter": "Git",
             "contextFilter": "Contexto",
             "sortBy": "Ordenar por",
-            "sortDirection": "Dirección"
+            "sortDirection": "Dirección",
+            "e50c4da067": "Eliminando",
+            "1d3503357d": "Puedes cerrar esto y volver mientras la eliminación continúa.",
+            "4c2990886e": "{{value0}}/{{value1}} eliminados",
+            "86ba852118": "{{value0}}, {{value1}} fallidos",
+            "7b7bde5181": "Espacios de trabajo comprobados hasta ahora: {{value0}}",
+            "deletingCount": "Eliminando espacios de trabajo: {{value0}}",
+            "deleteCount": "¿Eliminar espacios de trabajo: {{value0}}?",
+            "selectedForDeletionCount": "Seleccionados para eliminar: {{value0}}",
+            "deleteButtonCount": "Eliminar {{value0}}",
+            "archivedStatus": "Archivado",
+            "readyStatus": "Listo"
+          },
+          "backgroundRemoval": {
+            "removed": "Espacios de trabajo eliminados: {{value0}}",
+            "failed": "Espacios de trabajo no eliminados: {{value0}}",
+            "error": "Error en la limpieza del espacio de trabajo",
+            "skippedAncestor": "Se omitió porque no se pudo eliminar un espacio de trabajo anidado.",
+            "timedOut": "Se agotó el tiempo al eliminar {{value0}}."
+          },
+          "candidateRow": {
+            "gitLabel": "Git",
+            "commitsLabel": "Confirmaciones",
+            "contextLabel": "Contexto",
+            "flagsLabel": "Indicadores",
+            "collapseDetails": "Contraer detalles",
+            "expandDetails": "Expandir detalles",
+            "cleanGit": "Git limpio",
+            "dirtyGit": "Git con cambios",
+            "unpushedCommits": "Confirmaciones sin enviar",
+            "gitUnknown": "Git desconocido",
+            "gitStatusUnknown": "Estado de Git desconocido",
+            "noUnpushedCommits": "Sin confirmaciones sin enviar",
+            "unpushedCommitsCount": "Confirmaciones sin enviar: {{value0}}",
+            "uncommittedChanges": "Cambios sin confirmar",
+            "terminalTabsCount": "Pestañas de terminal: {{value0}}",
+            "editorTabsCount": "Pestañas de editor: {{value0}}",
+            "browserTabsCount": "Pestañas de navegador: {{value0}}",
+            "diffNotesCount": "Notas de diff: {{value0}}",
+            "completedAgentsCount": "Agentes completados: {{value0}}",
+            "contextCount": "Contexto: {{value0}}",
+            "mainWorkspaceBlocker": "Espacio de trabajo principal",
+            "folderProjectBlocker": "Proyecto de carpeta",
+            "pinnedBlocker": "Fijado",
+            "activeWorkspaceBlocker": "Espacio de trabajo activo",
+            "runningTerminalBlocker": "Proceso de terminal en ejecución",
+            "terminalLivenessUnknownBlocker": "Estado del terminal desconocido",
+            "dirtyEditorBufferBlocker": "Búfer del editor sin guardar",
+            "volatileLocalContextBlocker": "Contexto local volátil",
+            "recentVisibleContextBlocker": "Pestañas visitadas recientemente",
+            "liveAgentBlocker": "Agente activo",
+            "sshDisconnectedBlocker": "Remoto no disponible",
+            "gitStatusErrorBlocker": "Estado de Git no disponible",
+            "dirtyFilesBlocker": "Archivos modificados",
+            "unknownBaseBlocker": "No se pudieron verificar confirmaciones sin enviar",
+            "dismissedBlocker": "Ignorado"
           }
         }
       },
@@ -3959,7 +4014,8 @@
           "runtimeHostProject": "Proyecto en servidor Orca",
           "automationCreated": "Creado por automatización",
           "branchIdentity": "Rama",
-          "branchFolderPathIdentity": "Rama o ruta de carpeta"
+          "branchFolderPathIdentity": "Rama o ruta de carpeta",
+          "ef18787206": "En cola para eliminación"
         },
         "WorktreeCardAgents": {
           "1b0a156717": "Agentes"
