@@ -189,6 +189,7 @@ export const createWorkspaceCleanupSlice: StateCreator<AppState, [], [], Workspa
       const result = { ...scan, candidates: enriched }
       if (scanToken === latestWorkspaceCleanupScanToken) {
         finalizedWorkspaceCleanupScanToken = scanToken
+        workspaceCleanupEnrichmentCache = null
         workspaceCleanupProgressCandidateIndex = null
         set({
           workspaceCleanupScan: result,
