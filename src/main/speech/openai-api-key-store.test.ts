@@ -86,6 +86,17 @@ describe('OpenAI speech API key store', () => {
     expect(safeStorageMock.decryptString).not.toHaveBeenCalled()
   })
 
+  it('rejects legacy encrypted JSON when encryption is unavailable', async () => {
+    writeStoredOpenAiKey(
+      JSON.stringify({ encryptedKeyBase64: Buffer.from('key').toString('base64') })
+    )
+    safeStorageMock.isEncryptionAvailable.mockReturnValue(false)
+    const store = await loadStoreModule()
+
+    expect(() => store.readOpenAiSpeechApiKey()).toThrow('OpenAI API key could not be decrypted')
+    expect(safeStorageMock.decryptString).not.toHaveBeenCalled()
+  })
+
   it('reports missing status without creating storage files', async () => {
     const store = await loadStoreModule()
 

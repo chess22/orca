@@ -1236,7 +1236,8 @@ jobs:
     with:
       tag: ${{ matrix.tag }}
       publish_github_release_after_npm: true
-    secrets: inherit
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-orca-server:
     needs:
@@ -1250,7 +1251,8 @@ jobs:
     uses: ./.github/workflows/publish-orca-server.yml
     with:
       tag: ${{ needs.cut.outputs.tag }}
-    secrets: inherit
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   homebrew-bump-published-rc-draft:
     needs:
@@ -1258,7 +1260,7 @@ jobs:
       - publish-orca-server-published-rc-drafts
     # Why: publish-orca-server-published-rc-drafts can expose a recovered RC
     # without running the build/publish jobs; still advance the RC cask to that tag.
-    if: ${{ needs.cut.outputs.latest_publishable_rc_tag != '' }}
+    if: ${{ needs.cut.outputs.latest_publishable_rc_tag != '' && needs.publish-orca-server-published-rc-drafts.result == 'success' }}
     uses: ./.github/workflows/homebrew-bump.yml
     with:
       tag: ${{ needs.cut.outputs.latest_publishable_rc_tag }}

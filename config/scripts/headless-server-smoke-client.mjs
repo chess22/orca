@@ -57,7 +57,9 @@ const startTimeout = setTimeout(() => fail('server did not print ready payload w
 
 child.stdout.on('data', (chunk) => {
   stdout += chunk.toString()
-  const line = stdout.split('\n').find((l) => l.includes('orca_server_ready'))
+  const lines = stdout.split('\n')
+  stdout = lines.pop() ?? ''
+  const line = lines.find((l) => l.includes('orca_server_ready'))
   if (!line) {
     return
   }

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { NodeAppEnvironment } from './node-app-environment'
 import { NodeSecretStore } from './node-secret-store'
 
@@ -27,6 +27,13 @@ describe('NodeAppEnvironment', () => {
     process.env.ORCA_APP_VERSION = '9.9.9'
     const env = new NodeAppEnvironment({ userDataPath: '/x' })
     expect(env.getVersion()).toBe('9.9.9')
+  })
+
+  it('defaults appPath to the launched entrypoint directory', () => {
+    const env = new NodeAppEnvironment({ userDataPath: '/x' })
+    const entry = process.argv[1] ?? process.execPath
+
+    expect(env.getAppPath()).toBe(dirname(realpathSync(entry)))
   })
 
   it('treats deployment as packaged unless ORCA_IS_PACKAGED=0', () => {

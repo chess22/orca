@@ -225,7 +225,7 @@ function encrypt(plaintext: string): string {
     return secretStore.encryptString(plaintext).toString('base64')
   } catch (err) {
     console.error('[persistence] Encryption failed:', err)
-    return plaintext
+    throw new Error('[persistence] Refusing to persist secret unencrypted', { cause: err })
   }
 }
 

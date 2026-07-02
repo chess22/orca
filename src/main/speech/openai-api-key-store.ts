@@ -79,6 +79,9 @@ export function readOpenAiSpeechApiKey(): string {
     const secretStore = getSecretStore()
     const legacyJson = readLegacyJsonStoredOpenAiKey()
     if (legacyJson) {
+      if (!secretStore.isEncryptionAvailable()) {
+        throw new Error('OpenAI API key could not be decrypted')
+      }
       cachedOpenAiSpeechApiKey = secretStore.decryptString(
         Buffer.from(legacyJson.encryptedKeyBase64, 'base64')
       )

@@ -15,6 +15,8 @@ export type ServeOrcaAppOptions = {
 
 type ServeOrcaAppHook = (args: ServeOrcaAppOptions) => Promise<number>
 
+// Why: @stablyai/orca-server injects a Node-backed `serve` implementation here
+// so the shared CLI can start the headless runtime without launching Electron.
 declare global {
   var __ORCA_NODE_SERVER_SERVE__: ServeOrcaAppHook | undefined
 }

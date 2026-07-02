@@ -11,7 +11,7 @@
  * the right time.
  */
 import { tmpdir } from 'node:os'
-import { basename, win32 as pathWin32 } from 'node:path'
+import { basename, join, win32 as pathWin32 } from 'node:path'
 import { mkdirSync, writeFileSync, chmodSync, existsSync } from 'node:fs'
 import { hasAppEnvironment, getAppEnvironment } from '../../shared/app-environment'
 import type * as pty from 'node-pty'
@@ -52,16 +52,16 @@ function getShellReadyWrapperRoot(): string {
   const userDataPath = hasAppEnvironment()
     ? getAppEnvironment().getPath('userData')
     : (process.env.ORCA_USER_DATA_PATH ?? tmpdir())
-  return `${userDataPath}/shell-ready`
+  return join(userDataPath, 'shell-ready')
 }
 
 function getRequiredShellReadyWrapperPaths(root = getShellReadyWrapperRoot()): string[] {
   return [
-    `${root}/zsh/.zshenv`,
-    `${root}/zsh/.zprofile`,
-    `${root}/zsh/.zshrc`,
-    `${root}/zsh/.zlogin`,
-    `${root}/bash/rcfile`
+    join(root, 'zsh', '.zshenv'),
+    join(root, 'zsh', '.zprofile'),
+    join(root, 'zsh', '.zshrc'),
+    join(root, 'zsh', '.zlogin'),
+    join(root, 'bash', 'rcfile')
   ]
 }
 
@@ -382,7 +382,7 @@ function getWrappedShellLaunchConfig(
       env: {
         ORCA_ORIG_ZDOTDIR: resolveOriginalZdotdir(),
         ORCA_ZSHENV_SOURCE_DIR: resolveOriginalZshenvSourceDir(),
-        ZDOTDIR: `${getShellReadyWrapperRoot()}/zsh`,
+        ZDOTDIR: join(getShellReadyWrapperRoot(), 'zsh'),
         ORCA_SHELL_READY_MARKER: options.emitReadyMarker ? '1' : '0'
       },
       supportsReadyMarker: options.emitReadyMarker
@@ -392,7 +392,7 @@ function getWrappedShellLaunchConfig(
   if (shellName === 'bash') {
     ensureShellReadyWrappers()
     return {
-      args: ['--rcfile', `${getShellReadyWrapperRoot()}/bash/rcfile`],
+      args: ['--rcfile', join(getShellReadyWrapperRoot(), 'bash', 'rcfile')],
       env: {
         ORCA_SHELL_READY_MARKER: options.emitReadyMarker ? '1' : '0'
       },

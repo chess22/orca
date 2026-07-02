@@ -53,7 +53,12 @@ const noopIpcMain = {
 // throws — surfacing any accidental headless browser-pane attempt.
 const BrowserWindowShim = function BrowserWindow(): never {
   return unavailable('new BrowserWindow()')
-} as unknown as { (): never; fromId: () => null; getAllWindows: () => []; fromWebContents: () => null }
+} as unknown as {
+  (): never
+  fromId: () => null
+  getAllWindows: () => []
+  fromWebContents: () => null
+}
 BrowserWindowShim.fromId = () => null
 BrowserWindowShim.getAllWindows = () => []
 BrowserWindowShim.fromWebContents = () => null
@@ -98,6 +103,8 @@ const appShim = new Proxy(
           return () => getAppEnvironment().quit()
         case 'exit':
           return (code?: number) => getAppEnvironment().exit(code)
+        case 'relaunch':
+          return () => getAppEnvironment().relaunch()
         default:
           return unavailable(`app.${name}`)
       }

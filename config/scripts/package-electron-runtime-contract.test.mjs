@@ -318,6 +318,7 @@ describe('Electron runtime package contract', () => {
     const npmRecoveredRcJob = releaseWorkflow.jobs['publish-orca-server-published-rc-drafts']
     const publishReleaseJob = releaseWorkflow.jobs['publish-release']
     const npmResolveJob = npmWorkflow.jobs.resolve
+    const npmPrebuildJob = npmWorkflow.jobs.prebuilds
     const npmPublishJob = npmWorkflow.jobs.publish
     const findDraftStep = releaseCutJob.steps.find(
       (step) => step.name === 'Find complete release-cut RC drafts from prior runs'
@@ -326,14 +327,27 @@ describe('Electron runtime package contract', () => {
       (step) => step.name === 'Resolve npm version from desktop release tag'
     )
     const publishStep = npmPublishJob.steps.find((step) => step.name === 'Publish to npm')
+    const prebuildSetupNodeStep = npmPrebuildJob.steps.find(
+      (step) => step.uses === 'actions/setup-node@v6'
+    )
+    const publishCheckoutStep = npmPublishJob.steps.find(
+      (step) => step.uses === 'actions/checkout@v6'
+    )
     const distTagStep = npmPublishJob.steps.find(
       (step) => step.name === 'Ensure npm dist-tag points at release version'
+    )
+    const publishDraftStep = npmPublishJob.steps.find(
+      (step) => step.name === 'Publish recovered GitHub draft release'
     )
     const tarballStep = npmPublishJob.steps.find(
       (step) => step.name === 'Verify tarball ships bundle + all prebuilts (incl. spawn-helper)'
     )
     const buildServerScript = readFileSync(
       join(projectDir, 'config/scripts/build-server.mjs'),
+      'utf8'
+    )
+    const nodePtyInstallerScript = readFileSync(
+      join(projectDir, 'config/scripts/install-node-pty-prebuilt.mjs'),
       'utf8'
     )
 
@@ -349,8 +363,16 @@ describe('Electron runtime package contract', () => {
     expect(resolveStep.run).toContain('npm_dist_tag=alpha')
     expect(resolveStep.run).toContain('npm_dist_tag=latest')
     expect(resolveStep.run).toContain('package.json version $package_version does not match')
-    expect(npmWorkflow.jobs.prebuilds.needs).toBe('resolve')
+    expect(npmPrebuildJob.needs).toBe('resolve')
+    expect(npmPrebuildJob.strategy.matrix.include).toContainEqual({
+      runner: 'macos-15-intel',
+      slot: 'darwin-x64',
+      kind: 'darwin'
+    })
+    expect(prebuildSetupNodeStep.if).toBe("matrix.kind != 'musl'")
+    expect(prebuildSetupNodeStep.with['node-version']).toBe('${{ env.NODE_VERSION }}')
     expect(npmPublishJob.needs).toEqual(['resolve', 'prebuilds'])
+    expect(publishCheckoutStep.with['persist-credentials']).toBe(false)
     expect(publishStep.run).toBe('npm publish --access public --tag "$NPM_DIST_TAG"')
     expect(publishStep.env.NODE_AUTH_TOKEN).toBe('${{ secrets.NPM_TOKEN }}')
     expect(distTagStep.run).toContain(
@@ -366,14 +388,11 @@ describe('Electron runtime package contract', () => {
     )
     expect(buildServerScript).not.toContain("bin: { orca: './orca.js'")
     expect(buildServerScript).not.toContain("'orca-server': './orca-server.js'")
-    expect(npmPublishJob.steps).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          name: 'Publish recovered GitHub draft release',
-          if: '${{ inputs.publish_github_release_after_npm }}'
-        })
-      ])
-    )
+    expect(nodePtyInstallerScript).toContain('manifest.nodeAbi !== process.versions.modules')
+    expect(nodePtyInstallerScript).toContain('leaving node-pty as-is')
+    expect(publishDraftStep.if).toBe('${{ inputs.publish_github_release_after_npm }}')
+    expect(publishDraftStep.run).toContain('if [[ "$NPM_DIST_TAG" == "alpha" ]]')
+    expect(publishDraftStep.run).toContain('--prerelease="$prerelease"')
 
     expect(findDraftStep.env.PUBLISH_DRAFT_RELEASES).toBe('false')
     expect(releaseCutJob.outputs.publishable_rc_tags_json).toBe(
@@ -385,7 +404,7 @@ describe('Electron runtime package contract', () => {
     expect(npmReleaseJob.needs).toEqual(['cut', 'build', 'build-mac', 'terminal-rendering-golden'])
     expect(npmReleaseJob.uses).toBe('./.github/workflows/publish-orca-server.yml')
     expect(npmReleaseJob.with.tag).toBe('${{ needs.cut.outputs.tag }}')
-    expect(npmReleaseJob.secrets).toBe('inherit')
+    expect(npmReleaseJob.secrets.NPM_TOKEN).toBe('${{ secrets.NPM_TOKEN }}')
     expect(publishReleaseJob.needs).toContain('publish-orca-server')
 
     expect(npmRecoveredRcJob.strategy['max-parallel']).toBe(1)
@@ -394,8 +413,12 @@ describe('Electron runtime package contract', () => {
     )
     expect(npmRecoveredRcJob.with.tag).toBe('${{ matrix.tag }}')
     expect(npmRecoveredRcJob.with.publish_github_release_after_npm).toBe(true)
+    expect(npmRecoveredRcJob.secrets.NPM_TOKEN).toBe('${{ secrets.NPM_TOKEN }}')
     expect(releaseWorkflow.jobs['homebrew-bump-published-rc-draft'].needs).toContain(
       'publish-orca-server-published-rc-drafts'
+    )
+    expect(releaseWorkflow.jobs['homebrew-bump-published-rc-draft'].if).toContain(
+      "needs.publish-orca-server-published-rc-drafts.result == 'success'"
     )
   })
 

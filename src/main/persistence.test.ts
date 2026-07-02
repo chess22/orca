@@ -4946,6 +4946,38 @@ describe('Store', () => {
     expect(reloaded.getUI().browserKagiSessionLink).toBe(sessionLink)
   })
 
+  it('refuses to persist Kagi session links as plaintext when encryption fails', async () => {
+    const sessionLink = 'https://kagi.com/search?token=secret'
+    const store = await createStore()
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const secretStoreModule = await import('../shared/secret-store')
+    secretStoreModule.setSecretStore({
+      isEncryptionAvailable: () => true,
+      encryptString: () => {
+        throw new Error('encryption failed')
+      },
+      decryptString: () => {
+        throw new Error('decryption unavailable')
+      }
+    })
+
+    try {
+      store.updateUI({ browserKagiSessionLink: sessionLink })
+      store.flush()
+
+      const persisted = existsSync(dataFile()) ? readDataFile() : null
+      expect(JSON.stringify(persisted)).not.toContain(sessionLink)
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[persistence] Failed to flush state:',
+        expect.objectContaining({
+          message: '[persistence] Refusing to persist secret unencrypted'
+        })
+      )
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
   it('keeps plaintext Kagi session links readable for migration from older builds', async () => {
     const sessionLink = 'https://kagi.com/search?token=secret'
     writeDataFile({

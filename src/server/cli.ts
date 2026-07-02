@@ -46,4 +46,9 @@ globalThis.__ORCA_NODE_SERVER_SERVE__ = async (args) => {
 
 globalThis.__ORCA_CLI_DISABLE_AUTO_MAIN__ = true
 process.env.ORCA_CLI_COMMAND_NAME ??= 'orca-ide'
-void import('../cli/index').then(({ main }) => main())
+void import('../cli/index')
+  .then(({ main }) => main())
+  .catch((error) => {
+    console.error(error)
+    process.exitCode = 1
+  })

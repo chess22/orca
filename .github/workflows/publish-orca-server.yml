@@ -108,12 +108,17 @@ jobs:
           - { runner: ubuntu-latest, slot: linux-x64-musl, kind: musl }
           - { runner: ubuntu-24.04-arm, slot: linux-arm64-musl, kind: musl }
           - { runner: macos-14, slot: darwin-arm64, kind: darwin }
-          - { runner: macos-13, slot: darwin-x64, kind: darwin }
+          - { runner: macos-15-intel, slot: darwin-x64, kind: darwin }
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
         with:
           ref: refs/tags/${{ needs.resolve.outputs.tag }}
+
+      - uses: actions/setup-node@v6
+        if: matrix.kind != 'musl'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
 
       # glibc + darwin: build natively on the host runner.
       - name: Build prebuilt (host toolchain)
@@ -167,6 +172,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: refs/tags/${{ needs.resolve.outputs.tag }}
+          persist-credentials: false
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -263,9 +269,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.resolve.outputs.tag }}
+          NPM_DIST_TAG: ${{ needs.resolve.outputs.npm_dist_tag }}
         run: |
           set -euo pipefail
+          prerelease=false
+          if [[ "$NPM_DIST_TAG" == "alpha" ]]; then
+            prerelease=true
+          fi
           gh release edit "$TAG" \
             --draft=false \
-            --prerelease=true \
+            --prerelease="$prerelease" \
             --repo "$GITHUB_REPOSITORY"

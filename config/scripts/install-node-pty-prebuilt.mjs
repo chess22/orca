@@ -45,6 +45,14 @@ function log(msg) {
   console.log(`[orca-server:node-pty] ${msg}`)
 }
 
+function readManifest() {
+  try {
+    return JSON.parse(readFileSync(join(here, '..', 'prebuilds', 'manifest.json'), 'utf8'))
+  } catch {
+    return null
+  }
+}
+
 function main() {
   if (process.platform === 'win32') {
     log('windows: relying on node-pty prebuilt/source path, nothing to do')
@@ -60,6 +68,18 @@ function main() {
 
   if (!existsSync(prebuilt)) {
     log(`no shipped prebuilt for ${slot}; node-pty will source-build (needs a toolchain)`)
+    return
+  }
+
+  const manifest = readManifest()
+  if (
+    manifest &&
+    typeof manifest.nodeAbi === 'string' &&
+    manifest.nodeAbi !== process.versions.modules
+  ) {
+    log(
+      `WARNING: prebuilt ABI ${manifest.nodeAbi} does not match runtime ABI ${process.versions.modules}; leaving node-pty as-is`
+    )
     return
   }
 
@@ -93,16 +113,11 @@ function main() {
   }
 
   // Sanity: confirm the version matches what the manifest recorded, if present.
-  try {
-    const manifest = JSON.parse(
-      readFileSync(join(here, '..', 'prebuilds', 'manifest.json'), 'utf8')
-    )
+  if (manifest) {
     const installed = require('node-pty/package.json').version
     if (manifest.version && manifest.version !== installed) {
       log(`WARNING: prebuilt built for node-pty ${manifest.version} but installed ${installed}`)
     }
-  } catch {
-    // manifest optional
   }
 }
 

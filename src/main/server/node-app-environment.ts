@@ -1,6 +1,6 @@
 import { join, dirname } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import type { AppEnvironment, AppPathName, AppProcessMetric } from '../../shared/app-environment'
 
 /**
@@ -34,7 +34,7 @@ export class NodeAppEnvironment implements AppEnvironment {
   constructor(options: NodeAppEnvironmentOptions = {}) {
     this.userDataPath =
       options.userDataPath ?? process.env.ORCA_USER_DATA_PATH ?? defaultUserDataPath()
-    this.appPath = options.appPath ?? process.cwd()
+    this.appPath = options.appPath ?? defaultAppPath()
     this.version =
       options.version ?? process.env.ORCA_APP_VERSION ?? readBundledVersion(this.appPath) ?? '0.0.0'
     // Treat a node-server deployment as "packaged" by default: it ships built
@@ -136,6 +136,10 @@ function defaultUserDataPath(): string {
   }
   // Linux / other: XDG_CONFIG_HOME or ~/.config
   return join(process.env.XDG_CONFIG_HOME ?? join(home, '.config'), 'Orca')
+}
+
+function defaultAppPath(): string {
+  return dirname(realpathSync(process.argv[1] ?? process.execPath))
 }
 
 function readBundledVersion(appPath: string): string | null {

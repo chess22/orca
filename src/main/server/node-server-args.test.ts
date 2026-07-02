@@ -20,6 +20,30 @@ describe('parseServerArgs', () => {
     expect(() => parseServerArgs(['--serve-port', '99999'])).toThrow()
   })
 
+  it('rejects non-numeric port suffixes', () => {
+    expect(() => parseServerArgs(['--serve-port', '123abc'])).toThrow('Invalid port value: 123abc')
+  })
+
+  it('does not parse mistyped flag prefixes as real options', () => {
+    const o = parseServerArgs([
+      '--serve-portal=7000',
+      '--user-data-dir=/tmp/not-orca',
+      '--pairing-addresses=example.com'
+    ])
+
+    expect(o.port).toBeUndefined()
+    expect(o.userDataPath).toBeUndefined()
+    expect(o.pairingAddress).toBeUndefined()
+  })
+
+  it('rejects missing values for value options', () => {
+    expect(() => parseServerArgs(['--user-data'])).toThrow('Missing value for --user-data')
+    expect(() => parseServerArgs(['--user-data='])).toThrow('Missing value for --user-data')
+    expect(() => parseServerArgs(['--pairing-address', '--json'])).toThrow(
+      'Missing value for --pairing-address'
+    )
+  })
+
   it('parses pairing + json flags', () => {
     const o = parseServerArgs(['--mobile-pairing', '--json', '--pairing-address', 'example.com'])
     expect(o.mobilePairing).toBe(true)

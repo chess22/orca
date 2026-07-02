@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # server runtime, and node-pty prebuilt matrix; its postinstall selects the
 # matching binary (or compiles as a last resort using the toolchain above).
 RUN npm install -g @stablyai/orca-server
+RUN mkdir -p /data /work && chown -R node:node /data /work
 
 ENV ORCA_SERVE_HOST=0.0.0.0 \
     ORCA_SERVE_PORT=6768 \
@@ -37,10 +38,12 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 
 # The WebSocket transport binds 0.0.0.0 by default, so the server is reachable
 # from outside the container. --json makes the pairing URL machine-readable.
+USER node
 ENTRYPOINT ["orca-ide", "serve", "--port", "6768", "--json"]
 
 # ---- full (adds Xvfb + chromium for browser panes) ----
 FROM slim AS full
+USER root
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       xvfb chromium libnss3 libgtk-3-0 libxss1 python3-gi at-spi2-core \
@@ -51,4 +54,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV DISPLAY=:99
 COPY config/docker/orca-server-with-xvfb.sh /usr/local/bin/orca-server-with-xvfb
 RUN chmod +x /usr/local/bin/orca-server-with-xvfb
+USER node
 ENTRYPOINT ["/usr/local/bin/orca-server-with-xvfb"]

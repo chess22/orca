@@ -23,9 +23,10 @@ export function parseServerArgs(argv: string[]): NodeServerOptions {
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
-    const valueAfter = (): string | undefined => {
+    const matchesValueFlag = (flag: string): boolean => arg === flag || arg.startsWith(`${flag}=`)
+    const valueAfter = (flag: string): string => {
       const inline = arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : undefined
-      if (inline !== undefined) {
+      if (inline !== undefined && inline.length > 0) {
         return inline
       }
       const next = argv[i + 1]
@@ -33,7 +34,7 @@ export function parseServerArgs(argv: string[]): NodeServerOptions {
         i += 1
         return next
       }
-      return undefined
+      throw new Error(`Missing value for ${flag}`)
     }
 
     if (arg === '--help' || arg === '-h') {
@@ -44,19 +45,21 @@ export function parseServerArgs(argv: string[]): NodeServerOptions {
       options.mobilePairing = true
     } else if (arg === '--no-pairing') {
       options.noPairing = true
-    } else if (arg.startsWith('--serve-port') || arg.startsWith('--port')) {
-      const raw = valueAfter()
-      const port = raw === undefined ? NaN : Number.parseInt(raw, 10)
-      if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    } else if (matchesValueFlag('--serve-port') || matchesValueFlag('--port')) {
+      const raw = valueAfter(matchesValueFlag('--port') ? '--port' : '--serve-port')
+      const port = Number.parseInt(raw, 10)
+      if (!/^\d+$/.test(raw) || !Number.isInteger(port) || port < 0 || port > 65535) {
         throw new Error(`Invalid port value: ${raw}`)
       }
       options.port = port
-    } else if (arg.startsWith('--serve-host') || arg.startsWith('--host')) {
-      options.host = valueAfter()
-    } else if (arg.startsWith('--user-data') || arg.startsWith('--user-data-path')) {
-      options.userDataPath = valueAfter()
-    } else if (arg.startsWith('--pairing-address')) {
-      options.pairingAddress = valueAfter()
+    } else if (matchesValueFlag('--serve-host') || matchesValueFlag('--host')) {
+      options.host = valueAfter(matchesValueFlag('--host') ? '--host' : '--serve-host')
+    } else if (matchesValueFlag('--user-data') || matchesValueFlag('--user-data-path')) {
+      options.userDataPath = valueAfter(
+        matchesValueFlag('--user-data-path') ? '--user-data-path' : '--user-data'
+      )
+    } else if (matchesValueFlag('--pairing-address')) {
+      options.pairingAddress = valueAfter('--pairing-address')
     }
   }
 
