@@ -177,4 +177,73 @@ describe('fetchViaPty', () => {
       error: null
     })
   })
+
+  it('parses the newer Claude weekly limits wording for Fable usage', async () => {
+    const term = makeMockTerm()
+    spawnMock.mockReturnValue(term)
+
+    const resultPromise = fetchViaPty()
+
+    await vi.advanceTimersByTimeAsync(2_000)
+    term.emitData(`
+      Plan usage limits
+
+      Current session
+      18% remaining
+      Resets in 2h 10m
+
+      Weekly limits
+      Fable
+      42% consumed
+      Resets in 3d 2h
+    `)
+    await vi.advanceTimersByTimeAsync(2_000)
+
+    await expect(resultPromise).resolves.toMatchObject({
+      provider: 'claude',
+      status: 'ok',
+      session: {
+        usedPercent: 82,
+        resetDescription: '2h 10m'
+      },
+      weekly: {
+        usedPercent: 42,
+        resetDescription: '3d 2h'
+      },
+      error: null
+    })
+  })
+
+  it('parses 7-day weekly labels without the old Current week heading', async () => {
+    const term = makeMockTerm()
+    spawnMock.mockReturnValue(term)
+
+    const resultPromise = fetchViaPty()
+
+    await vi.advanceTimersByTimeAsync(2_000)
+    term.emitData(`
+      Usage
+
+      Current session
+      12% used
+
+      7-day
+      84% left
+      Resets Wed at 9:05 PM
+    `)
+    await vi.advanceTimersByTimeAsync(2_000)
+
+    await expect(resultPromise).resolves.toMatchObject({
+      provider: 'claude',
+      status: 'ok',
+      session: {
+        usedPercent: 12
+      },
+      weekly: {
+        usedPercent: 16,
+        resetDescription: 'Wed at 9:05 PM'
+      },
+      error: null
+    })
+  })
 })

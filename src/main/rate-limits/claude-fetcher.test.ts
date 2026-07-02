@@ -169,6 +169,40 @@ describe('fetchClaudeRateLimits', () => {
     )
   })
 
+  it('accepts Claude Code statusline-style rate limit window fields', async () => {
+    const configDir = '/Users/test/.claude'
+    const authPreparation: ClaudeRuntimeAuthPreparation = {
+      configDir,
+      envPatch: { CLAUDE_CONFIG_DIR: configDir },
+      stripAuthEnv: false,
+      provenance: 'system'
+    }
+    vi.mocked(readActiveClaudeKeychainCredentialsStrict).mockResolvedValueOnce(
+      JSON.stringify({
+        claudeAiOauth: {
+          accessToken: 'oauth-token',
+          expiresAt: Date.now() + 60_000
+        }
+      })
+    )
+    netFetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          five_hour: { used_percentage: 23.5, resets_at: 1770000000 },
+          seven_day: { used_percentage: 41.2, resets_at: 1770604800 }
+        }),
+        { status: 200 }
+      )
+    )
+
+    await expect(fetchClaudeRateLimits({ authPreparation })).resolves.toMatchObject({
+      provider: 'claude',
+      status: 'ok',
+      session: { usedPercent: 23.5, resetsAt: 1770000000000 },
+      weekly: { usedPercent: 41.2, resetsAt: 1770604800000 }
+    })
+  })
+
   it('falls back to legacy Keychain credentials for host system default without an explicit config dir', async () => {
     const configDir = '/Users/test/.claude'
     const authPreparation: ClaudeRuntimeAuthPreparation = {

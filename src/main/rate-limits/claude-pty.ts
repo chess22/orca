@@ -17,10 +17,10 @@ const MAX_OUTPUT_LENGTH = 100_000 // 100KB buffer limit
 
 // Why: these patterns match the Claude CLI's /usage TUI panel output.
 // "Current session" shows a percent like "62% used" or "62% left".
-// "Current week" section is similar.
+// Weekly labels have varied between "Current week" and "Weekly limits".
 const SESSION_RE = /current\s*session/i
-const WEEKLY_RE = /current\s*week/i
-const PERCENT_RE = /(\d{1,3})(?:\.\d+)?\s*%\s*(used|left|remaining|available)/i
+const WEEKLY_RE = /(?:current\s*week|weekly\s*(?:limits?|usage|rate\s*limits?)|7\s*[- ]?\s*day)/i
+const PERCENT_RE = /(\d{1,3})(?:\.\d+)?\s*%\s*(used|consumed|left|remaining|available)/i
 const RESET_LINE_RE = /resets?\s+(?:at\s+|in\s+)?(.+)/i
 const ESC = String.fromCharCode(27)
 const BEL = String.fromCharCode(7)
@@ -46,7 +46,7 @@ function extractPercentAfterLabel(lines: string[], labelRe: RegExp): number | nu
       if (m) {
         const pct = parseFloat(m[1])
         const word = m[2].toLowerCase()
-        const isUsed = word === 'used'
+        const isUsed = word === 'used' || word === 'consumed'
         return isUsed ? pct : 100 - pct
       }
     }
@@ -109,6 +109,10 @@ const STOP_SUBSTRINGS = [
   'Current week (Opus)',
   'Current week (Sonnet only)',
   'Current week (Sonnet)',
+  'Weekly limits',
+  'Weekly limit',
+  'Weekly usage',
+  '7-day',
   'Current session',
   'Failed to load usage data',
   'failed to load usage data'

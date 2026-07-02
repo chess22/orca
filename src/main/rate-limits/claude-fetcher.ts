@@ -293,7 +293,8 @@ function warnClaudeUsageFetchFailure(
 
 type OAuthUsageWindow = {
   utilization?: number
-  resets_at?: string
+  used_percentage?: number
+  resets_at?: string | number
 }
 
 type OAuthUsageResponse = {
@@ -305,15 +306,34 @@ type ClaudeUsageAttemptState = {
   attemptedSources: UsageRateLimitSource[]
 }
 
-function parseResetDescription(isoString: string | undefined): string | null {
-  if (!isoString) {
+function parseResetTimestamp(value: string | number | undefined): number | null {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      return null
+    }
+    return value > 10_000_000_000 ? value : value * 1000
+  }
+
+  if (!value) {
+    return null
+  }
+
+  const numericValue = Number(value)
+  if (Number.isFinite(numericValue) && value.trim() !== '') {
+    return numericValue > 10_000_000_000 ? numericValue : numericValue * 1000
+  }
+
+  const parsed = new Date(value).getTime()
+  return Number.isNaN(parsed) ? null : parsed
+}
+
+function parseResetDescription(resetValue: string | number | undefined): string | null {
+  const resetTimestamp = parseResetTimestamp(resetValue)
+  if (resetTimestamp === null) {
     return null
   }
   try {
-    const date = new Date(isoString)
-    if (isNaN(date.getTime())) {
-      return null
-    }
+    const date = new Date(resetTimestamp)
     const now = new Date()
     const isToday = date.toDateString() === now.toDateString()
     if (isToday) {
@@ -333,13 +353,22 @@ function mapWindow(
   raw: OAuthUsageWindow | undefined,
   windowMinutes: number
 ): RateLimitWindow | null {
-  if (!raw || typeof raw.utilization !== 'number') {
+  if (!raw) {
+    return null
+  }
+  const usedPercent =
+    typeof raw.utilization === 'number'
+      ? raw.utilization
+      : typeof raw.used_percentage === 'number'
+        ? raw.used_percentage
+        : null
+  if (usedPercent === null) {
     return null
   }
   return {
-    usedPercent: Math.min(100, Math.max(0, raw.utilization)),
+    usedPercent: Math.min(100, Math.max(0, usedPercent)),
     windowMinutes,
-    resetsAt: raw.resets_at ? new Date(raw.resets_at).getTime() || null : null,
+    resetsAt: parseResetTimestamp(raw.resets_at),
     resetDescription: parseResetDescription(raw.resets_at)
   }
 }
