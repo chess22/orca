@@ -42,7 +42,5 @@ export async function listRepoWorktrees(
     // local git against a server path.
     return provider ? await provider.listWorktrees(repo.path) : []
   }
-  return options.wslDistro
-    ? await listWorktrees(repo.path, options)
-    : await listWorktrees(repo.path)
+  return await listWorktrees(repo.path, options)
 }

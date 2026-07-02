@@ -87,6 +87,14 @@ let workspaceCleanupEnrichmentCache: {
   scanToken: number
   entries: Map<string, WorkspaceCleanupEnrichmentCacheEntry>
 } | null = null
+// Why: cleanup progress can append thousands of rows; keep one scan-local
+// index so each streamed row does not rebuild a map of every previous row.
+let workspaceCleanupProgressCandidateIndex: {
+  scanToken: number
+  scanId: string
+  candidates: WorkspaceCleanupCandidate[]
+  indexesByWorktreeId: Map<string, number>
+} | null = null
 
 const SHELL_PROCESS_NAMES = new Set([
   'bash',
@@ -168,6 +176,7 @@ export const createWorkspaceCleanupSlice: StateCreator<AppState, [], [], Workspa
     finalizedWorkspaceCleanupScanToken = 0
     workspaceCleanupProgressQueue = null
     workspaceCleanupEnrichmentCache = { scanToken, entries: new Map() }
+    workspaceCleanupProgressCandidateIndex = null
     const promise = (async () => {
       const scan = await window.api.workspaceCleanup.scan(scanArgs, (progress) => {
         enqueueWorkspaceCleanupProgress(progress, scanToken, get, set)
@@ -180,6 +189,7 @@ export const createWorkspaceCleanupSlice: StateCreator<AppState, [], [], Workspa
       const result = { ...scan, candidates: enriched }
       if (scanToken === latestWorkspaceCleanupScanToken) {
         finalizedWorkspaceCleanupScanToken = scanToken
+        workspaceCleanupProgressCandidateIndex = null
         set({
           workspaceCleanupScan: result,
           workspaceCleanupProgress: {
@@ -343,6 +353,7 @@ function invalidateWorkspaceCleanupScanProgress(): void {
   inFlightWorkspaceCleanupScan = null
   workspaceCleanupProgressQueue = null
   workspaceCleanupEnrichmentCache = null
+  workspaceCleanupProgressCandidateIndex = null
 }
 
 function enqueueWorkspaceCleanupProgress(
@@ -393,10 +404,12 @@ async function applyWorkspaceCleanupProgress(
     state,
     scanToken
   )
-  const candidates =
-    progress.candidateMode === 'append'
-      ? appendWorkspaceCleanupProgressCandidates(previousCandidates, enrichedProgressCandidates)
-      : enrichedProgressCandidates
+  const candidates = mergeWorkspaceCleanupProgressCandidates({
+    previousCandidates,
+    nextCandidates: enrichedProgressCandidates,
+    progress,
+    scanToken
+  })
   if (
     scanToken !== latestWorkspaceCleanupScanToken ||
     scanToken === finalizedWorkspaceCleanupScanToken
@@ -436,28 +449,72 @@ async function enrichWorkspaceCleanupCandidatesForScan(
   )
 }
 
-function appendWorkspaceCleanupProgressCandidates(
-  previousCandidates: readonly WorkspaceCleanupCandidate[],
+function mergeWorkspaceCleanupProgressCandidates({
+  previousCandidates,
+  nextCandidates,
+  progress,
+  scanToken
+}: {
+  previousCandidates: readonly WorkspaceCleanupCandidate[]
   nextCandidates: readonly WorkspaceCleanupCandidate[]
-): WorkspaceCleanupCandidate[] {
-  if (nextCandidates.length === 0) {
-    return [...previousCandidates]
+  progress: WorkspaceCleanupScanProgress
+  scanToken: number
+}): WorkspaceCleanupCandidate[] {
+  if (progress.candidateMode !== 'append') {
+    workspaceCleanupProgressCandidateIndex = null
+    return [...nextCandidates]
   }
 
-  const indexesByWorktreeId = new Map(
-    previousCandidates.map((candidate, index) => [candidate.worktreeId, index])
+  if (nextCandidates.length === 0) {
+    return previousCandidates as WorkspaceCleanupCandidate[]
+  }
+
+  const indexCache = getWorkspaceCleanupProgressCandidateIndex(
+    previousCandidates,
+    progress.scanId,
+    scanToken
   )
-  const merged = [...previousCandidates]
+  const merged = [...indexCache.candidates]
   for (const candidate of nextCandidates) {
-    const existingIndex = indexesByWorktreeId.get(candidate.worktreeId)
+    const existingIndex = indexCache.indexesByWorktreeId.get(candidate.worktreeId)
     if (existingIndex === undefined) {
-      indexesByWorktreeId.set(candidate.worktreeId, merged.length)
+      indexCache.indexesByWorktreeId.set(candidate.worktreeId, merged.length)
       merged.push(candidate)
       continue
     }
     merged[existingIndex] = candidate
   }
+  workspaceCleanupProgressCandidateIndex = {
+    scanToken,
+    scanId: progress.scanId,
+    candidates: merged,
+    indexesByWorktreeId: indexCache.indexesByWorktreeId
+  }
   return merged
+}
+
+function getWorkspaceCleanupProgressCandidateIndex(
+  candidates: readonly WorkspaceCleanupCandidate[],
+  scanId: string,
+  scanToken: number
+): {
+  candidates: WorkspaceCleanupCandidate[]
+  indexesByWorktreeId: Map<string, number>
+} {
+  if (
+    workspaceCleanupProgressCandidateIndex?.scanToken === scanToken &&
+    workspaceCleanupProgressCandidateIndex.scanId === scanId &&
+    workspaceCleanupProgressCandidateIndex.candidates === candidates
+  ) {
+    return workspaceCleanupProgressCandidateIndex
+  }
+
+  return {
+    candidates: [...candidates],
+    indexesByWorktreeId: new Map(
+      candidates.map((candidate, index) => [candidate.worktreeId, index])
+    )
+  }
 }
 
 async function mapWithConcurrency<T, R>(

@@ -291,6 +291,56 @@ describe('workspace cleanup viewed rows', () => {
     expect(getForegroundProcess).toHaveBeenCalledTimes(1)
   })
 
+  it('updates count-only append progress without replacing existing candidate rows', async () => {
+    const pending = deferred<WorkspaceCleanupScanResult>()
+    let onProgress: ((progress: WorkspaceCleanupScanProgress) => void) | undefined
+    const candidate = makeCandidate({ worktreeId: 'repo1::/tmp/alpha' })
+    const scan = vi.fn((_args, progressCallback) => {
+      onProgress = progressCallback
+      return pending.promise
+    })
+    installWorkspaceCleanupApi(scan)
+    const store = createCleanupTestStore()
+
+    const scanPromise = store.getState().scanWorkspaceCleanup()
+    onProgress?.({
+      scanId: 'scan-1',
+      scannedAt: NOW,
+      scannedWorktreeCount: 1,
+      totalWorktreeCount: 2,
+      candidates: [candidate],
+      errors: [],
+      candidateMode: 'append'
+    })
+
+    await vi.waitFor(() => {
+      expect(store.getState().workspaceCleanupProgress?.scannedWorktreeCount).toBe(1)
+    })
+    const candidatesAfterFirstAppend = store.getState().workspaceCleanupScan?.candidates
+
+    onProgress?.({
+      scanId: 'scan-1',
+      scannedAt: NOW,
+      scannedWorktreeCount: 2,
+      totalWorktreeCount: 2,
+      candidates: [],
+      errors: [],
+      candidateMode: 'append'
+    })
+
+    await vi.waitFor(() => {
+      expect(store.getState().workspaceCleanupProgress?.scannedWorktreeCount).toBe(2)
+    })
+    expect(store.getState().workspaceCleanupScan?.candidates).toBe(candidatesAfterFirstAppend)
+
+    pending.resolve({
+      scannedAt: NOW,
+      candidates: [candidate],
+      errors: []
+    })
+    await scanPromise
+  })
+
   it('keeps append progress rows when terminal enrichment resolves out of order', async () => {
     const pending = deferred<WorkspaceCleanupScanResult>()
     const terminalProbe = deferred<boolean>()
