@@ -17,6 +17,8 @@ export { getBashShellReadyRcfileContent } from '../providers/local-pty-shell-rea
 import type { OrcaRuntimeService } from '../runtime/orca-runtime'
 import type { Store } from '../persistence'
 import type { GlobalSettings, TuiAgent } from '../../shared/types'
+import { terminalOutputBacklogCapChars } from '../../shared/terminal-scrollback-policy'
+import { recordCrashBreadcrumb } from '../crash-reporting/crash-breadcrumb-store'
 import type { SleepingAgentLaunchConfig } from '../../shared/agent-session-resume'
 import type { ProjectExecutionRuntimeResolution } from '../../shared/project-execution-runtime'
 import {
@@ -1380,7 +1382,10 @@ export function registerPtyHandlers(
   // heap ballooning that a renderer reload cannot clear. Beyond this cap the
   // buffered bytes are dropped and the pane heals from the main-owned buffer
   // snapshot via the droppedOutput sentinel (renderer hidden-output restore).
-  const PTY_PENDING_DATA_MAX_CHARS_PER_PTY = 2 * 1024 * 1024
+  // Why read settings live: the cap scales with the user's scrollback setting
+  // so power users don't lose lines their scrollback would have retained.
+  const pendingDataCapChars = (): number =>
+    terminalOutputBacklogCapChars(getSettings?.().terminalScrollbackRows)
   const PTY_RENDERER_INTERACTIVE_RESERVE_CHARS = 256 * 1024
   // Why: active panes need a bounded lane through old hidden bulk output so a
   // keystroke redraw can reach the renderer before every background ACK lands.
@@ -1572,10 +1577,8 @@ export function registerPtyHandlers(
   const pendingDataDropWarnedPtys = new Set<string>()
 
   function dropOversizedPendingPtyData(id: string, pending: PendingPtyData): PendingPtyData {
-    if (
-      pending.droppedOutput === true ||
-      pending.data.length <= PTY_PENDING_DATA_MAX_CHARS_PER_PTY
-    ) {
+    const capChars = pendingDataCapChars()
+    if (pending.droppedOutput === true || pending.data.length <= capChars) {
       return pending
     }
     if (!pendingDataDropWarnedPtys.has(id)) {
@@ -1583,6 +1586,13 @@ export function registerPtyHandlers(
       console.error(
         `[pty] dropped ${pending.data.length} buffered chars for ${id}: renderer not receiving and per-PTY pending cap exceeded; pane will restore from the main-owned snapshot`
       )
+      // Why: field visibility for cap tuning — drop frequency and size decide
+      // whether the cap is too small (issue #2836 / #7017). No pty id: session
+      // ids can embed workspace paths.
+      recordCrashBreadcrumb('terminal_pending_output_dropped', {
+        droppedChars: pending.data.length,
+        capChars
+      })
     }
     // Why empty data, not a trimmed tail: a mid-stream gap would silently
     // corrupt the pane. The droppedOutput sentinel routes the pane through

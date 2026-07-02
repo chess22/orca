@@ -6806,6 +6806,42 @@ describe('registerPtyHandlers', () => {
     }
   })
 
+  it('scales the pending-output cap with the scrollback setting', async () => {
+    vi.useFakeTimers()
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const mockProc = createMockProc()
+    spawnMock.mockReturnValue(mockProc.proc)
+
+    try {
+      // 50k-row scrollback ⇒ 6 MB pending cap instead of the 2 MB floor.
+      registerPtyHandlers(mainWindow as never, undefined, undefined, (() => ({
+        terminalScrollbackRows: 50_000
+      })) as never)
+      await handlers.get('pty:spawn')!(null, { cols: 80, rows: 24, cwd: '/tmp' })
+      mainWindow.webContents.send.mockClear()
+
+      // Saturate the in-flight window with no ACKs, then buffer 3 MB — over
+      // the floor, under the scaled cap: it must be retained, not dropped.
+      mockProc.emitData('x'.repeat(600 * 1024))
+      vi.advanceTimersByTime(8)
+      for (let index = 0; index < 32; index++) {
+        vi.advanceTimersByTime(1)
+      }
+      mockProc.emitData('y'.repeat(3 * 1024 * 1024))
+      expect(getPtyRendererDeliveryDebugSnapshot().pendingChars).toBeGreaterThan(3 * 1024 * 1024)
+
+      // The scaled cap still bounds a runaway flood.
+      mockProc.emitData('z'.repeat(4 * 1024 * 1024))
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        pendingPtyCount: 1,
+        pendingChars: 0
+      })
+    } finally {
+      errorSpy.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
   it('forwards only actually in-flight bytes to provider ACK backpressure', async () => {
     vi.useFakeTimers()
     const acknowledgeDataEvent = vi.fn()

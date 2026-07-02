@@ -12,6 +12,11 @@ import {
   enforceTerminalWriteScrollIntent
 } from './terminal-scroll-intent'
 import { runGuardedWriteCompletionStep } from './xterm-write-callback-guard'
+import { recordRendererCrashBreadcrumb } from '@/lib/crash-diagnostics'
+import {
+  TERMINAL_OUTPUT_BACKLOG_MIN_CAP_CHARS,
+  terminalOutputBacklogCapChars
+} from '../../../../shared/terminal-scrollback-policy'
 
 type TerminalOutputTarget = ForegroundTerminalOutputTarget
 
@@ -75,8 +80,16 @@ const MAX_WRITES_PER_DRAIN = 2
 const HIGH_PRIORITY_MAX_WRITES_PER_DRAIN = 16
 const LARGE_BACKLOG_CHARS = 512 * 1024
 const SYNC_FOREGROUND_FLUSH_CHARS = 256 * 1024
-const MAX_BACKGROUND_QUEUE_CHARS = 2 * 1024 * 1024
+// Why mutable: the cap scales with the user's scrollback setting (see
+// terminalOutputBacklogCapChars); the terminal lifecycle configures it when
+// settings are applied. The chunk-count cap stays fixed — it bounds queue
+// bookkeeping, not retained content.
+let maxQueueChars = TERMINAL_OUTPUT_BACKLOG_MIN_CAP_CHARS
 const MAX_BACKGROUND_QUEUE_CHUNKS = 4096
+
+export function configureTerminalOutputBacklogCap(scrollbackRows: unknown): void {
+  maxQueueChars = terminalOutputBacklogCapChars(scrollbackRows)
+}
 const PARSE_SETTLE_TIMEOUT_MS = 250
 const FOREGROUND_COALESCE_DELAY_MS = 1000
 const FOREGROUND_HOLD_SAFETY_DELAY_MS = 250
@@ -88,14 +101,15 @@ const CURSOR_SHOW_SEQUENCE = '\x1b[?25h'
 const CURSOR_HIDE_SEQUENCE = '\x1b[?25l'
 const SYNCHRONIZED_OUTPUT_END_SEQUENCE = '\x1b[?2026l'
 // Why: CAN aborts a partial escape sequence before resetting style and showing
-// the lossy-backlog warning.
+// the lossy-backlog warning. Cap-agnostic wording: the byte limit scales with
+// the scrollback setting.
 const BACKGROUND_BACKLOG_WARNING =
-  '\x18\x1b[0m\r\n[Orca skipped hidden terminal output because the backlog exceeded 2 MB.]\r\n'
+  '\x18\x1b[0m\r\n[Orca skipped hidden terminal output because the backlog grew too large.]\r\n'
 // Why a separate foreground message: a visible pane hitting the cap means the
 // drain could not keep up with a flood (starved renderer) — the output was
 // skipped, not merely produced while hidden.
 const FOREGROUND_BACKLOG_WARNING =
-  '\x18\x1b[0m\r\n[Orca skipped a burst of terminal output because the backlog exceeded 2 MB.]\r\n'
+  '\x18\x1b[0m\r\n[Orca skipped a burst of terminal output because the backlog grew too large.]\r\n'
 
 const queuedByTerminal = new Map<TerminalOutputTarget, QueueEntry>()
 const backlogRecoveryByTerminal = new WeakMap<
@@ -587,7 +601,7 @@ function enqueueChunk(
 
 function queueCapExceeded(entry: QueueEntry): boolean {
   return (
-    entry.queuedChars > MAX_BACKGROUND_QUEUE_CHARS ||
+    entry.queuedChars > maxQueueChars ||
     entry.chunks.length - entry.chunkIndex > MAX_BACKGROUND_QUEUE_CHUNKS
   )
 }
@@ -597,6 +611,15 @@ function replaceBacklogWithWarning(
   warning: string = BACKGROUND_BACKLOG_WARNING
 ): void {
   const shouldNotify = !entry.backgroundBacklogDropped
+  if (shouldNotify) {
+    // Why: field visibility for cap tuning — how often drops happen and at
+    // what size decides whether the cap is too small (issue #2836 / #7017).
+    recordRendererCrashBreadcrumb('terminal_output_backlog_dropped', {
+      foreground: warning === FOREGROUND_BACKLOG_WARNING,
+      droppedChars: entry.queuedChars,
+      capChars: maxQueueChars
+    })
+  }
   clearForegroundHoldSafety(entry)
   entry.chunks = [
     {
