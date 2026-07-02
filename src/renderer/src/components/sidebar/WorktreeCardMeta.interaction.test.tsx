@@ -211,6 +211,10 @@ describe('WorktreeCardDetailsHover interactions', () => {
     const input = container.querySelector('[data-worktree-title-rename-input]')
 
     expect(input).not.toBeNull()
+    expect(input?.className).toContain('bg-input/40')
+    expect(input?.className).toContain('rounded-sm')
+    expect(input?.className).toContain('selection:bg-[Highlight]')
+    expect(input?.className).toContain('focus-visible:ring-[1px]')
 
     act(() => {
       interactionMocks.onHoverOpenChange?.(false)
