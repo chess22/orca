@@ -208,6 +208,7 @@ export class DaemonPtyAdapter implements IPtyProvider {
       }
     }
 
+    const wasAlreadyManaged = this.activeSessionIds.has(sessionId)
     this.activeSessionIds.add(sessionId)
 
     // Cold restore: daemon created a new session but disk history shows
@@ -231,6 +232,10 @@ export class DaemonPtyAdapter implements IPtyProvider {
       if (this.historyManager) {
         this.historyManager.registerWriter(sessionId)
         this.sessionsNeedingFullCheckpoint.add(sessionId)
+        // Why: the revived generation has no valid checkpoint of its own; a
+        // cooldown inherited from the pre-crash generation (daemon respawn
+        // within one adapter) must not defer this re-anchor.
+        this.lastFullCheckpointAt.delete(sessionId)
       }
       if (scrollback) {
         const coldRestore = { scrollback, cwd: restoreInfo.cwd, oscLinks: restoreInfo.oscLinks }
@@ -254,6 +259,15 @@ export class DaemonPtyAdapter implements IPtyProvider {
       // without overwriting meta.json or deleting the existing checkpoint
       // (which is the only valid recovery data until the next tick).
       this.historyManager.registerWriter(sessionId)
+      if (!wasAlreadyManaged) {
+        // Why: a previous adapter may have drained daemon records it never
+        // persisted (a deferred hot-session tick) before the app died.
+        // Appending increments past that unknown drain point would put a seq
+        // gap in the log, which the restore reader rejects wholesale. Force a
+        // full snapshot to re-anchor before any further appends.
+        this.sessionsNeedingFullCheckpoint.add(sessionId)
+        this.lastFullCheckpointAt.delete(sessionId)
+      }
     }
 
     const isReattach = !result.isNew
@@ -514,6 +528,7 @@ export class DaemonPtyAdapter implements IPtyProvider {
     this.activeSessionIds.clear()
     this.dirtySessionVersions.clear()
     this.lastFullCheckpointAt.clear()
+    this.sessionsNeedingFullCheckpoint.clear()
     this.stopCheckpointTimer()
     for (const id of ids) {
       this.coldRestoreCache.delete(id)
@@ -760,7 +775,13 @@ export class DaemonPtyAdapter implements IPtyProvider {
   // cold restore would find nothing.
   private isFullCheckpointCoolingDown(sessionId: string): boolean {
     const last = this.lastFullCheckpointAt.get(sessionId)
-    return last !== undefined && Date.now() - last < DaemonPtyAdapter.FULL_CHECKPOINT_COOLDOWN_MS
+    if (last === undefined) {
+      return false
+    }
+    const elapsed = Date.now() - last
+    // Why elapsed < 0 counts as expired: a backward wall-clock jump must not
+    // extend the deferral window.
+    return elapsed >= 0 && elapsed < DaemonPtyAdapter.FULL_CHECKPOINT_COOLDOWN_MS
   }
 
   // Why 'deferred' exists: a cap/overflow-triggered full snapshot inside the
@@ -960,6 +981,9 @@ export class DaemonPtyAdapter implements IPtyProvider {
         // full-checkpoint flag is dead state. Without this, a cold-restored
         // session that exits before its first checkpoint leaks a permanent entry.
         this.sessionsNeedingFullCheckpoint.delete(event.sessionId)
+        // Why: a reused sessionId (renderer respawns a persisted ptyId) must
+        // not inherit the dead session's snapshot cooldown.
+        this.lastFullCheckpointAt.delete(event.sessionId)
         this.stopCheckpointTimerIfIdle()
         if (this.historyManager) {
           void this.historyManager

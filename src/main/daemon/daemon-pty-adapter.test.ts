@@ -1183,6 +1183,62 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
       }
     })
 
+    it('clears a stale snapshot cooldown when the cold-restore re-anchor is flagged', async () => {
+      // Simulate a previous daemon crash with recoverable history on disk.
+      const sessionId = 'cold-restore-stale-cooldown'
+      const sessionDir = join(historyDir, getHistorySessionDirName(sessionId))
+      mkdirSync(sessionDir, { recursive: true })
+      writeFileSync(
+        join(sessionDir, 'meta.json'),
+        JSON.stringify({
+          cwd: '/tmp',
+          cols: 80,
+          rows: 24,
+          startedAt: '2026-04-15T10:00:00Z',
+          endedAt: null,
+          exitCode: null
+        })
+      )
+      writeFileSync(join(sessionDir, 'scrollback.bin'), 'pre-crash output\r\n')
+
+      historyAdapter = new DaemonPtyAdapter({ socketPath, tokenPath, historyPath: historyDir })
+      const internals = historyAdapter as unknown as {
+        lastFullCheckpointAt: Map<string, number>
+        sessionsNeedingFullCheckpoint: Set<string>
+      }
+      // A daemon respawn inside one adapter keeps this map: seed a fresh
+      // cooldown as if the pre-crash generation just snapshotted.
+      internals.lastFullCheckpointAt.set(sessionId, Date.now())
+
+      await historyAdapter.spawn({ cols: 80, rows: 24, sessionId })
+
+      // The revived generation has no checkpoint of its own — the re-anchor
+      // must not inherit the previous generation's cooldown.
+      expect(internals.sessionsNeedingFullCheckpoint.has(sessionId)).toBe(true)
+      expect(internals.lastFullCheckpointAt.has(sessionId)).toBe(false)
+    })
+
+    it('re-anchors a warm reattach the adapter was not already managing', async () => {
+      const sessionId = 'warm-reattach-reanchor'
+      const first = new DaemonPtyAdapter({ socketPath, tokenPath, historyPath: historyDir })
+      await first.spawn({ cols: 80, rows: 24, sessionId })
+      first.dispose()
+
+      // A fresh adapter (app relaunch) attaches to the still-live daemon
+      // session. The old adapter may have drained records it never persisted
+      // (deferred hot-session tick), so appends must not resume until a full
+      // snapshot re-anchors the log.
+      historyAdapter = new DaemonPtyAdapter({ socketPath, tokenPath, historyPath: historyDir })
+      const internals = historyAdapter as unknown as {
+        sessionsNeedingFullCheckpoint: Set<string>
+        lastFullCheckpointAt: Map<string, number>
+      }
+      const result = await historyAdapter.spawn({ cols: 80, rows: 24, sessionId })
+      expect(result.isReattach).toBe(true)
+      expect(internals.sessionsNeedingFullCheckpoint.has(sessionId)).toBe(true)
+      expect(internals.lastFullCheckpointAt.has(sessionId)).toBe(false)
+    })
+
     it('returns same cold restore on StrictMode double-mount (sticky cache)', async () => {
       const sessionId = 'sticky-cache-test'
       const sessionDir = join(historyDir, getHistorySessionDirName(sessionId))
