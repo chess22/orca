@@ -329,6 +329,28 @@ plus the terminal-wait contract tests. Expected effect: removes ~85% of
 remaining onPtyData cost; combined with the two landed fixes should
 finally unlock the pipeline toward the renderer's measured 27–117 MB/s.
 
+### 2026-07-03 — pipeline unlocked: three stacked fixes, 16× throughput, 9× latency
+
+Dev-build bench with all three fixes (parse-clocked drains 9e8bb2243,
+windowed tail 4e08a28cd, throttled blocked-check 66f20258e), label
+dev-blockedfix, same protocol/config as prior dev rows:
+
+| metric | pre-fix dev | +tail fix | +blocked fix |
+|---|---|---|---|
+| agent-tui MB/s | 0.7 | 1.0 | **11.5** |
+| DSR load p50/p99 (ms) | 161 / 624 | 108 / 154 | **18.8 / 24.9** |
+| DSR idle p50/p99 (ms) | 0.95 / 21 | 1.09 / 18 | **0.52 / 8.6** |
+| ascii-log MB/s | 6.4 | 4.7 | **9.6** |
+
+The agent-TUI-specific penalty is gone (agent-tui ≈ cjk ≈ ascii now). The
+throttled blocked-check delivered the predicted ~85% cut. Dev mode carries
+~2× overhead vs prod, so the prod build should land near ~10ms DSR-under-
+load — from the 134ms baseline (~13×) — pending a packaged-build rerun.
+Remaining floor is structural cadence (8ms daemon batch + 4ms HP drain
+ticks + xterm 12ms slices), which flow control (#6) does not target;
+re-evaluate the "within 10× of Terminal.app" goal line after a prod
+measurement. Next: term-speed-2 revival (#4), then flow control (#6).
+
 ## Success criteria (baseline-relative; finalize after task 1)
 
 - DSR-under-load p90 in Orca within striking distance of iTerm2 on the same
