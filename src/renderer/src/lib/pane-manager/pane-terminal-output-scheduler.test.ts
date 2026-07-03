@@ -5,6 +5,14 @@ vi.mock('@/lib/e2e-config', () => ({
   e2eConfig: { exposeStore: true }
 }))
 
+const mocks = vi.hoisted(() => ({
+  recordRendererCrashBreadcrumb: vi.fn()
+}))
+
+vi.mock('@/lib/crash-breadcrumb-recorder', () => ({
+  recordRendererCrashBreadcrumb: mocks.recordRendererCrashBreadcrumb
+}))
+
 function createTerminal() {
   const classes = new Set<string>()
   return {
@@ -51,6 +59,7 @@ async function loadScheduler() {
 describe('pane terminal output scheduler', () => {
   beforeEach(() => {
     vi.stubGlobal('window', globalThis)
+    mocks.recordRendererCrashBreadcrumb.mockClear()
   })
 
   afterEach(() => {
@@ -898,10 +907,66 @@ describe('pane terminal output scheduler', () => {
     expect(terminal.write).not.toHaveBeenCalled()
 
     vi.advanceTimersByTime(0)
-    expect(terminal.write).toHaveBeenCalledTimes(16)
+    expect(terminal.write).toHaveBeenCalledTimes(2)
 
-    vi.advanceTimersByTime(1)
-    expect(terminal.write).toHaveBeenCalledTimes(32)
+    vi.advanceTimersByTime(4)
+    expect(terminal.write).toHaveBeenCalledTimes(4)
+  })
+
+  it('yields high-priority backlog drains when writes spend the frame budget', async () => {
+    vi.useFakeTimers()
+    const { writeTerminalOutput } = await loadScheduler()
+    const terminal = createTerminal()
+    const chunk = 'x'.repeat(16 * 1024)
+    let now = 0
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => now)
+    terminal.write.mockImplementation((_data: string, callback?: () => void) => {
+      now += 9
+      callback?.()
+    })
+
+    try {
+      for (let i = 0; i < 64; i++) {
+        writeTerminalOutput(terminal, chunk, { foreground: false })
+      }
+
+      vi.advanceTimersByTime(0)
+      expect(terminal.write).toHaveBeenCalledTimes(1)
+
+      vi.advanceTimersByTime(4)
+      expect(terminal.write).toHaveBeenCalledTimes(2)
+    } finally {
+      nowSpy.mockRestore()
+    }
+  })
+
+  it('uses Date.now for drain budgeting when performance is unavailable', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('performance', undefined)
+    const { writeTerminalOutput } = await loadScheduler()
+    const terminal = createTerminal()
+    const chunk = 'x'.repeat(16 * 1024)
+    let now = 0
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now)
+    terminal.write.mockImplementation((_data: string, callback?: () => void) => {
+      now += 9
+      callback?.()
+    })
+
+    try {
+      for (let i = 0; i < 64; i++) {
+        writeTerminalOutput(terminal, chunk, { foreground: false })
+      }
+
+      vi.advanceTimersByTime(0)
+      expect(terminal.write).toHaveBeenCalledTimes(1)
+      expect(nowSpy).toHaveBeenCalled()
+
+      vi.advanceTimersByTime(4)
+      expect(terminal.write).toHaveBeenCalledTimes(2)
+    } finally {
+      nowSpy.mockRestore()
+    }
   })
 
   it('caps hidden backlog memory and writes a warning instead of retaining all output', async () => {
@@ -921,6 +986,95 @@ describe('pane terminal output scheduler', () => {
     expect(output).toContain('Orca skipped hidden terminal output')
     expect(output).toContain('after-cap')
     expect(output).not.toContain('x'.repeat(1024))
+  })
+
+  it('caps a visible pane backlog the drain cannot keep up with and writes a warning', async () => {
+    // Why: the foreground path was previously uncapped — a flooding visible
+    // TUI on a starved renderer grew queuedChars without bound (field
+    // reports of ~1.5 GB renderer RSS before terminals froze).
+    vi.useFakeTimers()
+    const { writeTerminalOutput } = await loadScheduler()
+    const terminal = createTerminal()
+    const chunk = 'x'.repeat(512 * 1024)
+
+    for (let i = 0; i < 5; i++) {
+      writeTerminalOutput(terminal, chunk, { foreground: true, latencySensitive: false })
+    }
+    writeTerminalOutput(terminal, 'after-cap\r\n', { foreground: true, latencySensitive: false })
+
+    vi.advanceTimersByTime(0)
+
+    const output = terminal.write.mock.calls.map(([data]) => data).join('')
+    expect(output).toContain('Orca skipped a burst of terminal output')
+    expect(output).toContain('after-cap')
+    expect(output).not.toContain('x'.repeat(1024))
+  })
+
+  it('records a drop breadcrumb with sizes when the cap replaces a backlog', async () => {
+    vi.useFakeTimers()
+    const { writeTerminalOutput } = await loadScheduler()
+    const terminal = createTerminal()
+    const chunk = 'x'.repeat(512 * 1024)
+
+    for (let i = 0; i < 5; i++) {
+      writeTerminalOutput(terminal, chunk, { foreground: false })
+    }
+
+    expect(mocks.recordRendererCrashBreadcrumb).toHaveBeenCalledWith(
+      'terminal_output_backlog_dropped',
+      expect.objectContaining({
+        foreground: false,
+        droppedChars: expect.any(Number),
+        capChars: 2 * 1024 * 1024
+      })
+    )
+  })
+
+  it('scales the backlog cap with the scrollback setting', async () => {
+    vi.useFakeTimers()
+    const { writeTerminalOutput, configureTerminalOutputBacklogCap } = await loadScheduler()
+    const terminal = createTerminal()
+    const chunk = 'x'.repeat(512 * 1024)
+
+    // 50k-row scrollback ⇒ 6 MB cap: a 2.5 MB flood that would trip the
+    // 2 MB floor must survive intact.
+    configureTerminalOutputBacklogCap(50_000)
+    for (let i = 0; i < 5; i++) {
+      writeTerminalOutput(terminal, chunk, { foreground: true, latencySensitive: false })
+    }
+    vi.advanceTimersByTime(0)
+
+    let output = terminal.write.mock.calls.map(([data]) => data).join('')
+    expect(output).not.toContain('Orca skipped')
+    expect(output).toContain('x'.repeat(1024))
+
+    // But the scaled cap still bounds a runaway flood.
+    terminal.write.mockClear()
+    for (let i = 0; i < 13; i++) {
+      writeTerminalOutput(terminal, chunk, { foreground: true, latencySensitive: false })
+    }
+    vi.advanceTimersByTime(0)
+    output = terminal.write.mock.calls.map(([data]) => data).join('')
+    expect(output).toContain('Orca skipped a burst of terminal output')
+  })
+
+  it('caps a held/coalesced foreground backlog as well', async () => {
+    vi.useFakeTimers()
+    const { writeTerminalOutput } = await loadScheduler()
+    const terminal = createForegroundTerminal()
+    const chunk = 'y'.repeat(512 * 1024)
+
+    // holdForeground engages the synchronized-output hold — the branch a
+    // flooding TUI in sync mode exercises.
+    for (let i = 0; i < 5; i++) {
+      writeTerminalOutput(terminal, chunk, { foreground: true, holdForeground: true })
+    }
+
+    vi.advanceTimersByTime(1_000)
+
+    const output = terminal.write.mock.calls.map(([data]) => data).join('')
+    expect(output).toContain('Orca skipped a burst of terminal output')
+    expect(output).not.toContain('y'.repeat(1024))
   })
 
   it('caps hidden backlog chunk count even when each chunk is tiny', async () => {
