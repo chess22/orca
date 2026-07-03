@@ -1,6 +1,6 @@
 import { toast } from 'sonner'
 import { useAppStore } from '@/store'
-import { planAgentCliArgsSuffix, tuiAgentUsesNativeDraftPrefill } from '@/lib/tui-agent-startup'
+import { planAgentCliArgsSuffix } from '@/lib/tui-agent-startup'
 import { TUI_AGENT_CONFIG } from '../../../shared/tui-agent-config'
 import { isTuiAgentEnabled, pickTuiAgent } from '../../../shared/tui-agent-selection'
 import { activateAndRevealWorktree } from '@/lib/worktree-activation'
@@ -22,7 +22,6 @@ import {
   pasteDirectWorkItemDraftWhenAgentReady
 } from '@/lib/launch-work-item-direct-agent'
 import { getDirectWorkItemDraftContent } from '@/lib/launch-work-item-direct-draft'
-import { isLinearWorkItemReference } from '@/lib/linked-work-item-context'
 import {
   resolveDirectPrStartPoint,
   resolveDirectSetupDecision
@@ -148,9 +147,6 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
   let effectiveAgent: TuiAgent | null = null
   let draftLaunchedNatively = false
   const draftContent = await getDirectWorkItemDraftContent(item, repoConnectionId)
-  // Why: must match getLaunchableWorkItemDraftContent's own Linear predicate —
-  // any generated Linear block is untrusted and must avoid argv/auto-submit.
-  const usesGeneratedLinearContext = isLinearWorkItemReference(item) && !item.pasteContent?.trim()
   let startupPlanFailed = false
   try {
     const result = await store.createWorktree(
@@ -271,8 +267,7 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
         launchPlatform,
         // Why: SSH hosts run the plain `orca` shim, so the Linux-only `orca-ide`
         // rename must not be applied for remote launches.
-        isRemote: typeof launchConnectionId === 'string',
-        avoidNativeDraft: usesGeneratedLinearContext
+        isRemote: typeof launchConnectionId === 'string'
       }))
 
     const activation = activateAndRevealWorktree(worktreeId, {
@@ -309,24 +304,18 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
   if (!primaryTabId || !startupPlan || draftLaunchedNatively) {
     return true
   }
-  // Why: generated Linear context deliberately skips native argv/env prefill,
-  // but the pane-owned startup paste also skips native-prefill agents — the
-  // sidecar with forcePaste is the only route that still delivers for them.
-  const agentAvoidedNativeDraft =
-    usesGeneratedLinearContext && tuiAgentUsesNativeDraftPrefill(startupPlan.agent)
-  if (promptDelivery === 'draft' && startupPlan.draftPrompt && !agentAvoidedNativeDraft) {
+  if (promptDelivery === 'draft' && startupPlan.draftPrompt) {
     // Why: startup-owned draft paste observes the first PTY frames; the older
     // delayed sidecar path can attach too late and miss Codex's ready marker.
     return true
   }
 
-  const submitAfterReady = promptDelivery === 'submit-after-ready' && !usesGeneratedLinearContext
   void pasteDirectWorkItemDraftWhenAgentReady({
     primaryTabId,
     startupPlan,
     content: draftContent,
-    submit: submitAfterReady,
-    forcePaste: submitAfterReady || agentAvoidedNativeDraft
+    submit: promptDelivery === 'submit-after-ready',
+    forcePaste: promptDelivery === 'submit-after-ready'
   })
   return true
 }

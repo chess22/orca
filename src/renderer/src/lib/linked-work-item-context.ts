@@ -11,6 +11,7 @@ const LINKED_CONTEXT_TRUNCATION_MARKER = '[linked context truncated]'
 const LINKED_CONTEXT_LINE_SPLIT_PATTERN = /\r\n|\r|\n|\u2028|\u2029/
 const LINKED_CONTEXT_BEGIN_DELIMITER = '--- BEGIN LINKED WORK ITEM CONTEXT ---'
 const LINKED_CONTEXT_END_DELIMITER = '--- END LINKED WORK ITEM CONTEXT ---'
+const UNICODE_FORMAT_CONTROL_PATTERN = /\p{Cf}/u
 
 function getUsableLinkedContext(
   linkedContext: LinkedWorkItemContext | null | undefined
@@ -21,8 +22,8 @@ function getUsableLinkedContext(
   return linkedContext
 }
 
-// Why: linked provider text can be third-party source data; every caller gets
-// the same untrusted wrapper and escaping boundary.
+// Why: linked provider prose is untrusted source data; any prompt surface that
+// carries it needs a visible wrapper and delimiter escaping.
 export function buildContainedLinkedContextBlock(
   linkedContext: LinkedWorkItemContext | null | undefined
 ): string | null {
@@ -62,12 +63,9 @@ export type LinearLaunchContextArgs = {
   identifier: string | undefined
   title?: string
   url?: string
-  linkedContext?: LinkedWorkItemContext | null
 }
 
-// Why: exported so launch gates share this exact predicate — a launch that
-// generates the Linear source block must also classify it as untrusted.
-export function isLinearWorkItemReference(
+function isLinearWorkItemReference(
   args:
     | {
         provider?: TaskProvider
@@ -84,6 +82,8 @@ export function isLinearWorkItemReference(
   )
 }
 
+// Why: Linear ticket prose is third-party source data; terminal drafts may
+// carry only stable identity/link fields from the selected issue.
 export function buildLinearLaunchContextBlock(args: LinearLaunchContextArgs): string | null {
   const identifier = args.identifier?.trim()
   const url = args.url?.trim()
@@ -91,15 +91,10 @@ export function buildLinearLaunchContextBlock(args: LinearLaunchContextArgs): st
     return null
   }
 
-  const linkedContext = args.linkedContext?.provider === 'linear' ? args.linkedContext : null
-  const containedBlock =
-    buildContainedLinkedContextBlock(linkedContext) ??
-    buildContainedLinkedContextBlock(buildMissingLinearContext(args.title))
   const lines = [identifier ? `Linked Linear issue: ${identifier}` : 'Linked Linear issue']
   if (url) {
     lines.push(url)
   }
-  lines.push('', containedBlock ?? '')
   return lines.join('\n')
 }
 
@@ -112,21 +107,18 @@ function escapeLinkedContextControlChars(value: string): string {
     if (isLinkedContextControlCode(code)) {
       return `\\x${code.toString(16).padStart(2, '0').toUpperCase()}`
     }
-    if (isLinkedContextFormatControlCode(code)) {
-      return escapeLinkedContextCodePoint(code)
-    }
     return char
   }).join('')
 }
 
 function escapeLinkedContextSourceLine(value: string): string {
   const escaped = escapeLinkedContextControlChars(value)
-  const trimmedStart = escaped.trimStart()
+  const trimmed = escaped.trim()
   // Why: source content can mention our delimiters; keep those mentions from
   // becoming visually indistinguishable from the trusted wrapper boundaries.
   if (
-    trimmedStart.startsWith(LINKED_CONTEXT_BEGIN_DELIMITER) ||
-    trimmedStart.startsWith(LINKED_CONTEXT_END_DELIMITER)
+    trimmed.startsWith(LINKED_CONTEXT_BEGIN_DELIMITER) ||
+    trimmed.startsWith(LINKED_CONTEXT_END_DELIMITER)
   ) {
     return `\\${escaped}`
   }
@@ -134,46 +126,15 @@ function escapeLinkedContextSourceLine(value: string): string {
 }
 
 function isLinkedContextControlCode(code: number): boolean {
-  return (code >= 0x00 && code <= 0x1f) || (code >= 0x7f && code <= 0x9f)
-}
-
-// Why: any \p{Cf} character the fast ranges miss (e.g. U+FFF9 interlinear
-// anchors) is invisible and can spoof the block delimiters past the
-// trimStart() guard. The regex safety net only runs for rare codepoints.
-const UNICODE_FORMAT_CONTROL_PATTERN = /^\p{Cf}$/u
-
-function isLinkedContextFormatControlCode(code: number): boolean {
   return (
-    code === 0x00ad ||
-    code === 0x034f ||
-    code === 0x061c ||
-    code === 0x180e ||
-    (code >= 0x200b && code <= 0x200f) ||
-    (code >= 0x202a && code <= 0x202e) ||
-    (code >= 0x2060 && code <= 0x206f) ||
-    (code >= 0xfe00 && code <= 0xfe0f) ||
-    code === 0xfeff ||
-    (code >= 0xe0100 && code <= 0xe01ef) ||
-    (code >= 0xe0000 && code <= 0xe007f) ||
-    (code >= 0x0600 && UNICODE_FORMAT_CONTROL_PATTERN.test(String.fromCodePoint(code)))
+    (code >= 0x00 && code <= 0x1f) ||
+    (code >= 0x7f && code <= 0x9f) ||
+    isUnicodeFormatControlCode(code)
   )
 }
 
-function escapeLinkedContextCodePoint(code: number): string {
-  if (code <= 0xffff) {
-    return `\\u${code.toString(16).padStart(4, '0').toUpperCase()}`
-  }
-  return `\\u{${code.toString(16).toUpperCase()}}`
-}
-
-function buildMissingLinearContext(title: string | undefined): LinkedWorkItemContext {
-  return {
-    provider: 'linear',
-    version: 1,
-    renderedText: ['Full Linear context was not loaded.', title?.trim() ? `Title: ${title}` : null]
-      .filter((line): line is string => line !== null)
-      .join('\n')
-  }
+function isUnicodeFormatControlCode(code: number): boolean {
+  return UNICODE_FORMAT_CONTROL_PATTERN.test(String.fromCodePoint(code))
 }
 
 function capLinkedContextSourceLines(args: { sourceLines: string; fixedChars: number }): string {
@@ -192,12 +153,7 @@ function capLinkedContextSourceLines(args: { sourceLines: string; fixedChars: nu
 export function getLinkedWorkItemPromptContext(
   linkedWorkItem:
     | (Pick<
-        {
-          provider?: TaskProvider
-          url: string
-          title?: string
-          linearIdentifier?: string
-        },
+        { provider?: TaskProvider; url: string; title?: string; linearIdentifier?: string },
         'provider' | 'url' | 'title' | 'linearIdentifier'
       > & { linkedContext?: LinkedWorkItemContext })
     | null
@@ -208,8 +164,7 @@ export function getLinkedWorkItemPromptContext(
       provider: linkedWorkItem?.provider,
       identifier: linkedWorkItem?.linearIdentifier,
       title: linkedWorkItem?.title,
-      url: linkedWorkItem?.url,
-      linkedContext: linkedWorkItem?.linkedContext
+      url: linkedWorkItem?.url
     })
     return linearBlock
       ? { linkedUrls: [], linkedContextBlocks: [linearBlock] }
@@ -237,8 +192,7 @@ export function getLaunchableWorkItemDraftContent(args: {
       provider: args.provider,
       identifier: args.linearIdentifier,
       title: args.title,
-      url: args.url,
-      linkedContext: args.linkedContext
+      url: args.url
     })
     return linearBlock ? formatDraftContextBlock(linearBlock) : ''
   }
@@ -267,8 +221,7 @@ export function resolveQuickCreateLinkedWorkItemPrompt(
         provider: linkedWorkItem?.provider,
         identifier: linkedWorkItem?.linearIdentifier,
         title: linkedWorkItem?.title,
-        url: linkedWorkItem?.url,
-        linkedContext: linkedWorkItem?.linkedContext
+        url: linkedWorkItem?.url
       })
     : null
   const linearDraft = linearBlock ? formatDraftContextBlock(linearBlock) : null

@@ -34,9 +34,6 @@ export function buildDirectWorkItemAgentStartupPlan(args: {
   /** Why: SSH remotes deploy the CLI shim as plain `orca`, so the Linux-only
    * `orca-ide` rename must not be applied for remote launches. */
   isRemote?: boolean
-  /** Why: generated linked-source drafts must stay reviewable in the terminal
-   * input buffer instead of riding native argv/env prefill paths. */
-  avoidNativeDraft?: boolean
 }): {
   startupPlan: AgentStartupPlan | null
   draftLaunchedNatively: boolean
@@ -52,7 +49,7 @@ export function buildDirectWorkItemAgentStartupPlan(args: {
       : args.agentArgs
   const effectiveAgentEnv = resolveTuiAgentLaunchEnv(args.agent, args.settings?.agentDefaultEnv)
   const draftLaunchPlan =
-    args.promptDelivery === 'submit-after-ready' || args.avoidNativeDraft
+    args.promptDelivery === 'submit-after-ready'
       ? null
       : buildAgentDraftLaunchPlan({
           agent: args.agent,

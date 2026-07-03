@@ -76,19 +76,17 @@ function buildFolderWorkspaceLinkedStartupPlan(args: {
     args.note
   )
   const linkedDraftPrompt = (draftPrompt ?? prompt.trim()) || null
-  const usesLinearSourceDraft = Boolean(args.linkedWorkItem.linearIdentifier)
-  const draftLaunchPlan =
-    linkedDraftPrompt && !usesLinearSourceDraft
-      ? buildAgentDraftLaunchPlan({
-          agent: args.agent,
-          draft: linkedDraftPrompt,
-          cmdOverrides: args.agentCmdOverrides ?? {},
-          agentArgs: args.agentArgs,
-          agentEnv: args.agentEnv,
-          platform: args.platform,
-          isRemote: args.isRemote
-        })
-      : null
+  const draftLaunchPlan = linkedDraftPrompt
+    ? buildAgentDraftLaunchPlan({
+        agent: args.agent,
+        draft: linkedDraftPrompt,
+        cmdOverrides: args.agentCmdOverrides ?? {},
+        agentArgs: args.agentArgs,
+        agentEnv: args.agentEnv,
+        platform: args.platform,
+        isRemote: args.isRemote
+      })
+    : null
   if (draftLaunchPlan) {
     return {
       agent: draftLaunchPlan.agent,
@@ -155,7 +153,6 @@ export async function submitFolderWorkspaceCreate({
   agentCmdOverrides,
   agentArgs,
   agentEnv,
-  isRemote,
   launchSource = 'sidebar',
   runtimeEnvironmentId = null,
   createFolderWorkspace,
@@ -170,7 +167,7 @@ export async function submitFolderWorkspaceCreate({
   const launchPlatform = getFolderWorkspaceAgentLaunchPlatform(projectGroup)
   // Why: an SSH folder group runs the plain `orca` relay shim, so the Linux-only
   // `orca-ide` rename must not be applied for remote launches.
-  const launchIsRemote = isRemote ?? Boolean(projectGroup.connectionId)
+  const launchIsRemote = Boolean(projectGroup.connectionId)
   const startupPlan =
     quickAgent && linkedWorkItem
       ? buildFolderWorkspaceLinkedStartupPlan({

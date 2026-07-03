@@ -77,7 +77,6 @@ export type WorktreeStartupPayload = {
   launchToken?: string
   launchAgent?: TuiAgent
   draftPrompt?: string
-  draftPromptSubmit?: boolean
   startupCommandDelivery?: StartupCommandDelivery
   initialAgentStatus?: { agent: TuiAgent; prompt: string }
   telemetry?: AgentStartedTelemetry
@@ -126,7 +125,6 @@ type WorktreeActivationStore = Partial<WorktreeRuntimeOwnerState> & {
       launchToken?: string
       launchAgent?: TuiAgent
       draftPrompt?: string
-      draftPromptSubmit?: boolean
       initialAgentStatus?: { agent: TuiAgent; prompt: string }
       showSessionRestoredBanner?: boolean
       telemetry?: AgentStartedTelemetry

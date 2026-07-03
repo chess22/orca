@@ -1438,15 +1438,14 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   )
   const setupPolicy: SetupRunPolicy = selectedRepo?.hookSettings?.setupRunPolicy ?? 'run-by-default'
   const linkedWorkItemProvider = linkedWorkItem ? getLinkedWorkItemProvider(linkedWorkItem) : null
-  // Why: Linear starts skip the generic default template, but must wait long
-  // enough to honor a repo-authored issueCommand if one exists.
+  // Why: the "no prompt + linked item" path below rehydrates the issueCommand
+  // template into the main startup prompt. Linear starts never use that
+  // product-authored workflow text, so they should not wait for it either.
   const willApplyIssueCommandAsPrompt =
     enableIssueAutomation &&
     !agentPrompt.trim() &&
     Boolean(linkedWorkItem) &&
-    (linkedWorkItemProvider !== 'linear' ||
-      !hasLoadedIssueCommand ||
-      issueCommandTemplate.trim().length > 0)
+    linkedWorkItemProvider !== 'linear'
   const shouldWaitForIssueAutomationCheck =
     enableIssueAutomation &&
     (parsedLinkedIssueNumber !== null || willApplyIssueCommandAsPrompt) &&
@@ -1482,27 +1481,21 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
       }),
     [agentPrompt, fallbackCreatureName, linkedPR, name, parsedLinkedIssueNumber]
   )
-  // Why: Linear blank launches are context-only unless a repo explicitly
-  // configures issueCommand; avoid turning third-party ticket text into a task.
-  const canApplyDefaultLinkedOnlyTemplate =
-    linkedWorkItemProvider !== 'linear' || issueCommandTemplate.trim().length > 0
+  // Why: Linear starts may include only the neutral issue reference; repo
+  // issue-command templates are product-authored workflow direction.
   const shouldApplyLinkedOnlyTemplate =
     enableIssueAutomation &&
     !agentPrompt.trim() &&
     Boolean(linkedWorkItem) &&
     hasLoadedIssueCommand &&
-    canApplyDefaultLinkedOnlyTemplate
+    linkedWorkItemProvider !== 'linear'
   const linkedOnlyTemplatePrompt = useMemo(() => {
     if (!shouldApplyLinkedOnlyTemplate || !linkedWorkItem) {
       return ''
     }
     const template = issueCommandTemplate.trim() || DEFAULT_ISSUE_COMMAND_TEMPLATE
     return renderIssueCommandTemplate(template, {
-      // Why: Linear issues carry a placeholder number 0; {{issue}} must render
-      // the string identifier (e.g. "ENG-123") instead.
-      issueNumber:
-        linkedWorkItem.linearIdentifier?.trim() ||
-        (linkedWorkItem.type === 'issue' ? linkedWorkItem.number : null),
+      issueNumber: linkedWorkItem.type === 'issue' ? linkedWorkItem.number : null,
       artifactUrl: linkedWorkItem.url
     })
   }, [issueCommandTemplate, linkedWorkItem, shouldApplyLinkedOnlyTemplate])
@@ -3397,17 +3390,14 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
         !agentPrompt.trim() &&
         Boolean(submitLinkedWorkItem) &&
         hasLoadedIssueCommand &&
-        (submitLinkedWorkItemProvider !== 'linear' || issueCommandTemplate.trim().length > 0)
+        submitLinkedWorkItemProvider !== 'linear'
       const submitLinkedOnlyTemplatePrompt =
         submitShouldApplyLinkedOnlyTemplate && submitLinkedWorkItem
           ? renderIssueCommandTemplate(
               issueCommandTemplate.trim() || DEFAULT_ISSUE_COMMAND_TEMPLATE,
               {
-                // Why: Linear issues carry a placeholder number 0; {{issue}}
-                // must render the string identifier (e.g. "ENG-123") instead.
                 issueNumber:
-                  submitLinkedWorkItem.linearIdentifier?.trim() ||
-                  (submitLinkedWorkItem.type === 'issue' ? submitLinkedWorkItem.number : null),
+                  submitLinkedWorkItem.type === 'issue' ? submitLinkedWorkItem.number : null,
                 artifactUrl: submitLinkedWorkItem.url
               }
             )
@@ -3483,36 +3473,17 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
         Boolean(tuiAgent) &&
         !effectiveBranchNameOverride &&
         !createDisplayName
-      const submitAgentArgs = resolveTuiAgentLaunchArgs(tuiAgent, settings?.agentDefaultArgs)
-      const submitAgentEnv = resolveTuiAgentLaunchEnv(tuiAgent, settings?.agentDefaultEnv)
-      // Why: linked source blocks should stay reviewable as drafts; do not send
-      // third-party Linear text as an already-submitted startup prompt.
-      const submitUsesDraftDelivery = linkedPromptContext.linkedContextBlocks.length > 0
-      let startupPlan: ReturnType<typeof buildAgentStartupPlan> = null
-      startupPlan = buildAgentStartupPlan({
+      const startupPlan = buildAgentStartupPlan({
         agent: tuiAgent,
-        prompt: submitUsesDraftDelivery ? '' : submitStartupPrompt,
+        prompt: submitStartupPrompt,
         cmdOverrides: settings?.agentCmdOverrides ?? {},
-        agentArgs: submitAgentArgs,
-        agentEnv: submitAgentEnv,
+        agentArgs: resolveTuiAgentLaunchArgs(tuiAgent, settings?.agentDefaultArgs),
+        agentEnv: resolveTuiAgentLaunchEnv(tuiAgent, settings?.agentDefaultEnv),
         platform: selectedRepoAgentLaunchPlatform,
-        isRemote: selectedRepoIsRemote,
-        allowEmptyPromptLaunch: submitUsesDraftDelivery
+        isRemote: selectedRepoIsRemote
       })
-      // Why: a user-typed prompt is explicit run intent — deliver as a paste
-      // (never argv, which would carry the untrusted block) and submit it.
-      // Context-only submits stay unsubmitted for review.
-      const submitDraftPromptSubmit = submitUsesDraftDelivery && agentPrompt.trim().length > 0
-      if (startupPlan && submitUsesDraftDelivery) {
-        startupPlan.draftPrompt = submitStartupPrompt
-        if (submitDraftPromptSubmit) {
-          startupPlan.draftPromptSubmit = true
-        }
-      }
       const shouldSeedInitialAgentStatus =
-        tuiAgent === 'command-code' &&
-        (!submitUsesDraftDelivery || submitDraftPromptSubmit) &&
-        submitStartupPrompt.trim().length > 0
+        tuiAgent === 'command-code' && submitStartupPrompt.trim().length > 0
 
       // Why: backend startup is safe only when the launch command is
       // self-contained. Agents that need post-ready paste/follow-up stay on
@@ -3611,7 +3582,6 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
                 ...(startupPlan.launchToken ? { launchToken: startupPlan.launchToken } : {}),
                 launchAgent: tuiAgent,
                 ...(startupPlan.draftPrompt ? { draftPrompt: startupPlan.draftPrompt } : {}),
-                ...(startupPlan.draftPromptSubmit ? { draftPromptSubmit: true } : {}),
                 ...(startupPlan.startupCommandDelivery
                   ? { startupCommandDelivery: startupPlan.startupCommandDelivery }
                   : {}),
@@ -3918,11 +3888,8 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
         const promptLinkedWorkItem = agent === null ? null : submitLinkedWorkItem
         const { prompt: quickPrompt, draftPrompt: quickDraftPrompt } =
           resolveQuickCreateLinkedWorkItemPrompt(promptLinkedWorkItem, trimmedNote)
-        const quickUsesLinearSourceDraft = promptLinkedWorkItem
-          ? getLinkedWorkItemProvider(promptLinkedWorkItem) === 'linear'
-          : false
         const draftLaunchPlan =
-          agent === null || !quickDraftPrompt || quickUsesLinearSourceDraft
+          agent === null || !quickDraftPrompt
             ? null
             : buildAgentDraftLaunchPlan({
                 agent,

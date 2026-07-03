@@ -157,7 +157,7 @@ import type { SetupSplitDirection, TuiAgent } from '../../../../shared/types'
 import { isWslUncPath } from '../../../../shared/wsl-paths'
 import { TUI_AGENT_CONFIG } from '../../../../shared/tui-agent-config'
 import { createDraftPasteReadyScanner } from '../../../../shared/draft-paste-ready-scanner'
-import { sendBracketedPasteToAgent } from '@/lib/agent-paste-draft'
+import { sendAgentDraftPasteContent } from '@/lib/agent-draft-paste-content'
 import {
   beginAgentStartupDeliveryAttempt,
   releaseAgentStartupDeliveryAttempt
@@ -2819,14 +2819,7 @@ export function connectPanePty(
       startupDraftPasteAttempted = true
       cleanupStartupDraftPasteTimers()
       const settings = getSettingsForWorktreeRuntimeOwner(useAppStore.getState(), deps.worktreeId)
-      // Why: a user-typed prompt rides the draft paste with explicit run
-      // intent; submit it after paste. Context-only drafts stay unsubmitted.
-      void sendBracketedPasteToAgent({
-        settings,
-        ptyId,
-        content: startupDraftPrompt,
-        submit: paneStartup?.draftPromptSubmit === true
-      })
+      void sendAgentDraftPasteContent(settings, ptyId, startupDraftPrompt)
         .catch(() => false)
         .finally(() => {
           startupDraftPasteInFlight = false

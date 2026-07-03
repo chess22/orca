@@ -92,8 +92,7 @@ import {
   ensureAgentStartupInTerminal,
   getSetupConfig,
   getWorkspaceSeedName,
-  isGitLabIssueUrl,
-  renderIssueCommandTemplate
+  isGitLabIssueUrl
 } from './new-workspace'
 import { resetAgentStartupDelayedDeliveryForTests } from './agent-startup-delayed-delivery'
 
@@ -329,34 +328,9 @@ describe('ensureAgentStartupInTerminal prompt delivery', () => {
       ptyId: 'pty-1',
       content: 'review this before sending',
       agent: 'claude',
-      submit: false,
       forcePaste: true
     })
     expect(mockTrack).not.toHaveBeenCalledWith('agent_prompt_sent', expect.anything())
-  })
-
-  it('submits the pasted draft when the startup carries typed-prompt intent', async () => {
-    await ensureAgentStartupInTerminal({
-      worktreeId: 'wt-1',
-      startup: {
-        agent: 'claude',
-        launchCommand: 'claude',
-        expectedProcess: 'claude',
-        followupPrompt: null,
-        launchConfig: { agentArgs: '', agentEnv: {} },
-        draftPrompt: 'typed prompt with linked context',
-        draftPromptSubmit: true
-      }
-    })
-
-    expect(mockPasteDraftToAgentPtyWhenReady).toHaveBeenCalledWith({
-      tabId: 'tab-1',
-      ptyId: 'pty-1',
-      content: 'typed prompt with linked context',
-      agent: 'claude',
-      submit: true,
-      forcePaste: true
-    })
   })
 
   it('pastes drafts into the activation primary tab when active tab state differs', async () => {
@@ -397,7 +371,6 @@ describe('ensureAgentStartupInTerminal prompt delivery', () => {
       ptyId: 'agent-pty',
       content: 'Linear context draft',
       agent: 'codex',
-      submit: false,
       forcePaste: true
     })
   })
@@ -454,7 +427,6 @@ describe('ensureAgentStartupInTerminal prompt delivery', () => {
       ptyId: 'pty-delayed',
       content: 'https://github.com/stablyai/orca/pull/2051',
       agent: 'codex',
-      submit: false,
       forcePaste: true
     })
   })
@@ -536,7 +508,6 @@ describe('ensureAgentStartupInTerminal prompt delivery', () => {
       ptyId: 'startup-pty',
       content: 'linked draft',
       agent: 'codex',
-      submit: false,
       forcePaste: true
     })
   })
@@ -782,22 +753,5 @@ describe('getSetupConfig', () => {
         }
       )
     ).toBeNull()
-  })
-})
-
-describe('renderIssueCommandTemplate', () => {
-  it('renders Linear string identifiers into {{issue}}', () => {
-    expect(
-      renderIssueCommandTemplate('Fix issue {{issue}}: {{artifact_url}}', {
-        issueNumber: 'ENG-123',
-        artifactUrl: 'https://linear.app/acme/issue/ENG-123/x'
-      })
-    ).toBe('Fix issue ENG-123: https://linear.app/acme/issue/ENG-123/x')
-  })
-
-  it('leaves {{issue}} untouched without an identifier or number', () => {
-    expect(
-      renderIssueCommandTemplate('Fix issue {{issue}}', { issueNumber: null, artifactUrl: null })
-    ).toBe('Fix issue {{issue}}')
   })
 })

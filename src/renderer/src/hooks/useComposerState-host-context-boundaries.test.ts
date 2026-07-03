@@ -526,58 +526,36 @@ describe('useComposerState host-context boundaries', () => {
       'const promptLinkedWorkItem = agent === null ? null : submitLinkedWorkItem'
     )
     expect(quickSubmit).toContain('resolveQuickCreateLinkedWorkItemPrompt(promptLinkedWorkItem')
-    expect(quickSubmit).toContain('const quickUsesLinearSourceDraft = promptLinkedWorkItem')
-    expect(quickSubmit).toContain("getLinkedWorkItemProvider(promptLinkedWorkItem) === 'linear'")
-    expect(quickSubmit).toContain(
-      'agent === null || !quickDraftPrompt || quickUsesLinearSourceDraft'
-    )
     expect(quickSubmit).not.toContain('explicitAgentChoice')
     expect(quickSubmit).not.toContain('shouldPrepareQuickLinkedWorkItemAgentPrompt')
     expect(HOOK_SOURCE).not.toContain('resolveQuickWorkspaceSubmitAgent')
   })
 
-  it('keeps regular linked-context submit text on draft delivery', () => {
+  it('keeps Linear starts out of issue-command templates without special draft routing', () => {
     expect(HOOK_SOURCE).not.toContain('isOrcaCliAvailableForLaunch')
     expect(HOOK_SOURCE).not.toContain('hasGeneratedLinearSourceContext')
     expect(HOOK_SOURCE).not.toContain('shouldDraftGeneratedLinearContext')
     expect(HOOK_SOURCE).toMatch(
-      /willApplyIssueCommandAsPrompt[\s\S]*linkedWorkItemProvider !== 'linear'[\s\S]*!hasLoadedIssueCommand[\s\S]*issueCommandTemplate\.trim\(\)\.length > 0/
+      /willApplyIssueCommandAsPrompt[\s\S]*linkedWorkItemProvider !== 'linear'/
     )
 
     const previewSection = sourceBetween(
       HOOK_SOURCE,
-      'const canApplyDefaultLinkedOnlyTemplate =',
+      'const shouldApplyLinkedOnlyTemplate =',
       'const linkedOnlyTemplatePrompt'
     )
-    expect(previewSection).toContain(
-      "linkedWorkItemProvider !== 'linear' || issueCommandTemplate.trim().length > 0"
-    )
+    expect(previewSection).toContain("linkedWorkItemProvider !== 'linear'")
+
     const fullSubmit = sourceBetween(
       HOOK_SOURCE,
       'const submit = useCallback',
       'const submitQuick = useCallback'
     )
-
-    expect(fullSubmit).toContain(
-      'const submitUsesDraftDelivery = linkedPromptContext.linkedContextBlocks.length > 0'
-    )
-    expect(fullSubmit).not.toContain('draft: submitStartupPrompt')
-    expect(fullSubmit).toContain('allowEmptyPromptLaunch: submitUsesDraftDelivery')
-    expect(fullSubmit).toContain('startupPlan.draftPrompt = submitStartupPrompt')
-    // Why: a typed prompt is explicit run intent — the pasted draft submits;
-    // context-only submits stay unsubmitted for review.
-    expect(fullSubmit).toContain(
-      'const submitDraftPromptSubmit = submitUsesDraftDelivery && agentPrompt.trim().length > 0'
-    )
-    expect(fullSubmit).toContain('startupPlan.draftPromptSubmit = true')
-    expect(fullSubmit).toContain('(!submitUsesDraftDelivery || submitDraftPromptSubmit) &&')
-    expect(fullSubmit).toContain(
-      "submitLinkedWorkItemProvider !== 'linear' || issueCommandTemplate.trim().length > 0"
-    )
+    expect(fullSubmit).toContain("submitLinkedWorkItemProvider !== 'linear'")
     expect(fullSubmit).toMatch(
       /submitShouldRunIssueAutomation[\s\S]*submitLinkedWorkItemProvider !== 'linear'/
     )
-    expect(fullSubmit).toContain('prompt: submitUsesDraftDelivery ?')
+    expect(fullSubmit).toContain('prompt: submitStartupPrompt')
     expect(fullSubmit).toContain('const shouldSeedInitialAgentStatus =')
     expect(fullSubmit).toContain('...(shouldSeedInitialAgentStatus')
 

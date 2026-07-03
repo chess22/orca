@@ -22,7 +22,6 @@ export type PtyConnectionDeps = {
     launchToken?: string
     launchAgent?: TuiAgent
     draftPrompt?: string
-    draftPromptSubmit?: boolean
     /** Telemetry payload for `agent_started`. Forwarded to `pty:spawn`
      *  so main fires the event only after the spawn succeeds. */
     telemetry?: EventProps<'agent_started'>

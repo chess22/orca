@@ -22,7 +22,7 @@ function makeIssue(patch: Partial<LinearIssue> = {}): LinearIssue {
 }
 
 describe('buildLinearIssueLinkedWorkItem', () => {
-  it('preserves Linear metadata and attaches prompt-time ticket context', () => {
+  it('preserves Linear metadata without attaching prompt-time issue context', () => {
     const item = buildLinearIssueLinkedWorkItem(makeIssue())
 
     expect(item).toMatchObject({
@@ -34,12 +34,7 @@ describe('buildLinearIssueLinkedWorkItem', () => {
       linearIdentifier: 'ENG-123',
       linearOrganizationUrlKey: 'acme'
     })
-    expect(item.linkedContext).toMatchObject({
-      provider: 'linear',
-      version: 1
-    })
-    expect(item.linkedContext?.renderedText).toContain('Title: Fix launch context handoff')
-    expect(item.linkedContext?.renderedText).toContain('Pass Linear issue details into the agent.')
+    expect(item).not.toHaveProperty('linkedContext')
   })
 
   it('carries the Linear workspace id when the issue has one', () => {
