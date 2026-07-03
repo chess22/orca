@@ -206,7 +206,8 @@
         },
         "workspace": {
           "cleanup": {
-            "9d6e531da6": "El espacio de trabajo ya no existe."
+            "9d6e531da6": "El espacio de trabajo ya no existe.",
+            "changedSinceConfirmation": "El espacio de trabajo cambió después de la confirmación. Actualiza para revisarlo antes de eliminarlo."
           }
         },
         "worktrees": {
@@ -2307,7 +2308,6 @@
             "contextFilter": "Contexto",
             "sortBy": "Ordenar por",
             "sortDirection": "Dirección",
-            "e50c4da067": "Eliminando",
             "1d3503357d": "Puedes cerrar esto y volver mientras la eliminación continúa.",
             "4c2990886e": "{{value0}}/{{value1}} eliminados",
             "86ba852118": "{{value0}}, {{value1}} fallidos",
@@ -2324,7 +2324,7 @@
             "failed": "Espacios de trabajo no eliminados: {{value0}}",
             "error": "Error en la limpieza del espacio de trabajo",
             "skippedAncestor": "Se omitió porque no se pudo eliminar un espacio de trabajo anidado.",
-            "timedOut": "Se agotó el tiempo al eliminar {{value0}}."
+            "timedOut": "La eliminación de {{value0}} está tardando más de lo esperado. Continuará ejecutándose en segundo plano."
           },
           "candidateRow": {
             "gitLabel": "Git",

@@ -576,6 +576,27 @@ describe('workspace cleanup scan', () => {
     })
   })
 
+  it('stops statting a repo after the first activity metadata timeout', async () => {
+    listRepoWorktreesMock.mockResolvedValue(
+      ['/repo-a', '/repo-b', '/repo-c', '/repo-d'].map((worktreePath, index) => ({
+        path: worktreePath,
+        head: `head-${index}`,
+        branch: `refs/heads/branch-${index}`,
+        isBare: false,
+        isMainWorktree: false
+      }))
+    )
+    lstatMock.mockReturnValue(new Promise(() => undefined))
+
+    const scanPromise = scanWorkspaceCleanup(makeStore())
+    await vi.advanceTimersByTimeAsync(8_000)
+    const result = await scanPromise
+
+    expect(result.candidates).toHaveLength(4)
+    expect(lstatMock).not.toHaveBeenCalledWith('/repo-d')
+    expect(lstatMock).not.toHaveBeenCalledWith(path.join('/repo-d', '.git'))
+  })
+
   it('includes focused remove preflight rows even when they are recent', async () => {
     const result = await scanWorkspaceCleanup(
       makeStore({

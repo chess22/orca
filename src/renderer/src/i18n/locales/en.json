@@ -206,7 +206,8 @@
         },
         "workspace": {
           "cleanup": {
-            "9d6e531da6": "Workspace no longer exists."
+            "9d6e531da6": "Workspace no longer exists.",
+            "changedSinceConfirmation": "Workspace changed after confirmation. Refresh to review it before removing."
           }
         },
         "worktrees": {
@@ -2307,7 +2308,6 @@
             "contextFilter": "Context",
             "sortBy": "Sort by",
             "sortDirection": "Direction",
-            "e50c4da067": "Deleting",
             "1d3503357d": "You can close this and come back while deletion continues.",
             "4c2990886e": "{{value0}}/{{value1}} deleted",
             "86ba852118": "{{value0}}, {{value1}} failed",
@@ -2324,7 +2324,7 @@
             "failed": "Workspaces not removed: {{value0}}",
             "error": "Workspace cleanup failed",
             "skippedAncestor": "Skipped because a nested workspace could not be removed.",
-            "timedOut": "Timed out removing {{value0}}."
+            "timedOut": "Removing {{value0}} is taking longer than expected. It will keep running in the background."
           },
           "candidateRow": {
             "gitLabel": "Git",

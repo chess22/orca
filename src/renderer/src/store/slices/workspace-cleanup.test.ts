@@ -769,7 +769,9 @@ describe('workspace cleanup viewed rows', () => {
       'repo-a::/repo/parent',
       'repo-c::/other'
     ])
-    expect(removeWorktree).toHaveBeenCalledWith('repo-c::/other', true)
+    expect(removeWorktree).toHaveBeenCalledWith('repo-c::/other', true, {
+      suppressPreservedBranchToast: true
+    })
     expect(store.getState().workspaceCleanupScan?.candidates).toEqual([])
   })
 
@@ -882,7 +884,9 @@ describe('workspace cleanup viewed rows', () => {
       removedIds: [WORKTREE_ID],
       failures: []
     })
-    expect(removeWorktree).toHaveBeenCalledWith(WORKTREE_ID, false)
+    expect(removeWorktree).toHaveBeenCalledWith(WORKTREE_ID, false, {
+      suppressPreservedBranchToast: true
+    })
   })
 
   it('defers git checks for locally active workspaces on initial scans', async () => {
@@ -988,7 +992,67 @@ describe('workspace cleanup viewed rows', () => {
         failures: []
       }
     )
-    expect(removeWorktree).toHaveBeenCalledWith(WORKTREE_ID, false)
+    expect(removeWorktree).toHaveBeenCalledWith(WORKTREE_ID, false, {
+      suppressPreservedBranchToast: true
+    })
+  })
+
+  it('fails a queued removal that now needs a force the user never approved', async () => {
+    const approvedCandidate = makeCandidate()
+    const dirtySinceConfirmation = makeCandidate({
+      tier: 'review',
+      blockers: ['dirty-files'],
+      git: { clean: false, upstreamAhead: 0, upstreamBehind: 0, checkedAt: NOW }
+    })
+    const scan = vi.fn().mockResolvedValue({
+      scannedAt: NOW,
+      candidates: [dirtySinceConfirmation],
+      errors: []
+    } satisfies WorkspaceCleanupScanResult)
+    installWorkspaceCleanupApi(scan)
+    const removeWorktree = vi.fn().mockResolvedValue({ ok: true })
+    const store = createCleanupTestStore(removeWorktree)
+
+    await expect(
+      store.getState().removeWorkspaceCleanupCandidates([WORKTREE_ID], {
+        approvedCandidates: [approvedCandidate]
+      })
+    ).resolves.toEqual({
+      removedIds: [],
+      failures: [
+        {
+          worktreeId: WORKTREE_ID,
+          displayName: 'old-workspace',
+          message: 'Workspace changed after confirmation. Refresh to review it before removing.'
+        }
+      ]
+    })
+    expect(removeWorktree).not.toHaveBeenCalled()
+  })
+
+  it('still force-removes rows whose approved candidate already carried git risk', async () => {
+    const approvedCandidate = makeCandidate({
+      tier: 'review',
+      blockers: ['dirty-files'],
+      git: { clean: false, upstreamAhead: 0, upstreamBehind: 0, checkedAt: NOW }
+    })
+    const scan = vi.fn().mockResolvedValue({
+      scannedAt: NOW,
+      candidates: [approvedCandidate],
+      errors: []
+    } satisfies WorkspaceCleanupScanResult)
+    installWorkspaceCleanupApi(scan)
+    const removeWorktree = vi.fn().mockResolvedValue({ ok: true })
+    const store = createCleanupTestStore(removeWorktree)
+
+    await expect(
+      store.getState().removeWorkspaceCleanupCandidates([WORKTREE_ID], {
+        approvedCandidates: [approvedCandidate]
+      })
+    ).resolves.toEqual({ removedIds: [WORKTREE_ID], failures: [] })
+    expect(removeWorktree).toHaveBeenCalledWith(WORKTREE_ID, true, {
+      suppressPreservedBranchToast: true
+    })
   })
 
   it('protects old workspaces when an agent process is still foregrounded', async () => {

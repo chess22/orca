@@ -71,7 +71,9 @@ describe('startWorkspaceCleanupBackgroundRemoval', () => {
       onResult
     })
 
-    expect(removeCandidates).toHaveBeenCalledWith([candidate.worktreeId])
+    expect(removeCandidates).toHaveBeenCalledWith([candidate.worktreeId], {
+      approvedCandidates: [candidate]
+    })
     expect(onProgress).toHaveBeenCalledWith({
       totalCount: 1,
       processedCount: 0,
@@ -114,8 +116,12 @@ describe('startWorkspaceCleanupBackgroundRemoval', () => {
     })
     await settleBackgroundRemoval()
 
-    expect(removeCandidates).toHaveBeenNthCalledWith(1, [first.worktreeId])
-    expect(removeCandidates).toHaveBeenNthCalledWith(2, [second.worktreeId])
+    expect(removeCandidates).toHaveBeenNthCalledWith(1, [first.worktreeId], {
+      approvedCandidates: [first]
+    })
+    expect(removeCandidates).toHaveBeenNthCalledWith(2, [second.worktreeId], {
+      approvedCandidates: [second]
+    })
     expect(onProgress).toHaveBeenLastCalledWith({
       totalCount: 2,
       processedCount: 2,
@@ -149,8 +155,12 @@ describe('startWorkspaceCleanupBackgroundRemoval', () => {
     })
     await settleBackgroundRemoval()
 
-    expect(removeCandidates).toHaveBeenNthCalledWith(1, [child.worktreeId])
-    expect(removeCandidates).toHaveBeenNthCalledWith(2, [parent.worktreeId])
+    expect(removeCandidates).toHaveBeenNthCalledWith(1, [child.worktreeId], {
+      approvedCandidates: [child]
+    })
+    expect(removeCandidates).toHaveBeenNthCalledWith(2, [parent.worktreeId], {
+      approvedCandidates: [parent]
+    })
   })
 
   it('skips an ancestor after a nested workspace removal fails', async () => {
@@ -182,7 +192,9 @@ describe('startWorkspaceCleanupBackgroundRemoval', () => {
     await settleBackgroundRemoval()
 
     expect(removeCandidates).toHaveBeenCalledTimes(1)
-    expect(removeCandidates).toHaveBeenCalledWith([child.worktreeId])
+    expect(removeCandidates).toHaveBeenCalledWith([child.worktreeId], {
+      approvedCandidates: [child]
+    })
     expect(onProgress).toHaveBeenLastCalledWith({
       totalCount: 2,
       processedCount: 2,
@@ -242,8 +254,12 @@ describe('startWorkspaceCleanupBackgroundRemoval', () => {
     })
     await settleBackgroundRemoval()
 
-    expect(removeCandidates).toHaveBeenNthCalledWith(1, [failedChild.worktreeId])
-    expect(removeCandidates).toHaveBeenNthCalledWith(2, [unrelatedParent.worktreeId])
+    expect(removeCandidates).toHaveBeenNthCalledWith(1, [failedChild.worktreeId], {
+      approvedCandidates: [failedChild]
+    })
+    expect(removeCandidates).toHaveBeenNthCalledWith(2, [unrelatedParent.worktreeId], {
+      approvedCandidates: [unrelatedParent]
+    })
     expect(onResult).toHaveBeenCalledWith({
       removedIds: [unrelatedParent.worktreeId],
       failures: [{ worktreeId: failedChild.worktreeId, displayName: 'child', message: 'busy' }]
@@ -305,7 +321,8 @@ describe('startWorkspaceCleanupBackgroundRemoval', () => {
         {
           worktreeId: candidate.worktreeId,
           displayName: candidate.displayName,
-          message: 'Timed out removing alpha.'
+          message:
+            'Removing alpha is taking longer than expected. It will keep running in the background.'
         }
       ]
     })

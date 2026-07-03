@@ -15,6 +15,7 @@ import type {
 } from '../../shared/workspace-cleanup'
 import {
   getPersistedWorkspaceCleanupActivityAt,
+  resolvePersistedWorkspaceCleanupActivityWorktree,
   resolveWorkspaceCleanupActivityWorktree
 } from './workspace-cleanup-activity'
 import {
@@ -138,13 +139,21 @@ async function scanRepoWorkspaces(
     : mergedWorktrees.filter((worktree) =>
         shouldResolveBroadWorkspaceCleanupActivity(repoIsFolder, worktree, scannedAt)
       )
+  // Why: fs stat has no cancellation, so on a hung network/WSL mount every
+  // timed-out row would abandon more threadpool work. After the first timeout,
+  // stop statting this repo and use persisted activity only.
+  let activityStatsUnavailable = false
   const candidatesWithSkipped = await mapWorkspaceCleanupWithConcurrency(
     candidateWorktrees,
     WORKTREE_SCAN_CONCURRENCY,
     async (worktree) => {
       // Why: externally-created worktrees can miss Orca activity stamps; local
       // filesystem metadata is a conservative guard before suggesting deletion.
-      const worktreeWithActivity = await resolveCleanupActivityWithTimeout(repo, worktree)
+      const worktreeWithActivity = activityStatsUnavailable
+        ? resolvePersistedWorkspaceCleanupActivityWorktree(worktree)
+        : await resolveCleanupActivityWithTimeout(repo, worktree, () => {
+            activityStatsUnavailable = true
+          })
       if (!targetWorktreeId && !isWorkspaceInactiveForCleanup(worktreeWithActivity, scannedAt)) {
         return null
       }
@@ -173,7 +182,8 @@ async function scanRepoWorkspaces(
 
 async function resolveCleanupActivityWithTimeout(
   repo: Repo,
-  worktree: Worktree
+  worktree: Worktree,
+  onActivityStatsUnavailable: () => void
 ): Promise<Worktree> {
   try {
     return await withWorkspaceCleanupTimeout(
@@ -182,8 +192,9 @@ async function resolveCleanupActivityWithTimeout(
       'Timed out reading worktree activity.'
     )
   } catch (error) {
+    onActivityStatsUnavailable()
     console.warn('Workspace cleanup activity scan failed', error)
-    return worktree
+    return resolvePersistedWorkspaceCleanupActivityWorktree(worktree)
   }
 }
 

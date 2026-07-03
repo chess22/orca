@@ -206,7 +206,8 @@
         },
         "workspace": {
           "cleanup": {
-            "9d6e531da6": "工作区不再存在。"
+            "9d6e531da6": "工作区不再存在。",
+            "changedSinceConfirmation": "工作区在确认后发生了更改。请刷新并在删除前重新检查。"
           }
         },
         "worktrees": {
@@ -2307,7 +2308,6 @@
             "contextFilter": "上下文",
             "sortBy": "排序依据",
             "sortDirection": "方向",
-            "e50c4da067": "正在删除",
             "1d3503357d": "删除继续期间，你可以关闭此窗口并稍后回来。",
             "4c2990886e": "已删除 {{value0}}/{{value1}}",
             "86ba852118": "{{value0}}，{{value1}} 个失败",
@@ -2324,7 +2324,7 @@
             "failed": "未删除工作区：{{value0}}",
             "error": "工作区清理失败",
             "skippedAncestor": "由于无法删除嵌套工作区，已跳过。",
-            "timedOut": "删除 {{value0}} 超时。"
+            "timedOut": "删除 {{value0}} 的时间比预期长。它将在后台继续运行。"
           },
           "candidateRow": {
             "gitLabel": "Git",

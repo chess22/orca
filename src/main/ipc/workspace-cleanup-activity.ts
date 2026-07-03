@@ -15,6 +15,14 @@ export function getPersistedWorkspaceCleanupActivityAt(
   return Math.max(persistedActivityAt, createdAt)
 }
 
+export function resolvePersistedWorkspaceCleanupActivityWorktree(worktree: Worktree): Worktree {
+  const persistedActivityAt = getPersistedWorkspaceCleanupActivityAt(worktree)
+  if (persistedActivityAt <= worktree.lastActivityAt) {
+    return worktree
+  }
+  return { ...worktree, lastActivityAt: persistedActivityAt }
+}
+
 export async function resolveWorkspaceCleanupActivityWorktree(
   repo: Repo,
   worktree: Worktree,
@@ -56,6 +64,9 @@ async function resolveWorkspaceCleanupActivityAt(
   return Math.max(persistedActivityAt, filesystemActivityAt)
 }
 
+// Why: best-effort only. Win32 stat over \\wsl.localhost (9P) can falsely
+// report ENOENT (see wslUncDirectoryExists), so a failed stat degrades to the
+// persisted activity timestamp instead of blocking or mislabeling the row.
 async function getNewestLocalWorktreeStatMtime(
   worktreePath: string,
   statPath: StatPath,

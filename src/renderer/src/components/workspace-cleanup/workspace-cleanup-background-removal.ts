@@ -6,6 +6,7 @@ import {
 } from '../../../../shared/cross-platform-path'
 import type {
   WorkspaceCleanupFailure,
+  WorkspaceCleanupRemoveOptions,
   WorkspaceCleanupRemoveResult
 } from '@/store/slices/workspace-cleanup'
 import { translate } from '@/i18n/i18n'
@@ -21,7 +22,10 @@ export type WorkspaceCleanupRemovalProgress = {
 
 export type WorkspaceCleanupBackgroundRemovalArgs = {
   candidates: readonly WorkspaceCleanupCandidate[]
-  removeCandidates: (worktreeIds: readonly string[]) => Promise<WorkspaceCleanupRemoveResult>
+  removeCandidates: (
+    worktreeIds: readonly string[],
+    options?: WorkspaceCleanupRemoveOptions
+  ) => Promise<WorkspaceCleanupRemoveResult>
   onProgress: (progress: WorkspaceCleanupRemovalProgress) => void
   onResult?: (result: WorkspaceCleanupRemoveResult) => void
   onError?: (error: unknown) => void
@@ -88,7 +92,7 @@ export function startWorkspaceCleanupBackgroundRemoval({
       }
       try {
         const result = await withWorkspaceCleanupRemovalTimeout(
-          removeCandidates([candidate.worktreeId]),
+          removeCandidates([candidate.worktreeId], { approvedCandidates: [candidate] }),
           candidate,
           removalTimeoutMs
         )
@@ -172,11 +176,14 @@ async function withWorkspaceCleanupRemovalTimeout(
       promise,
       new Promise<WorkspaceCleanupRemoveResult>((_resolve, reject) => {
         timeout = setTimeout(() => {
+          // Why: the underlying removal cannot be cancelled from the renderer,
+          // so the row stays "Deleting" and this message must not claim the
+          // removal stopped.
           reject(
             new Error(
               translate(
                 'auto.components.workspace.cleanup.backgroundRemoval.timedOut',
-                'Timed out removing {{value0}}.',
+                'Removing {{value0}} is taking longer than expected. It will keep running in the background.',
                 { value0: candidate.displayName }
               )
             )

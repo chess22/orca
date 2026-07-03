@@ -206,7 +206,8 @@
         },
         "workspace": {
           "cleanup": {
-            "9d6e531da6": "워크스페이스가 더 이상 존재하지 않습니다."
+            "9d6e531da6": "워크스페이스가 더 이상 존재하지 않습니다.",
+            "changedSinceConfirmation": "확인 후 워크스페이스가 변경되었습니다. 제거하기 전에 새로 고쳐 검토하세요."
           }
         },
         "worktrees": {
@@ -2307,7 +2308,6 @@
             "contextFilter": "문맥",
             "sortBy": "정렬 기준",
             "sortDirection": "방향",
-            "e50c4da067": "삭제 중",
             "1d3503357d": "삭제가 계속되는 동안 이 창을 닫고 나중에 돌아올 수 있습니다.",
             "4c2990886e": "{{value0}}/{{value1}}개 삭제됨",
             "86ba852118": "{{value0}}, {{value1}}개 실패",
@@ -2324,7 +2324,7 @@
             "failed": "삭제되지 않은 워크스페이스: {{value0}}",
             "error": "워크스페이스 정리 실패",
             "skippedAncestor": "중첩된 워크스페이스를 제거할 수 없어 건너뛰었습니다.",
-            "timedOut": "{{value0}} 삭제 시간이 초과되었습니다."
+            "timedOut": "{{value0}} 제거가 예상보다 오래 걸리고 있습니다. 백그라운드에서 계속 실행됩니다."
           },
           "candidateRow": {
             "gitLabel": "Git",

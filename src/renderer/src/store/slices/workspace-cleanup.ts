@@ -35,6 +35,12 @@ export type WorkspaceCleanupRemoveResult = {
   failures: WorkspaceCleanupFailure[]
 }
 
+export type WorkspaceCleanupRemoveOptions = {
+  // Why: rows are removed long after the confirm click; the confirm-time
+  // candidate records how much git risk the user actually approved.
+  approvedCandidates?: readonly WorkspaceCleanupCandidate[]
+}
+
 type WorkspaceCleanupViewedCandidate = {
   viewedAt: number
   fingerprint: string
@@ -55,7 +61,8 @@ export type WorkspaceCleanupSlice = {
   ) => Promise<void>
   resetWorkspaceCleanupDismissals: () => Promise<void>
   removeWorkspaceCleanupCandidates: (
-    worktreeIds: readonly string[]
+    worktreeIds: readonly string[],
+    options?: WorkspaceCleanupRemoveOptions
   ) => Promise<WorkspaceCleanupRemoveResult>
 }
 
@@ -285,14 +292,22 @@ export const createWorkspaceCleanupSlice: StateCreator<AppState, [], [], Workspa
     await window.api.workspaceCleanup.clearDismissals()
   },
 
-  removeWorkspaceCleanupCandidates: async (worktreeIds) => {
+  removeWorkspaceCleanupCandidates: async (worktreeIds, options) => {
     const removedIds: string[] = []
     const failures: WorkspaceCleanupFailure[] = []
+    const approvedCandidatesByWorktreeId = new Map(
+      (options?.approvedCandidates ?? []).map((candidate) => [candidate.worktreeId, candidate])
+    )
 
     const preflights = await mapWithConcurrency(
       worktreeIds,
       WORKSPACE_CLEANUP_PREFLIGHT_CONCURRENCY,
-      (worktreeId) => preflightWorkspaceCleanupCandidate(worktreeId, get)
+      (worktreeId) =>
+        preflightWorkspaceCleanupCandidate(
+          worktreeId,
+          get,
+          approvedCandidatesByWorktreeId.get(worktreeId)
+        )
     )
     const candidatesToRemove: WorkspaceCleanupCandidate[] = []
 
@@ -309,7 +324,10 @@ export const createWorkspaceCleanupSlice: StateCreator<AppState, [], [], Workspa
     for (const candidate of [...candidatesToRemove].sort((a, b) => b.path.length - a.path.length)) {
       const result = await get().removeWorktree(
         candidate.worktreeId,
-        shouldForceWorkspaceCleanupRemoval(candidate)
+        shouldForceWorkspaceCleanupRemoval(candidate),
+        // Why: cleanup reports outcomes in its own summary toasts; per-row
+        // preserved-branch warnings would stack one toast per removed row.
+        { suppressPreservedBranchToast: true }
       )
       if (result.ok) {
         removedIds.push(candidate.worktreeId)
@@ -801,7 +819,8 @@ function applyDismissal(
 
 async function preflightWorkspaceCleanupCandidate(
   worktreeId: string,
-  getState: () => AppState
+  getState: () => AppState,
+  approvedCandidate?: WorkspaceCleanupCandidate
 ): Promise<
   | { ok: true; candidate: WorkspaceCleanupCandidate }
   | { ok: false; failure: WorkspaceCleanupFailure }
@@ -832,6 +851,26 @@ async function preflightWorkspaceCleanupCandidate(
         message: candidate.blockers.length
           ? candidate.blockers.join(', ')
           : 'Workspace needs another look before removal.'
+      }
+    }
+  }
+  // Why: this row may be removed minutes after the confirm click. If it now
+  // needs a force removal the user never approved (new dirt, unpushed work,
+  // or a git error since confirmation), fail it instead of force-deleting.
+  if (
+    approvedCandidate &&
+    shouldForceWorkspaceCleanupRemoval(candidate) &&
+    !shouldForceWorkspaceCleanupRemoval(approvedCandidate)
+  ) {
+    return {
+      ok: false,
+      failure: {
+        worktreeId,
+        displayName: candidate.displayName,
+        message: translate(
+          'auto.store.slices.workspace.cleanup.changedSinceConfirmation',
+          'Workspace changed after confirmation. Refresh to review it before removing.'
+        )
       }
     }
   }
