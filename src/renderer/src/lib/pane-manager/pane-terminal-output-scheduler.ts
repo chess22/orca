@@ -28,6 +28,12 @@ type WriteTerminalOutputOptions = {
   foreground: boolean
   beforeWrite?: TerminalOutputBeforeWrite
   onParsed?: TerminalOutputParsedCallback
+  /** Parse-deferred delivery ACK (terminal-pty-ack-gate). The scheduler MUST
+   *  invoke it exactly when the chunk's bytes are consumed — written to xterm
+   *  OR discarded by any drop path. A missed credit permanently shrinks
+   *  main's in-flight window for this PTY (the callback is fire-once, so
+   *  double invocation is safe; omission is not). */
+  ackCredit?: () => void
   onBackgroundBacklogDropped?: () => void
   latencySensitive?: boolean
   forceForegroundRefresh?: boolean
@@ -44,6 +50,7 @@ type QueueChunk = {
   followupForegroundRefresh: boolean
   stripTransientCursorShows: boolean
   onParsed?: TerminalOutputParsedCallback
+  ackCredit?: () => void
 }
 
 type QueuedWrite = {
@@ -53,6 +60,7 @@ type QueuedWrite = {
   followupForegroundRefresh: boolean
   stripTransientCursorShows: boolean
   onParsed?: TerminalOutputParsedCallback
+  ackCredits: (() => void)[]
 }
 
 type QueueEntry = {
@@ -561,6 +569,7 @@ function takeQueuedChunk(entry: QueueEntry, limit: number): QueuedWrite | null {
   let followupForegroundRefresh = false
   let stripTransientCursorShows = false
   const parsedCallbacks: TerminalOutputParsedCallback[] = []
+  const ackCredits: (() => void)[] = []
 
   while (remaining > 0 && entry.chunkIndex < entry.chunks.length) {
     const chunk = entry.chunks[entry.chunkIndex]
@@ -579,6 +588,9 @@ function takeQueuedChunk(entry: QueueEntry, limit: number): QueuedWrite | null {
       if (chunk.onParsed) {
         parsedCallbacks.push(chunk.onParsed)
       }
+      if (chunk.ackCredit) {
+        ackCredits.push(chunk.ackCredit)
+      }
       continue
     }
 
@@ -586,9 +598,17 @@ function takeQueuedChunk(entry: QueueEntry, limit: number): QueuedWrite | null {
     if (chunk.onParsed) {
       parsedCallbacks.push(chunk.onParsed)
     }
+    if (chunk.ackCredit) {
+      // Why on the first slice: the credit is fire-once for the whole
+      // delivered chunk; the remainder must not retain it or a later discard
+      // path would try (harmlessly) to double-fire while the queue still
+      // holds a stale reference.
+      ackCredits.push(chunk.ackCredit)
+    }
     entry.chunks[entry.chunkIndex] = {
       ...chunk,
-      data: chunk.data.slice(remaining)
+      data: chunk.data.slice(remaining),
+      ackCredit: undefined
     }
     entry.queuedChars -= remaining
     remaining = 0
@@ -613,7 +633,8 @@ function takeQueuedChunk(entry: QueueEntry, limit: number): QueuedWrite | null {
                   callback()
                 }
               }
-            : undefined
+            : undefined,
+        ackCredits
       }
     : null
 }
@@ -642,6 +663,7 @@ function enqueueChunk(
     followupForegroundRefresh?: boolean
     stripTransientCursorShows?: boolean
     onParsed?: TerminalOutputParsedCallback
+    ackCredit?: () => void
   }
 ): void {
   entry.chunks.push({
@@ -650,10 +672,21 @@ function enqueueChunk(
     forceForegroundRefresh: options?.forceForegroundRefresh === true,
     followupForegroundRefresh: options?.followupForegroundRefresh === true,
     stripTransientCursorShows: options?.stripTransientCursorShows === true,
-    onParsed: options?.onParsed
+    onParsed: options?.onParsed,
+    ackCredit: options?.ackCredit
   })
   entry.queuedChars += data.length
   recordQueueDebugPressure()
+}
+
+// Fires the delivery ACK credits of every not-yet-consumed queued chunk.
+// Every discard path MUST call this before clearing/replacing the queue —
+// a dropped chunk still counts as consumed for main's in-flight window, or
+// the window shrinks permanently and the PTY wedges behind lost credit.
+function fireQueuedAckCredits(entry: QueueEntry): void {
+  for (let index = entry.chunkIndex; index < entry.chunks.length; index += 1) {
+    entry.chunks[index].ackCredit?.()
+  }
 }
 
 function queueCapExceeded(entry: QueueEntry): boolean {
@@ -678,6 +711,7 @@ function replaceBacklogWithWarning(
     })
   }
   clearForegroundHoldSafety(entry)
+  fireQueuedAckCredits(entry)
   entry.chunks = [
     {
       data: warning,
@@ -880,6 +914,7 @@ function writeQueuedChunk(entry: QueueEntry): 'foreground' | 'background' | null
     // Why: pane.terminal.dispose() can race with a queued late-arriving PTY ping;
     // a write to a disposed terminal throws. Drop the entry rather than crashing
     // the scheduler for other panes still draining.
+    fireQueuedAckCredits(entry)
     entry.chunks.length = 0
     entry.chunkIndex = 0
     entry.queuedChars = 0
@@ -887,6 +922,15 @@ function writeQueuedChunk(entry: QueueEntry): 'foreground' | 'background' | null
     clearForegroundCoalesce(entry)
     recordQueueDebugPressure()
     return null
+  } finally {
+    // Why here and not in the parse callback: submission cadence is already
+    // parse-clocked (the pacer re-arms drains only after xterm confirms the
+    // previous batch parsed), and firing outside xterm's write-callback chain
+    // cannot wedge the terminal. Fires on the disposed-throw path too — a
+    // dropped chunk still consumed its delivery.
+    for (const creditAck of queuedWrite.ackCredits) {
+      creditAck()
+    }
   }
   return queuedWrite.foreground ? 'foreground' : 'background'
 }
@@ -965,6 +1009,9 @@ export function writeTerminalOutput(
 ): void {
   exposeDebugApi()
   if (!data) {
+    // Why: an empty write still consumed its delivery — credit or main's
+    // in-flight window leaks.
+    options.ackCredit?.()
     return
   }
 
@@ -981,7 +1028,8 @@ export function writeTerminalOutput(
         forceForegroundRefresh: options.forceForegroundRefresh,
         followupForegroundRefresh: options.followupForegroundRefresh,
         stripTransientCursorShows: options.stripTransientCursorShows,
-        onParsed: options.onParsed
+        onParsed: options.onParsed,
+        ackCredit: options.ackCredit
       })
       if (debugEnabled) {
         debugState.foregroundWriteCount++
@@ -1055,7 +1103,8 @@ export function writeTerminalOutput(
         forceForegroundRefresh: options.forceForegroundRefresh,
         followupForegroundRefresh: options.followupForegroundRefresh,
         stripTransientCursorShows: options.stripTransientCursorShows,
-        onParsed: options.onParsed
+        onParsed: options.onParsed,
+        ackCredit: options.ackCredit
       })
       if (debugEnabled) {
         debugState.foregroundWriteCount++
@@ -1085,7 +1134,8 @@ export function writeTerminalOutput(
         forceForegroundRefresh: options.forceForegroundRefresh,
         followupForegroundRefresh: options.followupForegroundRefresh,
         stripTransientCursorShows: options.stripTransientCursorShows,
-        onParsed: options.onParsed
+        onParsed: options.onParsed,
+        ackCredit: options.ackCredit
       })
       if (debugEnabled) {
         debugState.foregroundWriteCount++
@@ -1104,16 +1154,21 @@ export function writeTerminalOutput(
     if (debugEnabled) {
       debugState.foregroundWriteCount++
     }
-    options.beforeWrite?.(data)
-    writeForegroundTerminalChunkWithIntent(
-      terminal,
-      options.stripTransientCursorShows ? removeTransientCursorShowSequences(data) : data,
-      {
-        forceViewportRefresh: options.forceForegroundRefresh === true,
-        followupViewportRefresh: options.followupForegroundRefresh === true,
-        onParsed: options.onParsed
-      }
-    )
+    try {
+      options.beforeWrite?.(data)
+      writeForegroundTerminalChunkWithIntent(
+        terminal,
+        options.stripTransientCursorShows ? removeTransientCursorShowSequences(data) : data,
+        {
+          forceViewportRefresh: options.forceForegroundRefresh === true,
+          followupViewportRefresh: options.followupForegroundRefresh === true,
+          onParsed: options.onParsed
+        }
+      )
+    } finally {
+      // Why finally: a disposed-terminal throw still consumed the delivery.
+      options.ackCredit?.()
+    }
     return
   }
 
@@ -1127,7 +1182,8 @@ export function writeTerminalOutput(
     entry.onBackgroundBacklogDropped = options.onBackgroundBacklogDropped
   }
   enqueueChunk(entry, data, {
-    onParsed: options.onParsed
+    onParsed: options.onParsed,
+    ackCredit: options.ackCredit
   })
   if (queueCapExceeded(entry)) {
     replaceBacklogWithWarning(entry)
@@ -1158,6 +1214,7 @@ export function flushTerminalOutput(
     return
   }
   if (entry.backgroundBacklogDropped && requestRegisteredTerminalBacklogRecovery(terminal)) {
+    fireQueuedAckCredits(entry)
     entry.chunks.length = 0
     entry.chunkIndex = 0
     entry.queuedChars = 0
@@ -1195,11 +1252,19 @@ export function flushTerminalOutput(
     } catch {
       // Why: pane.terminal.dispose() can race with a queued late-arriving PTY ping;
       // a write to a disposed terminal throws. Drop the entry rather than crashing
-      // the scheduler for other panes still draining.
+      // the scheduler for other panes still draining. Consumed + abandoned
+      // chunks both credit their deliveries.
+      for (const creditAck of queuedWrite.ackCredits) {
+        creditAck()
+      }
+      fireQueuedAckCredits(entry)
       clearForegroundHoldSafety(entry)
       clearForegroundCoalesce(entry)
       recordQueueDebugPressure()
       return
+    }
+    for (const creditAck of queuedWrite.ackCredits) {
+      creditAck()
     }
     if (options?.maxChars !== undefined && flushedChars >= options.maxChars) {
       break
@@ -1270,6 +1335,12 @@ export function waitForTerminalOutputParsed(terminal: TerminalOutputTarget): Pro
 
 export function discardTerminalOutput(terminal: TerminalOutputTarget): void {
   exposeDebugApi()
+  const entry = queuedByTerminal.get(terminal)
+  if (entry) {
+    // Why: discarded queued chunks still consumed their deliveries — credit
+    // them or main's in-flight window leaks (see fireQueuedAckCredits).
+    fireQueuedAckCredits(entry)
+  }
   queuedByTerminal.delete(terminal)
   discardForegroundRenderSettle(terminal)
   recordQueueDebugPressure()

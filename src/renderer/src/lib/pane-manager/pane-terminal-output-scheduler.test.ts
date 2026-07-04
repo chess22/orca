@@ -69,6 +69,113 @@ describe('pane terminal output scheduler', () => {
     vi.unstubAllGlobals()
   })
 
+  describe('parse-deferred ACK crediting', () => {
+    // Why these tests: the credit invariant is "every delivered chunk credits
+    // exactly once, whether parsed or discarded" — a missed credit permanently
+    // shrinks main's in-flight window and wedges the PTY (rc.7.perf).
+    function makeCredit(): { fire: () => void; count: () => number } {
+      let fired = 0
+      return { fire: () => (fired += 1), count: () => fired }
+    }
+
+    it('credits when a queued chunk is drained', async () => {
+      vi.useFakeTimers()
+      const { writeTerminalOutput } = await loadScheduler()
+      const terminal = createTerminal()
+      const credit = makeCredit()
+
+      writeTerminalOutput(terminal, 'queued', {
+        foreground: true,
+        latencySensitive: false,
+        ackCredit: credit.fire
+      })
+      expect(credit.count()).toBe(0)
+
+      vi.advanceTimersByTime(0)
+      expect(terminal.write).toHaveBeenCalledWith('queued', expect.any(Function))
+      expect(credit.count()).toBe(1)
+    })
+
+    it('credits exactly once when a chunk is split across drain slices', async () => {
+      vi.useFakeTimers()
+      const { writeTerminalOutput } = await loadScheduler()
+      const terminal = createTerminal()
+      const credit = makeCredit()
+
+      // 40 KB > the 16 KB slice size: consumed across multiple drain writes.
+      writeTerminalOutput(terminal, 'q'.repeat(40 * 1024), {
+        foreground: true,
+        latencySensitive: false,
+        ackCredit: credit.fire
+      })
+      for (let index = 0; index < 24; index += 1) {
+        vi.advanceTimersByTime(4)
+      }
+      const written = terminal.write.mock.calls.map((call) => String(call[0])).join('')
+      expect(written).toContain('q'.repeat(40 * 1024))
+      expect(credit.count()).toBe(1)
+    })
+
+    it('credits when the foreground backlog is replaced with the overflow warning', async () => {
+      vi.useFakeTimers()
+      const { writeTerminalOutput, configureTerminalOutputBacklogCap } = await loadScheduler()
+      configureTerminalOutputBacklogCap(1_000)
+      const terminal = createTerminal()
+      // Never complete a write so the queue only grows.
+      terminal.write.mockImplementation(() => {})
+      const credits = [makeCredit(), makeCredit(), makeCredit()]
+
+      for (const credit of credits) {
+        writeTerminalOutput(terminal, 'x'.repeat(1024 * 1024), {
+          foreground: true,
+          latencySensitive: false,
+          ackCredit: credit.fire
+        })
+      }
+      // The cap replacement discards queued chunks — their deliveries still
+      // consumed and must credit.
+      for (const credit of credits) {
+        expect(credit.count()).toBe(1)
+      }
+    })
+
+    it('credits when queued output is discarded', async () => {
+      vi.useFakeTimers()
+      const { writeTerminalOutput, discardTerminalOutput } = await loadScheduler()
+      const terminal = createTerminal()
+      terminal.write.mockImplementation(() => {})
+      const credit = makeCredit()
+
+      writeTerminalOutput(terminal, 'doomed', {
+        foreground: true,
+        latencySensitive: false,
+        ackCredit: credit.fire
+      })
+      expect(credit.count()).toBe(0)
+      discardTerminalOutput(terminal)
+      expect(credit.count()).toBe(1)
+    })
+
+    it('credits an empty write immediately', async () => {
+      const { writeTerminalOutput } = await loadScheduler()
+      const terminal = createTerminal()
+      const credit = makeCredit()
+
+      writeTerminalOutput(terminal, '', { foreground: true, ackCredit: credit.fire })
+      expect(credit.count()).toBe(1)
+    })
+
+    it('credits the immediate foreground path after the write call', async () => {
+      const { writeTerminalOutput } = await loadScheduler()
+      const terminal = createTerminal()
+      const credit = makeCredit()
+
+      writeTerminalOutput(terminal, 'now', { foreground: true, ackCredit: credit.fire })
+      expect(terminal.write).toHaveBeenCalledWith('now', expect.any(Function))
+      expect(credit.count()).toBe(1)
+    })
+  })
+
   it('writes foreground output immediately', async () => {
     const { writeTerminalOutput } = await loadScheduler()
     const terminal = createTerminal()

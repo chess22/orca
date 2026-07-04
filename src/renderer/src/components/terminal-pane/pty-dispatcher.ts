@@ -8,8 +8,8 @@
 import { TERMINAL_SCROLLBACK_SESSION_BUFFER_BYTE_LIMIT } from '../../../../shared/terminal-scrollback-limits'
 import { acquirePtyDeliveryInterest } from './pty-delivery-interest'
 import {
-  ackPtyData,
   clearProcessedPtyCharTotal,
+  deliverPtyDataWithDeferredAck,
   exposeE2eTerminalPtyAckGate,
   getProcessedPtyCharTotals
 } from './terminal-pty-ack-gate'
@@ -115,24 +115,25 @@ export function ensurePtyDispatcher(): void {
   ptyDispatcherAttached = true
   exposeE2eTerminalPtyAckGate()
   window.api.pty.onData((payload) => {
-    try {
-      let meta: PtyDataMeta | undefined
-      if (typeof payload.seq === 'number') {
-        meta ??= {}
-        meta.seq = payload.seq
-      }
-      if (typeof payload.rawLength === 'number') {
-        meta ??= {}
-        meta.rawLength = payload.rawLength
-      }
-      if (payload.background === true) {
-        meta ??= {}
-        meta.background = true
-      }
-      if (payload.droppedOutput === true) {
-        meta ??= {}
-        meta.droppedOutput = true
-      }
+    let meta: PtyDataMeta | undefined
+    if (typeof payload.seq === 'number') {
+      meta ??= {}
+      meta.seq = payload.seq
+    }
+    if (typeof payload.rawLength === 'number') {
+      meta ??= {}
+      meta.rawLength = payload.rawLength
+    }
+    if (payload.background === true) {
+      meta ??= {}
+      meta.background = true
+    }
+    if (payload.droppedOutput === true) {
+      meta ??= {}
+      meta.droppedOutput = true
+    }
+    const chars = payload.rawLength ?? payload.data.length
+    const dispatch = (): void => {
       const handler = ptyDataHandlers.get(payload.id)
       if (handler) {
         handler(payload.data, meta)
@@ -153,12 +154,13 @@ export function ensurePtyDispatcher(): void {
           watcher(payload.data)
         }
       }
-    } finally {
-      // Why: main budgets renderer-bound terminal output by bytes accepted
-      // into this dispatcher. ACK in finally so a bad sidecar cannot leave
-      // a PTY permanently backpressured.
-      ackPtyData(payload.id, payload.rawLength ?? payload.data.length)
     }
+    // Why deferred: main budgets renderer-bound output by bytes PARSED, not
+    // bytes received. The handler's scheduler write claims this delivery's
+    // credit and fires it when xterm consumes the bytes; deliveries that never
+    // reach the scheduler (dropped, pre-mount eager buffer) settle at return —
+    // a bad sidecar still cannot leave a PTY permanently backpressured.
+    deliverPtyDataWithDeferredAck(payload.id, chars, dispatch)
   })
   window.api.pty.onReplay((payload) => {
     ptyReplayHandlers.get(payload.id)?.(payload.data)

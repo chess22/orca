@@ -23,6 +23,7 @@ import {
   isStatefulRendererReplyCsiQuery,
   isStatelessRendererReplyCsiQuery
 } from '../../../../shared/terminal-reply-query-extraction'
+import { takeCurrentPtyDeliveryAckCredit } from './terminal-pty-ack-gate'
 import { serializeWithAbsoluteCursor } from '../../../../shared/terminal-serialize-absolute-cursor'
 import type { PtyBufferSnapshot, PtyConnectResult } from './pty-transport'
 import { createIpcPtyTransport } from './pty-transport'
@@ -4411,6 +4412,11 @@ export function connectPanePty(
       writeTerminalOutput(pane.terminal, data, {
         foreground: foregroundOutput,
         beforeWrite: beforeTerminalOutputWrite,
+        // Why: claims the in-progress pty:data delivery's parse-deferred ACK
+        // (null outside a delivery, e.g. snapshot replays / synthetic writes).
+        // The FIRST scheduler write of a delivery carries the whole credit;
+        // the scheduler fires it when the bytes are consumed.
+        ackCredit: takeCurrentPtyDeliveryAckCredit() ?? undefined,
         onBackgroundBacklogDropped: markHiddenOutputRestoreNeeded,
         latencySensitive:
           !foreground || parseHiddenStartupOutput
