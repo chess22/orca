@@ -54,7 +54,16 @@ export const getPrivacyPaneSearchEntries = createLocalizedCatalog(() => [
         'auto.components.settings.privacy.search.c0494ff48a',
         'diagnostics'
       ),
-      ...translateSearchKeyword('auto.components.settings.privacy.search.1686c07fee', 'support')
+      ...translateSearchKeyword('auto.components.settings.privacy.search.1686c07fee', 'support'),
+      ...translateSearchKeyword(
+        'auto.components.settings.privacy.search.68d450145b',
+        'performance'
+      ),
+      ...translateSearchKeyword('auto.components.settings.privacy.search.e8e43779e8', 'perf dump'),
+      ...translateSearchKeyword('auto.components.settings.privacy.search.048b49260d', 'heap'),
+      ...translateSearchKeyword('auto.components.settings.privacy.search.c1d94c8566', 'trace'),
+      ...translateSearchKeyword('auto.components.settings.privacy.search.ec083fb9e1', 'slow'),
+      ...translateSearchKeyword('auto.components.settings.privacy.search.07241d4d1', 'lag')
     ]
   },
   {

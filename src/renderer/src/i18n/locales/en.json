@@ -154,7 +154,8 @@
             "36761d9604": "Unknown keybinding action \"{{value0}}\" was ignored.",
             "d2e43e426a": "{{value0}} must be an object.",
             "fb290366b2": "Unavailable on web.",
-            "76122208ca": "Shortcut for \"{{value0}}\" was ignored: {{value1}}"
+            "76122208ca": "Shortcut for \"{{value0}}\" was ignored: {{value1}}",
+            "afa470528f": "Performance debug dumps are unavailable on web."
           }
         },
         "runtime": {
@@ -5725,7 +5726,10 @@
           "860bca9ec9": "Review file discarded",
           "49fc6c80e8": "Diagnostics sent",
           "db3228e01a": "Review file opened",
-          "a2b3505c77": "Review file created"
+          "a2b3505c77": "Review file created",
+          "c4cd74809e": "Performance dump saved",
+          "f73f536350": "Could not capture performance dump",
+          "4c7eb24bdd": "Capture performance debug dump"
         },
         "PrivacyPane": {
           "36e0e2e63b": "environment variable. Unset it and restart to re-enable.",
@@ -8707,6 +8711,15 @@
         "ephemeralVmsExperimentalSetting": {
           "description": "Shows setup controls and workspace run targets for repo-owned, on-demand environments.",
           "toggleLabel": "Toggle per-workspace environments"
+        },
+        "PrivacyPerfDumpControls": {
+          "a90900c24d": "Performance debug dumps are disabled.",
+          "18f7cad8ee": "Capture performance dump",
+          "ed819b5b0a": "Collecting renderer metrics…",
+          "7f6c7cc90f": "Recording activity trace (10s)…",
+          "20f8c48f16": "Capturing memory snapshot…",
+          "05d8e75876": "Compressing…",
+          "581d264c8c": "Records about 10 seconds of app activity and a memory snapshot of the interface. May include terminal text, file paths, and page titles; saved to your computer only — nothing is uploaded."
         }
       },
       "right": {
@@ -12308,6 +12321,17 @@
           "b3d7e0f1a8": "merge request",
           "a2c6d9e0f7": "Merge Request",
           "91b5c8d7e6": "GitLab"
+        }
+      }
+    },
+    "main": {
+      "observability": {
+        "perfDump": {
+          "e6735719a0": "Capture",
+          "8d1d1d5725": "Cancel",
+          "71ec14a301": "Capture performance debug dump?",
+          "6d969f0773": "This saves a local performance debug dump for support.",
+          "2551f622fd": "Orca will record about 10 seconds of app activity and capture a memory snapshot of the interface. The dump may include terminal text, file paths, and page titles. It is saved to your computer only; nothing is uploaded."
         }
       }
     }

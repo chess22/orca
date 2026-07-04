@@ -40,6 +40,7 @@ export type CollectBundleOptions = {
   readonly traceFilePath: string
   readonly maxFiles: number
   readonly lookbackMinutes?: number
+  readonly extraRecords?: readonly Record<string, unknown>[]
   readonly appVersion: string
   readonly platform: string
   readonly arch: string
@@ -69,6 +70,8 @@ type BundleHeader = {
   readonly collected_at: string
   readonly schema_version: 1
 }
+
+const MAX_EXTRA_RECORD_BYTES = 64 * 1024
 
 function* readLinesNewestFirst(text: string): Iterable<string> {
   let end = text.length
@@ -116,6 +119,15 @@ export function collectBundle(opts: CollectBundleOptions): CollectedBundle {
   // Avoids re-running `lines.join('\n').length` every iteration — that's
   // O(N²) in span count and dominates collection time for large backlogs.
   let currentBytes = Buffer.byteLength(`${headerLine}\n`)
+
+  for (const extraRecord of opts.extraRecords ?? []) {
+    const line = serializeExtraRecord(extraRecord, MAX_BUNDLE_BYTES - currentBytes)
+    if (!line) {
+      continue
+    }
+    lines.push(line)
+    currentBytes += Buffer.byteLength(line) + 1
+  }
   const maxRecordBytes = MAX_BUNDLE_BYTES - currentBytes
 
   // Files from listRotatedFiles are newest → oldest. Reading newest first
@@ -219,5 +231,56 @@ export function generateBundleSubmissionId(): string {
 
 // Test-only export.
 export const _internalsForTests = {
-  MAX_BUNDLE_BYTES
+  MAX_BUNDLE_BYTES,
+  MAX_EXTRA_RECORD_BYTES
+}
+
+function serializeExtraRecord(
+  record: Record<string, unknown>,
+  remainingBytes: number
+): string | null {
+  const budget = Math.min(MAX_EXTRA_RECORD_BYTES, Math.max(0, remainingBytes))
+  if (budget <= 0) {
+    return null
+  }
+
+  const redacted = redactValue(record, 'server')
+  const serialized = JSON.stringify(redacted)
+  if (Buffer.byteLength(serialized) + 1 <= budget) {
+    return serialized
+  }
+
+  const truncated = JSON.stringify(redactValue(markExtraRecordTruncated(record), 'server'))
+  if (Buffer.byteLength(truncated) + 1 <= budget) {
+    return truncated
+  }
+
+  const minimal = JSON.stringify({
+    type: typeof record.type === 'string' ? record.type : 'extra-record',
+    unavailableReason: 'record-too-large'
+  })
+  return Buffer.byteLength(minimal) + 1 <= budget ? minimal : null
+}
+
+function markExtraRecordTruncated(value: unknown, depth = 0): unknown {
+  // Why: extra records come from trusted main-side callers, but a depth cap
+  // keeps a mis-shaped record from recursing unboundedly here.
+  if (depth >= 8) {
+    return '[truncated]'
+  }
+  if (Array.isArray(value)) {
+    return value.slice(0, 10).map((child) => markExtraRecordTruncated(child, depth + 1))
+  }
+  if (typeof value === 'string') {
+    return value.length > 1024 ? value.slice(0, 1024) : value
+  }
+  if (typeof value !== 'object' || value === null) {
+    return value
+  }
+
+  const result: Record<string, unknown> = { truncated: true }
+  for (const [key, child] of Object.entries(value)) {
+    result[key] = markExtraRecordTruncated(child, depth + 1)
+  }
+  return result
 }

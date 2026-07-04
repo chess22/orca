@@ -154,7 +154,8 @@
             "36761d9604": "Se ignoró la acción de combinación de teclas desconocida \"{{value0}}\".",
             "d2e43e426a": "{{value0}} debe ser un objeto.",
             "fb290366b2": "No disponible en la web.",
-            "76122208ca": "Se ignoró el acceso directo para \"{{value0}}\": {{value1}}"
+            "76122208ca": "Se ignoró el acceso directo para \"{{value0}}\": {{value1}}",
+            "afa470528f": "Los volcados de depuración de rendimiento no están disponibles en la web."
           }
         },
         "runtime": {
@@ -5688,7 +5689,10 @@
           "860bca9ec9": "Archivo para revisar descartado",
           "49fc6c80e8": "Diagnósticos enviados",
           "db3228e01a": "Archivo para revisar abierto",
-          "a2b3505c77": "Archivo para revisar creado"
+          "a2b3505c77": "Archivo para revisar creado",
+          "c4cd74809e": "Volcado de rendimiento guardado",
+          "f73f536350": "No se pudo capturar el volcado de rendimiento",
+          "4c7eb24bdd": "Capturar volcado de depuración de rendimiento"
         },
         "PrivacyPane": {
           "36e0e2e63b": "variable de entorno. Desconfigúrelo y reinicie para volver a habilitarlo.",
@@ -8707,6 +8711,15 @@
         "ephemeralVmsExperimentalSetting": {
           "description": "Muestra controles de configuración y objetivos de ejecución del espacio de trabajo para entornos bajo demanda de propiedad de repos.",
           "toggleLabel": "Alternar entornos por espacio de trabajo"
+        },
+        "PrivacyPerfDumpControls": {
+          "a90900c24d": "Los volcados de depuración de rendimiento están desactivados.",
+          "18f7cad8ee": "Capturar volcado de rendimiento",
+          "ed819b5b0a": "Recopilando métricas del renderizador…",
+          "7f6c7cc90f": "Grabando traza de actividad (10 s)…",
+          "20f8c48f16": "Capturando instantánea de memoria…",
+          "05d8e75876": "Comprimiendo…",
+          "581d264c8c": "Graba unos 10 segundos de actividad de la aplicación y una instantánea de memoria de la interfaz. Puede incluir texto del terminal, rutas de archivos y títulos de páginas; se guarda solo en tu equipo — no se sube nada."
         }
       },
       "right": {
@@ -12308,6 +12321,17 @@
           "b3d7e0f1a8": "solicitud de fusión",
           "a2c6d9e0f7": "Solicitud de fusión",
           "91b5c8d7e6": "GitLab"
+        }
+      }
+    },
+    "main": {
+      "observability": {
+        "perfDump": {
+          "e6735719a0": "Capturar",
+          "8d1d1d5725": "Cancelar",
+          "71ec14a301": "¿Capturar volcado de depuración de rendimiento?",
+          "6d969f0773": "Esto guarda un volcado local de depuración de rendimiento para soporte.",
+          "2551f622fd": "Orca grabará unos 10 segundos de actividad de la aplicación y capturará una instantánea de memoria de la interfaz. El volcado puede incluir texto del terminal, rutas de archivos y títulos de páginas. Se guarda solo en tu equipo; no se sube nada."
         }
       }
     }
