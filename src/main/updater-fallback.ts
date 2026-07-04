@@ -125,6 +125,21 @@ export function isPrereleaseVersion(value: string): boolean {
   return parsed !== null && parsed.prerelease.length > 0
 }
 
+export type ReleaseChannel = 'stable' | 'rc' | 'perf-rc'
+
+// Why: Orca ships three release tracks — stable (1.4.122), release candidates
+// (1.4.122-rc.3), and perf release candidates (1.4.122-rc.3.perf). The updater
+// gates which tracks a running build is offered, so it must classify a version
+// by track. Perf RCs append the `perf` identifier to an rc tag, so it's the
+// presence of `perf` — not its position — that marks the perf track.
+export function getReleaseChannel(value: string): ReleaseChannel {
+  const parsed = parseVersion(value)
+  if (!parsed || parsed.prerelease.length === 0) {
+    return 'stable'
+  }
+  return parsed.prerelease.includes('perf') ? 'perf-rc' : 'rc'
+}
+
 function compareIdentifiers(left: string, right: string): number {
   const leftNumeric = /^\d+$/.test(left)
   const rightNumeric = /^\d+$/.test(right)

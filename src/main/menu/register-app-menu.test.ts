@@ -139,7 +139,7 @@ describe('registerAppMenu', () => {
     expect(options.onBeforeReload).toHaveBeenCalledWith({ ignoreCache: true, webContentsId: 102 })
   })
 
-  it('includes prereleases when Check for Updates is clicked with shift held', () => {
+  it('maps Check for Updates modifiers to the RC and perf-RC channels', () => {
     const options = buildMenuOptions()
     registerAppMenu(options)
 
@@ -150,21 +150,30 @@ describe('registerAppMenu', () => {
     const item = getSubmenu(getTemplate(), parentLabel).find(
       (entry) => entry.label === 'Check for Updates...'
     )
+    const click = (event: Electron.KeyboardEvent): void => {
+      item?.click?.({} as never, undefined as never, event)
+    }
 
-    item?.click?.({} as never, undefined as never, { shiftKey: true } as Electron.KeyboardEvent)
-    item?.click?.(
-      {} as never,
-      undefined as never,
-      { metaKey: true, shiftKey: true } as Electron.KeyboardEvent
-    )
-    item?.click?.({} as never, undefined as never, {} as Electron.KeyboardEvent)
-    item?.click?.({} as never, undefined as never, { metaKey: true } as Electron.KeyboardEvent)
+    // Why: Shift opts into the RC channel; adding Cmd (macOS) / Ctrl
+    // (Win/Linux) escalates to perf-RC. Accelerator-triggered clicks carry no
+    // real modifier state, so they must fall back to a plain stable check.
+    const perfModifier = isMac ? { metaKey: true } : { ctrlKey: true }
+    click({ shiftKey: true } as Electron.KeyboardEvent)
+    click({ shiftKey: true, ...perfModifier } as Electron.KeyboardEvent)
+    click({} as Electron.KeyboardEvent)
+    click(perfModifier as Electron.KeyboardEvent)
+    click({
+      shiftKey: true,
+      ...perfModifier,
+      triggeredByAccelerator: true
+    } as Electron.KeyboardEvent)
 
     expect(options.onCheckForUpdates.mock.calls).toEqual([
-      [{ includePrerelease: true }],
-      [{ includePrerelease: true }],
-      [{ includePrerelease: false }],
-      [{ includePrerelease: false }]
+      [{ includePrerelease: true, includePerfPrerelease: false }],
+      [{ includePrerelease: true, includePerfPrerelease: true }],
+      [{ includePrerelease: false, includePerfPrerelease: false }],
+      [{ includePrerelease: false, includePerfPrerelease: false }],
+      [{ includePrerelease: false, includePerfPrerelease: false }]
     ])
   })
 

@@ -88,13 +88,16 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
             variant="outline"
             size="sm"
             // Why: Shift-click opts this check into the release-candidate
-            // channel. Keep the affordance hidden; it's a power-user
+            // channel; Cmd (macOS) / Ctrl (Win/Linux) with Shift escalates to
+            // the perf-RC channel. Keep the affordance hidden; it's a power-user
             // shortcut, not a discoverable toggle.
-            onClick={(event) =>
-              window.api.updater.check({
-                includePrerelease: event.shiftKey
+            onClick={(event) => {
+              const isMac = navigator.userAgent.includes('Mac')
+              void window.api.updater.check({
+                includePrerelease: event.shiftKey,
+                includePerfPrerelease: event.shiftKey && (isMac ? event.metaKey : event.ctrlKey)
               })
-            }
+            }}
             disabled={updateStatus.state === 'checking' || updateStatus.state === 'downloading'}
             className="gap-2"
           >

@@ -147,9 +147,19 @@ export function SidebarSettingsHelpMenu(): React.JSX.Element {
     openSettingsPage()
   }
 
-  const handleCheckForUpdates = (event: Event): void => {
-    const shiftKey = (event as PointerEvent).shiftKey
-    void window.api.updater.check({ includePrerelease: shiftKey })
+  // Why: wired to the menu item's onClick (not Radix onSelect) so it receives a
+  // real MouseEvent — Radix's onSelect delivers a synthetic CustomEvent with no
+  // modifier state. Shift opts into the RC channel; Cmd (macOS) / Ctrl
+  // (Win/Linux) with Shift escalates to perf-RC — a power-user shortcut, not a
+  // discoverable toggle. Keyboard activation dispatches a modifier-less click,
+  // so it correctly falls back to a plain stable check.
+  const handleCheckForUpdates = (event: React.MouseEvent): void => {
+    const isMac = navigator.userAgent.includes('Mac')
+    const shiftKey = event.shiftKey
+    void window.api.updater.check({
+      includePrerelease: shiftKey,
+      includePerfPrerelease: shiftKey && (isMac ? event.metaKey : event.ctrlKey)
+    })
   }
 
   const openMilestones = (): void => {
@@ -299,7 +309,7 @@ export function SidebarSettingsHelpMenu(): React.JSX.Element {
             <DropdownMenuSeparator />
             <DropdownMenuItem
               disabled={updateStatus.state === 'checking' || updateStatus.state === 'downloading'}
-              onSelect={handleCheckForUpdates}
+              onClick={handleCheckForUpdates}
             >
               {updateStatus.state === 'checking' ? (
                 <Loader2 className="size-3.5 animate-spin" />

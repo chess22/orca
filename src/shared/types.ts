@@ -2214,6 +2214,15 @@ export type UpdateStatus =
   | { state: 'downloaded'; version: string; releaseUrl?: string; activeNudgeId?: string }
   | { state: 'error'; message: string; userInitiated?: boolean; activeNudgeId?: string }
 
+// Why: Shift-click on "Check for Updates" opts a manual check into the RC
+// channel; holding Cmd (macOS) / Ctrl (Win/Linux) with Shift escalates to the
+// perf-RC channel. Both flags are additive on top of the running build's own
+// track, so a stable user can reach RCs and an RC user can reach perf-RCs.
+export type UpdateCheckOptions = {
+  includePrerelease?: boolean
+  includePerfPrerelease?: boolean
+}
+
 // ─── Settings ────────────────────────────────────────────────────────
 export type NotificationSettings = {
   enabled: boolean

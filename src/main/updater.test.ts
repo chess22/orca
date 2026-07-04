@@ -886,7 +886,7 @@ describe('updater', () => {
 
     await vi.waitFor(() => {
       expect(fetchNewerReleaseTagsMock).toHaveBeenCalledWith('1.4.35', 2, {
-        includePrerelease: true
+        eligibleChannels: ['stable', 'rc']
       })
       expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(2)
     })
@@ -1000,7 +1000,7 @@ describe('updater', () => {
 
     await vi.waitFor(() => {
       expect(fetchNewerReleaseTagsMock).toHaveBeenCalledWith('1.3.17', 2, {
-        includePrerelease: true
+        eligibleChannels: ['stable', 'rc']
       })
       expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith({
         provider: 'generic',
@@ -1010,6 +1010,86 @@ describe('updater', () => {
     })
     expect(autoUpdaterMock.allowPrerelease).toBe(true)
     expect(autoUpdaterMock.setFeedURL.mock.calls.length).toBe(setupFeedUrlCalls + 1)
+  })
+
+  it('opts into the perf-RC channel when checkForUpdatesFromMenu is called with includePerfPrerelease', async () => {
+    appMock.getVersion.mockReturnValue('1.3.17')
+    fetchNewerReleaseTagsMock.mockResolvedValue(['v1.3.18-rc.1.perf'])
+    autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
+    const mainWindow = { webContents: { send: vi.fn() } }
+
+    const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
+
+    // Why: Cmd/Ctrl+Shift-click always carries Shift too, so both opt-ins fire.
+    checkForUpdatesFromMenu({ includePrerelease: true, includePerfPrerelease: true })
+
+    await vi.waitFor(() => {
+      expect(fetchNewerReleaseTagsMock).toHaveBeenCalledWith('1.3.17', 2, {
+        eligibleChannels: ['stable', 'rc', 'perf-rc']
+      })
+      expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith({
+        provider: 'generic',
+        url: 'https://github.com/stablyai/orca/releases/download/v1.3.18-rc.1.perf'
+      })
+    })
+    expect(autoUpdaterMock.allowPrerelease).toBe(true)
+  })
+
+  it('offers stable and perf-RC tracks to a perf-RC user without any modifier', async () => {
+    appMock.getVersion.mockReturnValue('1.4.27-rc.3.perf')
+    fetchNewerReleaseTagsMock.mockResolvedValue(['v1.4.27-rc.4.perf'])
+    autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
+    const mainWindow = { webContents: { send: vi.fn() } }
+
+    const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
+
+    // Why: a perf-RC build must see stable + perf-RC but never plain RC unless
+    // it explicitly Shift-clicks.
+    checkForUpdatesFromMenu()
+
+    await vi.waitFor(() => {
+      expect(fetchNewerReleaseTagsMock).toHaveBeenCalledWith('1.4.27-rc.3.perf', 2, {
+        eligibleChannels: ['stable', 'perf-rc']
+      })
+    })
+  })
+
+  it('adds the plain RC track for a perf-RC user who Shift-clicks', async () => {
+    appMock.getVersion.mockReturnValue('1.4.27-rc.3.perf')
+    fetchNewerReleaseTagsMock.mockResolvedValue(['v1.4.28-rc.1'])
+    autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
+    const mainWindow = { webContents: { send: vi.fn() } }
+
+    const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
+
+    checkForUpdatesFromMenu({ includePrerelease: true })
+
+    await vi.waitFor(() => {
+      expect(fetchNewerReleaseTagsMock).toHaveBeenCalledWith('1.4.27-rc.3.perf', 2, {
+        eligibleChannels: ['stable', 'rc', 'perf-rc']
+      })
+    })
+  })
+
+  it('adds the perf-RC track for an RC user who Cmd/Ctrl+Shift-clicks', async () => {
+    appMock.getVersion.mockReturnValue('1.3.17-rc.1')
+    fetchNewerReleaseTagsMock.mockResolvedValue(['v1.3.17-rc.1.perf'])
+    autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
+    const mainWindow = { webContents: { send: vi.fn() } }
+
+    const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
+
+    checkForUpdatesFromMenu({ includePrerelease: true, includePerfPrerelease: true })
+
+    await vi.waitFor(() => {
+      expect(fetchNewerReleaseTagsMock).toHaveBeenCalledWith('1.3.17-rc.1', 2, {
+        eligibleChannels: ['stable', 'rc', 'perf-rc']
+      })
+    })
   })
 
   it('leaves the feed URL alone for a normal user-initiated check', async () => {
@@ -1736,7 +1816,7 @@ describe('updater', () => {
 
     await vi.waitFor(() => {
       expect(fetchNewerReleaseTagsMock).toHaveBeenCalledWith('1.3.17-rc.1', 2, {
-        includePrerelease: true
+        eligibleChannels: ['stable', 'rc']
       })
       expect(autoUpdaterMock.setFeedURL).toHaveBeenLastCalledWith({
         provider: 'generic',
@@ -2886,7 +2966,7 @@ describe('updater', () => {
 
     await vi.waitFor(() => {
       expect(fetchNewerReleaseTagsMock).toHaveBeenCalledWith('1.3.17', 1, {
-        includePrerelease: false
+        eligibleChannels: ['stable']
       })
       expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
     })
@@ -2913,7 +2993,7 @@ describe('updater', () => {
 
     await vi.waitFor(() => {
       expect(fetchNewerReleaseTagsMock).toHaveBeenCalledWith('1.3.17', 2, {
-        includePrerelease: true
+        eligibleChannels: ['stable', 'rc']
       })
       expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1)
     })

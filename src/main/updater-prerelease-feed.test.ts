@@ -99,7 +99,7 @@ describe('fetchNewerReleaseTag', () => {
   it('can exclude prerelease tags for stable-channel checks', async () => {
     respondWithAtom(['v1.4.1-rc.0', 'v1.4.0', 'v1.3.52-rc.3', 'v1.3.51'])
     const { fetchNewerReleaseTag } = await import('./updater-prerelease-feed')
-    expect(await fetchNewerReleaseTag('1.3.51', { includePrerelease: false })).toBe('v1.4.0')
+    expect(await fetchNewerReleaseTag('1.3.51', { eligibleChannels: ['stable'] })).toBe('v1.4.0')
   })
 
   it.each([
@@ -153,7 +153,39 @@ describe('fetchNewerReleaseTag', () => {
   it('returns null for stable-channel checks when only prereleases are newer', async () => {
     respondWithAtom(['v1.4.1-rc.0', 'v1.3.52-rc.3', 'v1.3.51'])
     const { fetchNewerReleaseTag } = await import('./updater-prerelease-feed')
-    expect(await fetchNewerReleaseTag('1.3.51', { includePrerelease: false })).toBe(null)
+    expect(await fetchNewerReleaseTag('1.3.51', { eligibleChannels: ['stable'] })).toBe(null)
+  })
+
+  it('offers RC tags but hides perf-RC tags for a stable+rc check', async () => {
+    // Why: Shift-click puts a stable user on the {stable, rc} tracks — a
+    // perf-RC (even though it is the semver-newest) must stay hidden.
+    respondWithAtom(['v1.4.2-rc.1.perf', 'v1.4.2-rc.1', 'v1.4.1', 'v1.4.0'])
+    const { fetchNewerReleaseTag } = await import('./updater-prerelease-feed')
+    expect(await fetchNewerReleaseTag('1.4.0', { eligibleChannels: ['stable', 'rc'] })).toBe(
+      'v1.4.2-rc.1'
+    )
+  })
+
+  it('offers perf-RC tags but hides plain RC tags for a stable+perf-rc check', async () => {
+    // Why: a perf-RC user (or Cmd/Ctrl+Shift) is on the {stable, perf-rc}
+    // tracks — a newer plain RC must stay hidden.
+    respondWithAtom(['v1.4.2-rc.2', 'v1.4.2-rc.1.perf', 'v1.4.1', 'v1.4.0'])
+    const { fetchNewerReleaseTag } = await import('./updater-prerelease-feed')
+    expect(await fetchNewerReleaseTag('1.4.0', { eligibleChannels: ['stable', 'perf-rc'] })).toBe(
+      'v1.4.2-rc.1.perf'
+    )
+  })
+
+  it('picks the semver-newest across all tracks when every channel is eligible', async () => {
+    // Why: Cmd/Ctrl+Shift on an RC user opens {stable, rc, perf-rc}; perf-RC
+    // outranks the same-numbered plain RC by semver precedence.
+    respondWithAtom(['v1.4.2-rc.1.perf', 'v1.4.2-rc.1', 'v1.4.1'])
+    const { fetchNewerReleaseTag } = await import('./updater-prerelease-feed')
+    expect(
+      await fetchNewerReleaseTag('1.4.2-rc.1', {
+        eligibleChannels: ['stable', 'rc', 'perf-rc']
+      })
+    ).toBe('v1.4.2-rc.1.perf')
   })
 
   it('returns null when nothing in the feed is newer than the current version', async () => {

@@ -2,7 +2,7 @@
 import { app, BrowserWindow, powerMonitor } from 'electron'
 import type { NsisUpdater } from 'electron-updater'
 import { is } from '@electron-toolkit/utils'
-import type { UpdateStatus } from '../shared/types'
+import type { UpdateCheckOptions, UpdateStatus } from '../shared/types'
 import { killAllPty } from './ipc/pty'
 import { withUpdaterSpan } from './observability/instrumentation'
 import { loadElectronAutoUpdater, type ElectronAutoUpdater } from './electron-updater-loader'
@@ -14,11 +14,12 @@ import {
 import { registerAutoUpdaterHandlers } from './updater-events'
 import {
   compareVersions,
+  getReleaseChannel,
   isBenignCheckFailure,
   isMissingUpdateManifestFailure,
-  isPrereleaseVersion,
   isReleaseAssetsPublishingFailure,
-  statusesEqual
+  statusesEqual,
+  type ReleaseChannel
 } from './updater-fallback'
 import {
   fetchNewerReleaseTagsWithReadiness,
@@ -45,9 +46,12 @@ let userInitiatedCheck = false
 let onBeforeQuitCleanup: (() => void | Promise<void>) | null = null
 let autoUpdaterInitialized = false
 // Why: Shift-clicking "Check for Updates" opts the user into the RC release
-// channel for the rest of this process. The generic feed still gets pinned to
+// channel for the rest of this process; Cmd/Ctrl+Shift adds the perf-RC
+// channel. Both opt-ins are sticky so a later background check keeps offering
+// the same track until the user installs. The generic feed still gets pinned to
 // a concrete tag on every check so cancelled RCs without manifests are skipped.
 let includePrereleaseActive = false
+let includePerfPrereleaseActive = false
 let availableVersion: string | null = null
 let availableReleaseUrl: string | null = null
 let pendingCheckFailureKey: string | null = null
@@ -775,21 +779,24 @@ async function pinDefaultReleaseFeed(): Promise<void> {
   // check and the later manual download click. Pinning to the concrete tag
   // keeps the manifest and ZIP asset on the same release.
   //
-  // Prerelease users still need any-channel resolution so they can move to a
-  // newer RC or the next stable. Stable users should only resolve stable tags.
+  // Prerelease users still need cross-channel resolution so they can move to a
+  // newer build or the next stable. Stable users should only resolve stable
+  // tags. The eligible tracks combine the running build's own channel with any
+  // sticky Shift / Cmd-Shift opt-ins (see resolveEligibleReleaseChannels).
   const currentVersion = app.getVersion()
-  const includePrerelease = includePrereleaseActive || isPrereleaseVersion(currentVersion)
+  const eligibleChannels = resolveEligibleReleaseChannels(currentVersion)
+  const includesPrerelease = eligibleChannels.length > 1
   const releaseTagsResult = await fetchNewerReleaseTagsWithReadiness(
     currentVersion,
-    includePrerelease ? 2 : 1,
+    includesPrerelease ? 2 : 1,
     {
-      includePrerelease
+      eligibleChannels
     }
   )
   const newerTag = releaseTagsResult.tags[0] ?? null
-  const fallbackTag = includePrerelease ? (releaseTagsResult.tags[1] ?? null) : null
+  const fallbackTag = includesPrerelease ? (releaseTagsResult.tags[1] ?? null) : null
   pendingPrereleaseFallback =
-    includePrerelease && newerTag && fallbackTag
+    includesPrerelease && newerTag && fallbackTag
       ? {
           primaryTag: newerTag,
           fallbackTag,
@@ -811,7 +818,7 @@ async function pinDefaultReleaseFeed(): Promise<void> {
     clearPublishingWindowLastGoodCheck()
     const url = getReleaseDownloadUrl(newerTag)
     console.info(
-      `[updater] release feed pinned: current=${currentVersion} includePrerelease=${includePrerelease} → ${url}`
+      `[updater] release feed pinned: current=${currentVersion} channels=${eligibleChannels.join('+')} → ${url}`
     )
     autoUpdater.setFeedURL({ provider: 'generic', url })
   } else if (releaseTagsResult.state === 'not-ready') {
@@ -821,7 +828,7 @@ async function pinDefaultReleaseFeed(): Promise<void> {
       // last-good concrete feed lets electron-updater emit a real result.
       const url = getReleaseDownloadUrl(releaseTagsResult.lastGoodTag)
       console.info(
-        `[updater] release feed pinned to last-good: current=${currentVersion} includePrerelease=${includePrerelease} → ${url}`
+        `[updater] release feed pinned to last-good: current=${currentVersion} channels=${eligibleChannels.join('+')} → ${url}`
       )
       publishingWindowLastGoodCheck = { lastGoodTag: releaseTagsResult.lastGoodTag }
       autoUpdater.setFeedURL({ provider: 'generic', url })
@@ -829,7 +836,7 @@ async function pinDefaultReleaseFeed(): Promise<void> {
     }
     clearPublishingWindowLastGoodCheck()
     console.info(
-      `[updater] release feed deferred: current=${currentVersion} includePrerelease=${includePrerelease}; newest release assets are still publishing`
+      `[updater] release feed deferred: current=${currentVersion} channels=${eligibleChannels.join('+')}; newest release assets are still publishing`
     )
     throw new Error('Latest release assets are still publishing')
   } else {
@@ -837,10 +844,29 @@ async function pinDefaultReleaseFeed(): Promise<void> {
     clearPublishingWindowLastGoodCheck()
     const url = 'https://github.com/stablyai/orca/releases/latest/download'
     console.info(
-      `[updater] release feed fallback: current=${currentVersion} includePrerelease=${includePrerelease} → ${url}`
+      `[updater] release feed fallback: current=${currentVersion} channels=${eligibleChannels.join('+')} → ${url}`
     )
     autoUpdater.setFeedURL({ provider: 'generic', url })
   }
+}
+
+// Why: a running build is always offered stable plus its own track. A sticky
+// Shift opt-in (includePrereleaseActive) adds the RC track and a sticky
+// Cmd/Ctrl+Shift opt-in (includePerfPrereleaseActive) adds the perf-RC track.
+// Returned in canonical stable→rc→perf-rc order so feed pinning and tests read
+// deterministically. "Update to latest" then picks the newest eligible tag.
+function resolveEligibleReleaseChannels(currentVersion: string): ReleaseChannel[] {
+  const currentChannel = getReleaseChannel(currentVersion)
+  const includeRc = currentChannel === 'rc' || includePrereleaseActive
+  const includePerfRc = currentChannel === 'perf-rc' || includePerfPrereleaseActive
+  const channels: ReleaseChannel[] = ['stable']
+  if (includeRc) {
+    channels.push('rc')
+  }
+  if (includePerfRc) {
+    channels.push('perf-rc')
+  }
+  return channels
 }
 
 function retryPrereleaseFallbackAfterMissingManifest(
@@ -972,28 +998,38 @@ export function checkForUpdates(): void {
   })
 }
 
-function enableIncludePrerelease(): void {
-  if (includePrereleaseActive) {
+function enablePrereleaseChannels(options: { rc: boolean; perfRc: boolean }): void {
+  if (!options.rc && !options.perfRc) {
     return
   }
   // Why: generic-provider checks still need this flag so electron-updater will
-  // accept a prerelease manifest for users who intentionally Shift-clicked.
-  // We keep using the manifest-probed generic feed instead of the native
-  // GitHub provider because cancelled RC releases can appear without assets.
+  // accept a prerelease manifest (RC or perf-RC) for users who intentionally
+  // Shift / Cmd-Shift-clicked. We keep using the manifest-probed generic feed
+  // instead of the native GitHub provider because cancelled RC releases can
+  // appear without assets.
   getAutoUpdater().allowPrerelease = true
-  includePrereleaseActive = true
+  if (options.rc) {
+    includePrereleaseActive = true
+  }
+  if (options.perfRc) {
+    includePerfPrereleaseActive = true
+  }
 }
 
 /** Menu-triggered check — delegates feedback to renderer toasts via userInitiated flag */
-export function checkForUpdatesFromMenu(options?: { includePrerelease?: boolean }): void {
+export function checkForUpdatesFromMenu(options?: UpdateCheckOptions): void {
   if (!app.isPackaged || is.dev) {
     sendStatus({ state: 'not-available', userInitiated: true })
     return
   }
 
-  if (options?.includePrerelease) {
+  const wantsPrereleaseOptIn = Boolean(options?.includePrerelease || options?.includePerfPrerelease)
+  if (wantsPrereleaseOptIn) {
     clearPrereleaseFallbackContext()
-    enableIncludePrerelease()
+    enablePrereleaseChannels({
+      rc: Boolean(options?.includePrerelease),
+      perfRc: Boolean(options?.includePerfPrerelease)
+    })
   }
 
   const checkAlreadyInFlight = backgroundCheckLaunchPending || currentStatus.state === 'checking'
@@ -1009,9 +1045,10 @@ export function checkForUpdatesFromMenu(options?: { includePrerelease?: boolean 
   if (checkAlreadyInFlight) {
     backgroundCheckPromotedToUserInitiated = true
     rearmActiveUpdateCheckStallTimer()
-    if (options?.includePrerelease) {
-      // Why: the in-flight check may have already pinned the stable feed.
-      // Queue a fresh RC check so Shift-click doesn't inherit a stable result.
+    if (wantsPrereleaseOptIn) {
+      // Why: the in-flight check may have already pinned the stable feed. Queue
+      // a fresh prerelease check so Shift / Cmd-Shift-click doesn't inherit a
+      // stable result; the sticky opt-in flags carry the exact channel.
       pendingPrereleaseUserInitiatedCheckAfterInFlight = true
     }
     return

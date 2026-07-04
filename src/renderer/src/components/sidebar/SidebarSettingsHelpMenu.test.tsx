@@ -58,8 +58,21 @@ vi.mock('../setup-guide/SetupGuideProgressRing', () => ({
 vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenu: ({ children }: { children: ReactNode }) => <>{children}</>,
   DropdownMenuContent: ({ children }: { children: ReactNode }) => <>{children}</>,
-  DropdownMenuItem: ({ children, onSelect }: { children: ReactNode; onSelect?: () => void }) => (
-    <button data-testid="menu-item" onClick={onSelect}>
+  // Why: the real Radix item composes props.onClick (a real MouseEvent) before
+  // its own select/close, and its onSelect fires with a modifier-less
+  // CustomEvent. Mirror that: forward onClick when present, else onSelect.
+  DropdownMenuItem: ({
+    children,
+    onSelect,
+    onClick,
+    disabled
+  }: {
+    children: ReactNode
+    onSelect?: () => void
+    onClick?: (event: React.MouseEvent) => void
+    disabled?: boolean
+  }) => (
+    <button data-testid="menu-item" disabled={disabled} onClick={onClick ?? onSelect}>
       {children}
     </button>
   ),
@@ -250,6 +263,29 @@ describe('SidebarSettingsHelpMenu', () => {
   it('renders Check for Updates menu item', () => {
     const html = renderToStaticMarkup(<SidebarSettingsHelpMenu />)
     expect(html).toContain('Check for Updates')
+  })
+
+  it('routes Check for Updates modifiers to the RC and perf-RC channels', async () => {
+    const container = await renderMenu()
+    const item = findMenuItem(container, 'Check for Updates')
+    // Why: Cmd (macOS) / Ctrl (Win/Linux) with Shift is the perf-RC escalation.
+    const perfModifier = navigator.userAgent.includes('Mac') ? { metaKey: true } : { ctrlKey: true }
+
+    const clickWith = async (init: MouseEventInit): Promise<void> => {
+      await act(async () => {
+        item.dispatchEvent(new MouseEvent('click', { bubbles: true, ...init }))
+      })
+    }
+
+    await clickWith({})
+    await clickWith({ shiftKey: true })
+    await clickWith({ shiftKey: true, ...perfModifier })
+
+    expect(mocks.updaterCheck.mock.calls).toEqual([
+      [{ includePrerelease: false, includePerfPrerelease: false }],
+      [{ includePrerelease: true, includePerfPrerelease: false }],
+      [{ includePrerelease: true, includePerfPrerelease: true }]
+    ])
   })
 
   it('renders shortcut keys in the settings tooltip', () => {

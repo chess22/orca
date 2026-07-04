@@ -5,6 +5,7 @@ import {
   type KeybindingActionId,
   type KeybindingOverrides
 } from '../../shared/keybindings'
+import type { UpdateCheckOptions } from '../../shared/types'
 import { translateMain } from '../i18n/main-i18n'
 
 export type AppearanceMenuState = {
@@ -26,7 +27,7 @@ type RegisterAppMenuOptions = {
   onOpenSetupGuide: (window?: Electron.BaseWindow | null) => void
   onOpenFeatureTour: (window?: Electron.BaseWindow | null) => void
   onOpenCrashReport: (window?: Electron.BaseWindow | null) => void
-  onCheckForUpdates: (options: { includePrerelease: boolean }) => void
+  onCheckForUpdates: (options: UpdateCheckOptions) => void
   onBeforeReload?: (options: { ignoreCache: boolean; webContentsId: number }) => void
   onZoomIn: () => void
   onZoomOut: () => void
@@ -83,16 +84,22 @@ function buildAndApplyMenu(options: RegisterAppMenuOptions): void {
     webContents.reload()
   }
 
-  // Why: holding Shift while clicking Check for Updates opts this check into
-  // the release-candidate channel. Extracted so both the macOS app-menu entry
-  // and the Windows/Linux Help-menu entry share the exact same behavior.
+  // Why: holding Shift while clicking Check for Updates opts this check into the
+  // release-candidate channel; adding Cmd (macOS) / Ctrl (Win/Linux) escalates
+  // to the perf-RC channel. Accelerator-triggered invocations carry no real
+  // modifier state, so treat those as a plain stable check. Extracted so the
+  // macOS app-menu entry and the Windows/Linux Help-menu entry share behavior.
   const checkForUpdatesClick: Electron.MenuItemConstructorOptions['click'] = (
     _menuItem,
     _window,
     event
   ) => {
-    const includePrerelease = !event.triggeredByAccelerator && event.shiftKey === true
-    onCheckForUpdates({ includePrerelease })
+    const shiftHeld = !event.triggeredByAccelerator && event.shiftKey === true
+    const perfModifierHeld = shiftHeld && (isMac ? event.metaKey === true : event.ctrlKey === true)
+    onCheckForUpdates({
+      includePrerelease: shiftHeld,
+      includePerfPrerelease: perfModifierHeld
+    })
   }
 
   const checkForUpdatesItem: Electron.MenuItemConstructorOptions = {

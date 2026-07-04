@@ -257,14 +257,16 @@ describe('fetchNewerReleaseTagsWithReadiness', () => {
     const { fetchNewerReleaseTagsWithReadiness } = await import('./updater-prerelease-feed')
 
     await expect(
-      fetchNewerReleaseTagsWithReadiness('1.4.27-rc.1', 1, { includePrerelease: true })
+      fetchNewerReleaseTagsWithReadiness('1.4.27-rc.1', 1, {
+        eligibleChannels: ['stable', 'rc']
+      })
     ).resolves.toEqual({
       tags: [],
       state: 'not-ready',
       lastGoodTag: 'v1.4.27-rc.1'
     })
     await expect(
-      fetchNewerReleaseTagsWithReadiness('1.4.26', 1, { includePrerelease: false })
+      fetchNewerReleaseTagsWithReadiness('1.4.26', 1, { eligibleChannels: ['stable'] })
     ).resolves.toEqual({
       tags: [],
       state: 'no-newer'

@@ -1,6 +1,11 @@
 import { net } from 'electron'
 import { parse } from 'yaml'
-import { compareVersions, isPrereleaseVersion, isValidVersion } from './updater-fallback'
+import {
+  compareVersions,
+  getReleaseChannel,
+  isValidVersion,
+  type ReleaseChannel
+} from './updater-fallback'
 
 const ATOM_FEED_URL = 'https://github.com/stablyai/orca/releases.atom'
 const RELEASES_DOWNLOAD_BASE = 'https://github.com/stablyai/orca/releases/download'
@@ -154,8 +159,13 @@ async function hasReadyPlatformManifest(tag: string): Promise<boolean> {
  * Returns null if the fetch fails, the feed has no parseable tags, or
  * nothing in the feed is newer than `currentVersion`.
  */
+// Why: the caller passes the exact set of release tracks the running build is
+// eligible for (stable plus any Shift / Cmd-Shift opt-ins). Omitting it means
+// "any channel", preserving the historical include-everything default.
+const ALL_RELEASE_CHANNELS: ReleaseChannel[] = ['stable', 'rc', 'perf-rc']
+
 type FetchNewerReleaseTagOptions = {
-  includePrerelease?: boolean
+  eligibleChannels?: ReleaseChannel[]
 }
 
 export type FetchNewerReleaseTagsResult = {
@@ -184,15 +194,15 @@ export async function fetchNewerReleaseTagsWithReadiness(
   maxTags: number,
   options: FetchNewerReleaseTagOptions = {}
 ): Promise<FetchNewerReleaseTagsResult> {
-  const includePrerelease = options.includePrerelease ?? true
+  const eligibleChannels = options.eligibleChannels ?? ALL_RELEASE_CHANNELS
   const tags = await fetchReleaseFeedTags()
   if (!tags || maxTags <= 0) {
     return { tags: [], state: 'unavailable' }
   }
 
-  const candidates = includePrerelease
-    ? tags
-    : tags.filter(({ version }) => !isPrereleaseVersion(version))
+  const candidates = tags.filter(({ version }) =>
+    eligibleChannels.includes(getReleaseChannel(version))
+  )
   const newestNewerIndex = candidates.findIndex(
     ({ version }) => compareVersions(version, currentVersion) > 0
   )

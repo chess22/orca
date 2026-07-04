@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   compareVersions,
+  getReleaseChannel,
   isBenignCheckFailure,
   isMissingUpdateManifestFailure,
   isReleaseAssetsPublishingFailure,
@@ -29,6 +30,27 @@ describe('isPrereleaseVersion', () => {
     expect(isPrereleaseVersion('v1.3.17')).toBe(false)
     expect(isPrereleaseVersion('1.3.17+build.5')).toBe(false)
     expect(isPrereleaseVersion('not-a-version')).toBe(false)
+  })
+})
+
+describe('getReleaseChannel', () => {
+  it('classifies stable, rc, and perf-rc tracks', () => {
+    expect(getReleaseChannel('1.4.122')).toBe('stable')
+    expect(getReleaseChannel('v1.4.122')).toBe('stable')
+    expect(getReleaseChannel('1.4.122+build.5')).toBe('stable')
+    expect(getReleaseChannel('1.4.122-rc.3')).toBe('rc')
+    expect(getReleaseChannel('v1.4.122-rc.3')).toBe('rc')
+    expect(getReleaseChannel('1.4.122-rc.3.perf')).toBe('perf-rc')
+    expect(getReleaseChannel('v1.4.122-rc.3.perf')).toBe('perf-rc')
+  })
+
+  it('treats non-perf prereleases as the rc track and unparseable values as stable', () => {
+    expect(getReleaseChannel('1.0.0-beta.5')).toBe('rc')
+    expect(getReleaseChannel('2.1.0-alpha')).toBe('rc')
+    // Why: a perf identifier anywhere in the prerelease marks the perf track,
+    // even without a numeric suffix.
+    expect(getReleaseChannel('1.4.122-rc.3.perf.1')).toBe('perf-rc')
+    expect(getReleaseChannel('not-a-version')).toBe('stable')
   })
 })
 
