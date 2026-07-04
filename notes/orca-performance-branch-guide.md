@@ -166,6 +166,32 @@ found by differential fuzzing; four fixed, one tolerated:
 - cmd/ctrl-click "Check for Updates" fetches the latest perf-tagged release
   (PR #7278; merged here) — perf-line users self-update after one manual install.
 
+## Syncing with main: MERGE, never rebase
+
+`orca-performance` is a long-lived, shared, continuously-pushed integration
+branch — RCs are cut from it and agents branch off it. **Always
+`git merge origin/main`; never rebase** (rebasing rewrites pushed history and
+strands every RC tag, fix branch, and worktree based on the old commits).
+Conflict pattern, established over ~6 syncs:
+
+1. **Our structure wins; main's semantics graft in.** This branch deliberately
+   restructures terminal code (shared scanners, single-policy handlers,
+   model/view split). When main adds a feature inside code we've restructured,
+   keep our shape and port their new behavior into it. Example: main inlined an
+   OSC 133 parser to add `onCommandStarted` (133;C); we kept the shared
+   `createOsc133CommandFinishedScanner` (main's side-effect tracker must parse
+   byte-identically) and added 133;C support to the shared scanner instead.
+2. Preserve the invariants in **Guardrails** below through every resolution —
+   especially chunk-credit, `pendingData`-keyed flow control, and the
+   single `handleCommandFinished` policy (byte path AND sideEffect-fact path
+   route through it).
+3. After resolving: `pnpm typecheck`, the terminal-pane + ipc/pty + daemon
+   suites, and both fuzz suites. Commit the merge with a message stating what
+   was kept from each side; push. If the push races a moved remote, merge the
+   remote tip — never `pull --rebase` a merge.
+4. If a sync lands anything on the delivery/restore path, re-run a 10MB bench
+   before the next RC cut.
+
 ## Known limits / next levers (in rough priority order)
 1. Daemon self-pacing: daemon-hosted ptys can cross the 2MB cap for ~20-30ms at
    wire speed before `pausePty` bites. Fix: daemon enforces its own watermark
