@@ -17,22 +17,12 @@ type Props = {
   item: FileExplorerRow
   expanded: ReadonlySet<string>
   onPreviewFile: (relativePath: string, displayName: string) => void
-  onActivateSymlink: (item: TreeNode) => void
   onRetryDirectory: (relativePath: string) => void
   onToggleDirectory: (relativePath: string) => void
-  unavailableSymlinkPaths: ReadonlySet<string>
 }
 
 export function MobileFileExplorerRow(props: Props) {
-  const {
-    item,
-    expanded,
-    onActivateSymlink,
-    onPreviewFile,
-    onRetryDirectory,
-    onToggleDirectory,
-    unavailableSymlinkPaths
-  } = props
+  const { item, expanded, onPreviewFile, onRetryDirectory, onToggleDirectory } = props
 
   if (item.kind === 'loading') {
     return (
@@ -70,10 +60,8 @@ export function MobileFileExplorerRow(props: Props) {
       <TreeRow
         item={item}
         expanded={expanded}
-        onActivateSymlink={onActivateSymlink}
         onPreviewFile={onPreviewFile}
         onToggleDirectory={onToggleDirectory}
-        unavailableSymlinkPaths={unavailableSymlinkPaths}
       />
     )
   }
@@ -88,19 +76,10 @@ function isTreeNode(item: FileExplorerRow): item is TreeNode {
 function TreeRow(props: {
   item: TreeNode
   expanded: ReadonlySet<string>
-  onActivateSymlink: (item: TreeNode) => void
   onPreviewFile: (relativePath: string, displayName: string) => void
   onToggleDirectory: (relativePath: string) => void
-  unavailableSymlinkPaths: ReadonlySet<string>
 }) {
-  const {
-    item,
-    expanded,
-    onActivateSymlink,
-    onPreviewFile,
-    onToggleDirectory,
-    unavailableSymlinkPaths
-  } = props
+  const { item, expanded, onPreviewFile, onToggleDirectory } = props
   const isDirectory = item.kind === 'directory'
   const isExpanded = expanded.has(item.relativePath)
   // Images render in the mobile viewer (via files.readPreview), so a binary
@@ -109,8 +88,7 @@ function TreeRow(props: {
     item.kind !== 'directory' &&
     canPreviewMobileFileRow({ kind: item.kind, relativePath: item.relativePath })
   const isImage = item.kind === 'binary' && previewable
-  const symlinkUnavailable = item.isSymlink && unavailableSymlinkPaths.has(item.relativePath)
-  const disabled = symlinkUnavailable || (item.kind === 'binary' && !previewable && !item.isSymlink)
+  const disabled = item.kind === 'binary' && !previewable
   const markdown = item.kind === 'text' && isMarkdownPath(item.relativePath)
 
   return (
@@ -126,8 +104,6 @@ function TreeRow(props: {
         triggerSelection()
         if (isDirectory) {
           onToggleDirectory(item.relativePath)
-        } else if (item.isSymlink) {
-          onActivateSymlink(item)
         } else if (!disabled) {
           onPreviewFile(item.relativePath, item.name)
         }
@@ -137,9 +113,7 @@ function TreeRow(props: {
           ? `Open folder ${item.name}`
           : disabled
             ? `${item.name} unavailable on mobile`
-            : item.isSymlink
-              ? `Open symlink ${item.name}`
-              : `Preview file ${item.name}`
+            : `Preview file ${item.name}`
       }
     >
       {isDirectory ? (

@@ -15,11 +15,9 @@ import { getWorktreeLabel } from '../session/worktree-label'
 import {
   flattenDirectoryCache,
   getDirectoryCacheState,
-  joinRelativePath,
   type DirectoryCache,
   type FileExplorerRow,
-  type MobileDirEntry,
-  type TreeNode
+  type MobileDirEntry
 } from './file-tree'
 import type { RpcSuccess } from '../transport/types'
 import { colors } from '../theme/mobile-theme'
@@ -32,10 +30,7 @@ import {
 } from './directory-load-revisions'
 import { fileExplorerStyles as styles } from './mobile-file-explorer-styles'
 import { MobileFileExplorerRow } from './mobile-file-explorer-row'
-import {
-  canPreviewMobileFileRow,
-  navigateToMobileFilePreview
-} from './mobile-file-preview-navigation'
+import { navigateToMobileFilePreview } from './mobile-file-preview-navigation'
 
 export function MobileFileExplorerPanel(props: {
   hostId: string
@@ -55,9 +50,6 @@ export function MobileFileExplorerPanel(props: {
   const pendingDirectoryRetriesRef = useRef<Set<string>>(new Set())
   const [directoryCache, setDirectoryCache] = useState<DirectoryCache>({})
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
-  const [unavailableSymlinkPaths, setUnavailableSymlinkPaths] = useState<Set<string>>(
-    () => new Set()
-  )
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const worktreeLabel = getWorktreeLabel(name, worktreeId)
@@ -152,7 +144,6 @@ export function MobileFileExplorerPanel(props: {
     pendingDirectoryRetriesRef.current.clear()
     setDirectoryCache({})
     setExpanded(new Set())
-    setUnavailableSymlinkPaths(new Set())
     setLoading(true)
     setError(null)
   }, [scope])
@@ -225,66 +216,14 @@ export function MobileFileExplorerPanel(props: {
     [embedded, hostId, name, onRequestClose, router, worktreeId]
   )
 
-  const activateSymlink = useCallback(
-    async (item: TreeNode) => {
-      const scope = scopeRef.current
-      if (!client || connState !== 'connected') {
-        if (hostId) {
-          void forceReconnect(hostId)
-        }
-        return
-      }
-      try {
-        const response = await client.sendRequest('files.stat', {
-          worktree: `id:${worktreeId}`,
-          relativePath: item.relativePath
-        })
-        if (!response.ok) {
-          throw new Error(response.error?.message || 'Unable to open symlink')
-        }
-        if (scopeRef.current !== scope) {
-          return
-        }
-        const stat = (response as RpcSuccess).result as { isDirectory?: boolean }
-        if (stat.isDirectory) {
-          setUnavailableSymlinkPaths((prev) => withoutPath(prev, item.relativePath))
-          setDirectoryCache((prev) => markCachedEntryAsDirectory(prev, item.relativePath))
-          setExpanded((prev) => {
-            const next = new Set(prev)
-            next.add(item.relativePath)
-            return next
-          })
-          void loadDirectory(item.relativePath)
-          return
-        }
-        if (
-          item.kind !== 'directory' &&
-          canPreviewMobileFileRow({ kind: item.kind, relativePath: item.relativePath })
-        ) {
-          setUnavailableSymlinkPaths((prev) => withoutPath(prev, item.relativePath))
-          previewFile(item.relativePath, item.name)
-          return
-        }
-        setUnavailableSymlinkPaths((prev) => withPath(prev, item.relativePath))
-      } catch {
-        if (scopeRef.current === scope) {
-          setUnavailableSymlinkPaths((prev) => withPath(prev, item.relativePath))
-        }
-      }
-    },
-    [client, connState, forceReconnect, hostId, loadDirectory, previewFile, worktreeId]
-  )
-
   const renderItem: ListRenderItem<FileExplorerRow> = ({ item }) => {
     return (
       <MobileFileExplorerRow
         item={item}
         expanded={expanded}
-        onActivateSymlink={activateSymlink}
         onPreviewFile={previewFile}
         onRetryDirectory={retryDirectory}
         onToggleDirectory={toggleDirectory}
-        unavailableSymlinkPaths={unavailableSymlinkPaths}
       />
     )
   }
@@ -368,48 +307,4 @@ export function MobileFileExplorerPanel(props: {
       {body}
     </View>
   )
-}
-
-function markCachedEntryAsDirectory(cache: DirectoryCache, relativePath: string): DirectoryCache {
-  const name = relativePath.split('/').pop()
-  if (!name) {
-    return cache
-  }
-  const parentPath = getParentRelativePath(relativePath)
-  const parentState = getDirectoryCacheState(cache, parentPath)
-  if (!parentState) {
-    return cache
-  }
-  let changed = false
-  const entries = parentState.entries.map((entry) => {
-    if (joinRelativePath(parentPath, entry.name) !== relativePath || entry.isDirectory) {
-      return entry
-    }
-    changed = true
-    return { ...entry, isDirectory: true }
-  })
-  return changed ? { ...cache, [parentPath]: { ...parentState, entries } } : cache
-}
-
-function getParentRelativePath(relativePath: string): string {
-  const index = relativePath.lastIndexOf('/')
-  return index === -1 ? '' : relativePath.slice(0, index)
-}
-
-function withPath(paths: ReadonlySet<string>, relativePath: string): Set<string> {
-  if (paths.has(relativePath)) {
-    return new Set(paths)
-  }
-  const next = new Set(paths)
-  next.add(relativePath)
-  return next
-}
-
-function withoutPath(paths: ReadonlySet<string>, relativePath: string): Set<string> {
-  if (!paths.has(relativePath)) {
-    return new Set(paths)
-  }
-  const next = new Set(paths)
-  next.delete(relativePath)
-  return next
 }
