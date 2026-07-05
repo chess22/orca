@@ -47,6 +47,7 @@ const QUIT_AND_INSTALL_DELAY_MS = 100
 const PRE_QUIT_CLEANUP_TIMEOUT_MS = 2_500
 const UPDATE_CHECK_SILENT_SETTLE_DELAY_MS = 1_000
 const UPDATE_CHECK_STALL_TIMEOUT_MS = 45_000
+const DEV_IDENTITY_APP_NAME = 'Orca Dev'
 
 let mainWindowRef: BrowserWindow | null = null
 let currentStatus: UpdateStatus = { state: 'idle' }
@@ -111,6 +112,12 @@ let downloadInFlight = false
  *  while Squirrel's ShipIt is replacing the .app bundle. */
 let quittingForUpdate = false
 let autoUpdater: ElectronAutoUpdater | null = null
+
+function isDevIdentityBuild(): boolean {
+  // Why: hand-built parallel installs must never consume the production Orca
+  // release feed, even when they are packaged and outside Electron dev mode.
+  return app.getName() === DEV_IDENTITY_APP_NAME
+}
 
 function getAutoUpdater(): ElectronAutoUpdater {
   if (!autoUpdater) {
@@ -978,6 +985,10 @@ function runBackgroundUpdateCheck(
     sendStatus({ state: 'not-available' })
     return
   }
+  if (isDevIdentityBuild()) {
+    sendStatus({ state: 'not-available' })
+    return
+  }
   // Why: scope the nudge marker to the updater cycle being launched right now.
   // Setting it here, before any updater events or rejected promises can arrive,
   // prevents later ordinary checks from inheriting an older campaign id. Use
@@ -1056,6 +1067,10 @@ function enableIncludePrerelease(): void {
 /** Menu-triggered check — delegates feedback to renderer toasts via userInitiated flag */
 export function checkForUpdatesFromMenu(options?: UpdateCheckOptions): void {
   if (!app.isPackaged || is.dev) {
+    sendStatus({ state: 'not-available', userInitiated: true })
+    return
+  }
+  if (isDevIdentityBuild()) {
     sendStatus({ state: 'not-available', userInitiated: true })
     return
   }
@@ -1249,6 +1264,9 @@ export function setupAutoUpdater(
     return
   }
   if (is.dev) {
+    return
+  }
+  if (isDevIdentityBuild()) {
     return
   }
 

@@ -51,6 +51,7 @@ const { appMock, browserWindowMock, nativeUpdaterMock, autoUpdaterMock, isMock, 
     return {
       appMock: {
         isPackaged: true,
+        getName: vi.fn(() => 'Orca'),
         getVersion: vi.fn(() => '1.0.51'),
         on: appOn,
         quit: vi.fn()
@@ -114,6 +115,8 @@ describe('updater check failure handling', () => {
   beforeEach(() => {
     vi.resetModules()
     autoUpdaterMock.reset()
+    appMock.getName.mockReset()
+    appMock.getName.mockReturnValue('Orca')
     nativeUpdaterMock.on.mockReset()
     browserWindowMock.getAllWindows.mockReset()
     browserWindowMock.getAllWindows.mockReturnValue([])
