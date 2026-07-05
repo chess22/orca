@@ -55,6 +55,7 @@ import { resolveAgentForegroundProcess } from './agent-foreground-process'
 import { getAgentForegroundContextPaths } from './agent-foreground-context-paths'
 import { recognizeAgentProcessFromCommandLine } from '../../shared/agent-process-recognition'
 import { shouldUseShellReadyStartupDelivery } from '../../shared/codex-startup-delivery'
+import { assertSafeAgentStartupCwd, resolveSafePtyDefaultCwd } from './pty-default-cwd'
 
 const PANE_IDENTITY_ENV_KEYS = [
   'ORCA_PANE_KEY',
@@ -88,20 +89,7 @@ const exitListeners = new Set<ExitCallback>()
  * Returns a stable default cwd for locally spawned PTYs.
  */
 function getDefaultCwd(): string {
-  if (process.platform !== 'win32') {
-    return process.env.HOME || '/'
-  }
-
-  // Why: USERPROFILE is not guaranteed in all Windows launch contexts.
-  // Falling back to bare HOMEPATH yields a drive-relative path, so combine
-  // HOMEDRIVE + HOMEPATH to keep spawned PTYs anchored to the intended home.
-  if (process.env.USERPROFILE) {
-    return process.env.USERPROFILE
-  }
-  if (process.env.HOMEDRIVE && process.env.HOMEPATH) {
-    return `${process.env.HOMEDRIVE}${process.env.HOMEPATH}`
-  }
-  return 'C:\\'
+  return resolveSafePtyDefaultCwd()
 }
 
 /**
@@ -352,6 +340,13 @@ export class LocalPtyProvider implements IPtyProvider {
     }
     const id = allocatePtyId(reattachId ?? undefined)
 
+    const startupAgentRecognition = args.command
+      ? recognizeAgentProcessFromCommandLine(args.command)
+      : null
+    if (args.command && startupAgentRecognition) {
+      assertSafeAgentStartupCwd(args.cwd, args.command)
+    }
+
     const defaultCwd = getDefaultCwd()
     const cwd = args.cwd || defaultCwd
     const wslInfo = process.platform === 'win32' ? parseWslPath(cwd) : null
@@ -594,8 +589,7 @@ export class LocalPtyProvider implements IPtyProvider {
         finalEnv.ORCA_OMP_STATUS_EXTENSION ||
         finalEnv.ORCA_CODEX_HOME ||
         finalEnv.ORCA_AGENT_TEAMS_SHIM_DIR
-      const isCodexStartupCommand =
-        recognizeAgentProcessFromCommandLine(args.command)?.agent === 'codex'
+      const isCodexStartupCommand = startupAgentRecognition?.agent === 'codex'
       let shellLaunch: ReturnType<typeof getShellReadyLaunchConfig> | null = null
       if (args.command && isCodexStartupCommand) {
         const shouldWaitForShellReady = shouldUseShellReadyStartupDelivery({

@@ -218,6 +218,36 @@ describe('LocalPtyProvider', () => {
       )
     })
 
+    it('allows an explicitly requested plain shell at POSIX root', async () => {
+      await provider.spawn({ cols: 80, rows: 24, cwd: '/' })
+
+      expect(spawnMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Array),
+        expect.objectContaining({ cwd: '/' })
+      )
+    })
+
+    it('rejects automatic agent startup without an explicit cwd', async () => {
+      spawnMock.mockClear()
+
+      await expect(provider.spawn({ cols: 80, rows: 24, command: 'codex' })).rejects.toThrow(
+        /requires a non-root workspace/
+      )
+
+      expect(spawnMock).not.toHaveBeenCalled()
+    })
+
+    it('rejects automatic agent startup at POSIX root', async () => {
+      spawnMock.mockClear()
+
+      await expect(
+        provider.spawn({ cols: 80, rows: 24, cwd: '/', command: 'claude' })
+      ).rejects.toThrow(/requires a non-root workspace/)
+
+      expect(spawnMock).not.toHaveBeenCalled()
+    })
+
     it('invokes onSpawned callback', async () => {
       const onSpawned = vi.fn()
       provider.configure({ onSpawned })

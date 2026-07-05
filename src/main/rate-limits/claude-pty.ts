@@ -7,8 +7,12 @@ import { resolveClaudeCommand } from '../codex-cli/command'
 import type { ClaudeRuntimeAuthPreparation } from '../claude-accounts/runtime-auth-service'
 import { applyClaudeEnvPatch } from '../claude-accounts/environment'
 import { withMacTailscaleDnsHint } from '../network/macos-tailscale-dns-diagnostic'
-import { cleanupHiddenRateLimitPty } from './hidden-pty-cleanup'
+import { cleanupHiddenRateLimitPty, registerHiddenRateLimitPty } from './hidden-pty-cleanup'
 import { extractClaudePtyResetMetadata } from './claude-pty-reset-parser'
+import {
+  getHiddenRateLimitWslCwdSetupCommands,
+  resolveHiddenRateLimitPtyCwd
+} from './hidden-rate-limit-pty-cwd'
 
 const PTY_TIMEOUT_MS = 25_000
 const MAX_OUTPUT_LENGTH = 100_000 // 100KB buffer limit
@@ -197,11 +201,29 @@ function describeClaudeUsageFailure(output: string): string {
   return 'Claude usage is unavailable right now.'
 }
 
+function abortedClaudeUsageResult(): ProviderRateLimits {
+  return {
+    provider: 'claude',
+    session: null,
+    weekly: null,
+    updatedAt: Date.now(),
+    error: 'Rate-limit fetch aborted',
+    status: 'error'
+  }
+}
+
 export async function fetchViaPty(options?: {
   authPreparation?: ClaudeRuntimeAuthPreparation
   networkProxySettings?: NetworkProxySettings
+  signal?: AbortSignal
 }): Promise<ProviderRateLimits> {
+  if (options?.signal?.aborted) {
+    return abortedClaudeUsageResult()
+  }
   const pty = await import('node-pty')
+  if (options?.signal?.aborted) {
+    return abortedClaudeUsageResult()
+  }
 
   return new Promise<ProviderRateLimits>((resolve) => {
     let output = ''
@@ -251,10 +273,11 @@ export async function fetchViaPty(options?: {
           // Why: Windows-side env does not cross into the distro without WSLENV,
           // so export the configured proxy inside the command for the inner claude.
           [
+            ...getHiddenRateLimitWslCwdSetupCommands(),
             `export CLAUDE_CONFIG_DIR=${shellQuote(wslConfig.linuxConfigDir)}`,
             ...Object.entries(proxyEnv).map(([key, value]) => `export ${key}=${shellQuote(value)}`),
             'exec claude'
-          ].join('; ')
+          ].join(' && ')
         ]
       : isWin32
         ? ['/c', `"${claudeCommand}"`]
@@ -264,10 +287,12 @@ export async function fetchViaPty(options?: {
       name: 'xterm-256color',
       cols: 120,
       rows: 40,
+      cwd: resolveHiddenRateLimitPtyCwd(),
       env: spawnEnv
     })
-    const termDisposables: { dispose: () => void }[] = []
+    const termDisposables: { dispose: () => void }[] = [registerHiddenRateLimitPty(term)]
     let enterInterval: ReturnType<typeof setInterval> | null = null
+    let timeout: ReturnType<typeof setTimeout> | null = null
 
     function clearFollowupTimers(): void {
       if (startupDelayTimer) {
@@ -288,7 +313,32 @@ export async function fetchViaPty(options?: {
       }
     }
 
-    const timeout = setTimeout(() => {
+    function settleAborted(): void {
+      if (resolved) {
+        return
+      }
+      resolved = true
+      if (timeout) {
+        clearTimeout(timeout)
+        timeout = null
+      }
+      clearFollowupTimers()
+      cleanupHiddenRateLimitPty(term, termDisposables, { kill: true })
+      resolve(abortedClaudeUsageResult())
+    }
+
+    if (options?.signal) {
+      if (options.signal.aborted) {
+        settleAborted()
+        return
+      }
+      options.signal.addEventListener('abort', settleAborted, { once: true })
+      termDisposables.push({
+        dispose: () => options.signal?.removeEventListener('abort', settleAborted)
+      })
+    }
+
+    timeout = setTimeout(() => {
       if (!resolved) {
         resolved = true
         clearFollowupTimers()
@@ -342,7 +392,10 @@ export async function fetchViaPty(options?: {
         return
       }
       resolved = true
-      clearTimeout(timeout)
+      if (timeout) {
+        clearTimeout(timeout)
+        timeout = null
+      }
       clearFollowupTimers()
       cleanupHiddenRateLimitPty(term, termDisposables, { kill: true })
 
@@ -443,7 +496,10 @@ export async function fetchViaPty(options?: {
       clearFollowupTimers()
       if (!resolved) {
         resolved = true
-        clearTimeout(timeout)
+        if (timeout) {
+          clearTimeout(timeout)
+          timeout = null
+        }
         const clean = stripTerminalControlSequences(output)
         const { session, weekly, fableWeekly } = parsePtyUsage(clean)
         resolve({
