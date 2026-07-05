@@ -687,6 +687,11 @@ async function attemptCliRepairThenRetryOAuth(input: {
     warnClaudeUsageFetchFailure(input.options?.authPreparation, input.oauthCredentials, err)
   }
 
+  // Why: bail before credential I/O if the fetch cycle was stopped mid-CLI-repair.
+  if (input.options?.signal?.aborted) {
+    return abortedClaudeRateLimitResult()
+  }
+
   const refreshedCredentials = await readOAuthCredentials(
     resolveOAuthCredentialReadOptions(input.options?.authPreparation)
   )

@@ -108,7 +108,7 @@ describe('fetchViaPty', () => {
     const spawnCwd = spawnMock.mock.calls[0]?.[2]?.cwd as string
     expect(spawnCwd).toContain('rate-limit-pty-cwd')
     expect(spawnCwd).not.toBe('/')
-    expect(spawnCwd).not.toMatch(/^[A-Za-z]:\\?$/)
+    expect(spawnCwd).not.toMatch(/^[A-Za-z]:(?:[\\/])?$/)
 
     term.emitExit()
     await resultPromise

@@ -1,17 +1,6 @@
 import { homedir } from 'node:os'
-import { posix } from 'node:path'
 
-function isRootLikePath(path: string | null | undefined): boolean {
-  const trimmed = path?.trim() ?? ''
-  if (!trimmed) {
-    return true
-  }
-  if (posix.normalize(trimmed.replace(/\\/g, '/')) === '/') {
-    return true
-  }
-  const windowsPath = trimmed.replace(/\//g, '\\')
-  return /^[A-Za-z]:\\?$/.test(windowsPath) || /^\\\\[^\\]+\\[^\\]+\\?$/.test(windowsPath)
-}
+import { isRootLikePath } from './pty-path-safety'
 
 function homeDrivePath(env: NodeJS.ProcessEnv): string | null {
   if (!env.HOMEDRIVE || !env.HOMEPATH) {
@@ -30,6 +19,8 @@ export function resolveSafePtyDefaultCwd(env: NodeJS.ProcessEnv = process.env): 
       ? [env.USERPROFILE, homeDrivePath(env), homedir()]
       : [env.HOME, homedir()]
   const selected = candidates.find(isSafeImplicitPtyCwd)
+  // Why: silently falling back to "/" or a drive root is the exact runaway-CPU
+  // bug this module prevents (see runaway-cpu-hidden-usage-pty-design.md) — fail loud.
   if (!selected) {
     throw new Error('No safe default working directory is available for terminal launch.')
   }

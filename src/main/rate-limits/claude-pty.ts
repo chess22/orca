@@ -273,6 +273,8 @@ export async function fetchViaPty(options?: {
           // Why: Windows-side env does not cross into the distro without WSLENV,
           // so export the configured proxy inside the command for the inner claude.
           [
+            // Why: hidden usage probes must not inherit a root-like WSL cwd;
+            // keep Claude discovery bounded to a tiny temp directory.
             ...getHiddenRateLimitWslCwdSetupCommands(),
             `export CLAUDE_CONFIG_DIR=${shellQuote(wslConfig.linuxConfigDir)}`,
             ...Object.entries(proxyEnv).map(([key, value]) => `export ${key}=${shellQuote(value)}`),
@@ -287,6 +289,8 @@ export async function fetchViaPty(options?: {
       name: 'xterm-256color',
       cols: 120,
       rows: 40,
+      // Why: hidden usage PTYs must not inherit the process cwd (e.g. / or a
+      // drive root), which can trigger unbounded file discovery.
       cwd: resolveHiddenRateLimitPtyCwd(),
       env: spawnEnv
     })
