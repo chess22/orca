@@ -269,11 +269,15 @@ export const CORE_COMMAND_SPECS: CommandSpec[] = [
     path: ['terminal', 'split'],
     summary: 'Split an existing terminal pane',
     usage:
-      'orca terminal split [--terminal <handle>] [--direction horizontal|vertical] [--command <text>] [--json]',
-    allowedFlags: [...GLOBAL_FLAGS, 'terminal', 'direction', 'command'],
+      'orca terminal split [--terminal <handle>] [--direction horizontal|vertical] [--command <text>] [--ratio <0-1>] [--size-px <px>] [--json]',
+    allowedFlags: [...GLOBAL_FLAGS, 'terminal', 'direction', 'command', 'ratio', 'size-px'],
+    notes: [
+      '--ratio sets the new pane’s share of the split axis (e.g. 0.3 = 30%); --size-px sets its size in pixels (width for vertical splits, height for horizontal). Pass at most one.'
+    ],
     examples: [
       'orca terminal split --terminal term_abc123 --direction horizontal --json',
-      'orca terminal split --terminal term_abc123 --command "codex"'
+      'orca terminal split --terminal term_abc123 --command "codex"',
+      'orca terminal split --terminal term_abc123 --direction vertical --ratio 0.3'
     ]
   }
 ]

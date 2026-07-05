@@ -26,6 +26,7 @@ import {
   printResult
 } from '../format'
 import {
+  getOptionalNumberFlag,
   getOptionalPositiveIntegerFlag,
   getOptionalStringFlag,
   getRequiredStringFlag
@@ -166,10 +167,23 @@ export const TERMINAL_HANDLERS: Record<string, CommandHandler> = {
     ) {
       throw new RuntimeClientError('invalid_argument', '--direction must be horizontal or vertical')
     }
+    const ratio = getOptionalNumberFlag(flags, 'ratio')
+    if (ratio !== undefined && (ratio <= 0 || ratio >= 1)) {
+      throw new RuntimeClientError(
+        'invalid_argument',
+        '--ratio must be between 0 and 1 (exclusive); it is the new pane’s share'
+      )
+    }
+    const sizePx = getOptionalPositiveIntegerFlag(flags, 'size-px')
+    if (ratio !== undefined && sizePx !== undefined) {
+      throw new RuntimeClientError('invalid_argument', 'Pass either --ratio or --size-px, not both')
+    }
     const result = await client.call<{ split: RuntimeTerminalSplit }>('terminal.split', {
       terminal: await getTerminalHandle(flags, cwd, client),
       direction: directionFlag,
-      command: getOptionalStringFlag(flags, 'command')
+      command: getOptionalStringFlag(flags, 'command'),
+      ratio,
+      sizePx
     })
     printResult(result, json, formatTerminalSplit)
   }

@@ -15,12 +15,18 @@ export function buildHeadlessTerminalSplitLayout(
     ptyId: string
     splitFromLeafId: string
     direction: 'horizontal' | 'vertical'
+    /** Requested share for the NEW leaf (0–1); the tree stores the first-child share. */
+    newLeafRatio?: number
   }
 ): TerminalLayoutSnapshot {
   const existingRoot: TerminalPaneLayoutNode = existing?.root ?? {
     type: 'leaf',
     leafId: args.splitFromLeafId
   }
+  const firstRatio =
+    args.newLeafRatio !== undefined && args.newLeafRatio > 0 && args.newLeafRatio < 1
+      ? Math.round((1 - args.newLeafRatio) * 1000) / 1000
+      : undefined
   const insertSplit = (node: TerminalPaneLayoutNode): TerminalPaneLayoutNode => {
     if (node.type === 'leaf') {
       if (node.leafId !== args.splitFromLeafId) {
@@ -30,7 +36,8 @@ export function buildHeadlessTerminalSplitLayout(
         type: 'split',
         direction: args.direction,
         first: node,
-        second: { type: 'leaf', leafId: args.leafId }
+        second: { type: 'leaf', leafId: args.leafId },
+        ...(firstRatio !== undefined ? { ratio: firstRatio } : {})
       }
     }
     return { ...node, first: insertSplit(node.first), second: insertSplit(node.second) }

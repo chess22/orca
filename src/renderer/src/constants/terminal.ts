@@ -53,6 +53,10 @@ export type SplitTerminalPaneDetail = {
   telemetrySource?: TerminalPaneSplitSource
   newLeafId?: string
   ptyId?: string
+  /** Requested share of the split axis for the NEW pane (0–1, tmux-style). */
+  ratio?: number
+  /** Requested size in px for the NEW pane along the split axis. */
+  sizePx?: number
 }
 
 export type RequestActiveTerminalPaneSplitDetail = {

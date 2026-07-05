@@ -293,7 +293,8 @@ function insertLeafAfterSource(
   node: TerminalPaneLayoutNode,
   sourceLeafId: string,
   newLeafId: string,
-  direction: TerminalSplitDirection
+  direction: TerminalSplitDirection,
+  firstRatio = 0.5
 ): { node: TerminalPaneLayoutNode; inserted: boolean } {
   if (node.type === 'leaf') {
     if (node.leafId !== sourceLeafId) {
@@ -305,17 +306,17 @@ function insertLeafAfterSource(
         direction,
         first: node,
         second: { type: 'leaf', leafId: newLeafId },
-        ratio: 0.5
+        ratio: firstRatio
       },
       inserted: true
     }
   }
 
-  const first = insertLeafAfterSource(node.first, sourceLeafId, newLeafId, direction)
+  const first = insertLeafAfterSource(node.first, sourceLeafId, newLeafId, direction, firstRatio)
   if (first.inserted) {
     return { node: { ...node, first: first.node }, inserted: true }
   }
-  const second = insertLeafAfterSource(node.second, sourceLeafId, newLeafId, direction)
+  const second = insertLeafAfterSource(node.second, sourceLeafId, newLeafId, direction, firstRatio)
   if (second.inserted) {
     return { node: { ...node, second: second.node }, inserted: true }
   }
@@ -329,7 +330,8 @@ function addSplitLeafToLayout(
   ptyId: string,
   direction: TerminalSplitDirection,
   title?: string | null,
-  activateNewLeaf = true
+  activateNewLeaf = true,
+  newLeafRatio?: number
 ): TerminalLayoutSnapshot {
   const root = layout?.root ?? { type: 'leaf', leafId: sourceLeafId }
   const existingLeafIds = collectLeafIdsInOrder(root)
@@ -337,10 +339,16 @@ function addSplitLeafToLayout(
     activateNewLeaf || !layout?.activeLeafId || !existingLeafIds.includes(layout.activeLeafId)
       ? newLeafId
       : layout.activeLeafId
+  // Why: the layout tree stores the FIRST (existing) child's share, while the
+  // requested ratio describes the new pane — convert once here.
+  const firstRatio =
+    newLeafRatio !== undefined && newLeafRatio > 0 && newLeafRatio < 1
+      ? Math.round((1 - newLeafRatio) * 1000) / 1000
+      : 0.5
   const nextRoot = existingLeafIds.includes(newLeafId)
     ? root
     : (() => {
-        const inserted = insertLeafAfterSource(root, sourceLeafId, newLeafId, direction)
+        const inserted = insertLeafAfterSource(root, sourceLeafId, newLeafId, direction, firstRatio)
         if (inserted.inserted) {
           return inserted.node
         }
@@ -349,7 +357,7 @@ function addSplitLeafToLayout(
           direction,
           first: root,
           second: { type: 'leaf' as const, leafId: newLeafId },
-          ratio: 0.5
+          ratio: firstRatio
         }
       })()
   return {
@@ -1365,6 +1373,8 @@ export function useIpcEvents(): void {
           leafId,
           splitFromLeafId,
           splitDirection,
+          splitRatio,
+          splitSizePx,
           splitTelemetrySource
         }) => {
           try {
@@ -1504,7 +1514,8 @@ export function useIpcEvents(): void {
                     ptyId,
                     splitDirection ?? 'horizontal',
                     title,
-                    shouldActivate
+                    shouldActivate,
+                    splitRatio
                   )
                 )
                 window.dispatchEvent(
@@ -1517,7 +1528,9 @@ export function useIpcEvents(): void {
                       sourcePtyId,
                       telemetrySource: splitTelemetrySource,
                       newLeafId: leafId,
-                      ptyId
+                      ptyId,
+                      ratio: splitRatio,
+                      sizePx: splitSizePx
                     }
                   })
                 )
@@ -1696,12 +1709,14 @@ export function useIpcEvents(): void {
 
     unsubs.push(
       window.api.ui.onSplitTerminal(
-        ({ tabId, paneRuntimeId, direction, command, telemetrySource }) => {
+        ({ tabId, paneRuntimeId, direction, command, ratio, sizePx, telemetrySource }) => {
           const detail: SplitTerminalPaneDetail = {
             tabId,
             paneRuntimeId,
             direction,
             command,
+            ratio,
+            sizePx,
             telemetrySource
           }
           window.dispatchEvent(new CustomEvent(SPLIT_TERMINAL_PANE_EVENT, { detail }))

@@ -84,6 +84,39 @@ describe('buildHeadlessTerminalSplitLayout (headless split persistence)', () => 
     })
   })
 
+  it('stores the first-child share when a new-leaf ratio is requested', () => {
+    const next = buildHeadlessTerminalSplitLayout(undefined, {
+      leafId: 'leaf-b',
+      ptyId: 'pty-b',
+      splitFromLeafId: 'leaf-a',
+      direction: 'vertical',
+      newLeafRatio: 0.3
+    })
+    expect(next.root).toEqual({
+      type: 'split',
+      direction: 'vertical',
+      first: { type: 'leaf', leafId: 'leaf-a' },
+      second: { type: 'leaf', leafId: 'leaf-b' },
+      ratio: 0.7
+    })
+  })
+
+  it('ignores out-of-range new-leaf ratios', () => {
+    const next = buildHeadlessTerminalSplitLayout(undefined, {
+      leafId: 'leaf-b',
+      ptyId: 'pty-b',
+      splitFromLeafId: 'leaf-a',
+      direction: 'vertical',
+      newLeafRatio: 1.5
+    })
+    expect(next.root).toEqual({
+      type: 'split',
+      direction: 'vertical',
+      first: { type: 'leaf', leafId: 'leaf-a' },
+      second: { type: 'leaf', leafId: 'leaf-b' }
+    })
+  })
+
   it('does not collapse — the persisted layout keeps both leaves (regression guard)', () => {
     // Why: the reported bug was the split collapsing back to one pane. After a
     // split, a rebuild reads this persisted layout, so it MUST stay multi-leaf.
