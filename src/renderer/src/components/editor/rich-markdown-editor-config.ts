@@ -2,7 +2,7 @@ import type { Editor, UseEditorOptions } from '@tiptap/react'
 import { handleRichMarkdownCut } from './rich-markdown-cut-handler'
 import { handleRichMarkdownPaste } from './rich-markdown-paste-handler'
 import { encodeRawMarkdownHtmlForRichEditor } from './raw-markdown-html'
-import { normalizeSoftBreaks } from './rich-markdown-normalize'
+import { normalizeEmptyListItems } from './rich-markdown-normalize'
 import { autoFocusRichEditor } from './rich-markdown-auto-focus'
 import {
   syncSlashMenu,
@@ -208,7 +208,7 @@ export function createRichMarkdownEditorConfig(params: EditorConfigParams): UseE
       clearAnnotationTarget()
     },
     onCreate: ({ editor: nextEditor }) => {
-      normalizeSoftBreaks(nextEditor)
+      normalizeEmptyListItems(nextEditor)
       lastCommittedMarkdownRef.current = content
       isInitializingRef.current = false
       cancelAutoFocusRef.current?.()
