@@ -19,6 +19,11 @@ const {
 } = require('../packaged-runtime-node-modules.cjs')
 
 describe('electron-builder config', () => {
+  it('uses a parallel local app identity', () => {
+    expect(electronBuilderConfig.appId).toBe('com.stablyai.orca.dev')
+    expect(electronBuilderConfig.productName).toBe('Orca Dev')
+  })
+
   it('excludes repo-only source trees from app.asar', () => {
     expect(electronBuilderConfig.files).toEqual(
       expect.arrayContaining([
