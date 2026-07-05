@@ -3,16 +3,20 @@ import type { Store } from '../persistence'
 import type { PersistedUIState } from '../../shared/types'
 import { isFeatureInteractionId } from '../../shared/feature-interactions'
 
-let trustedUIRendererWebContentsId: number | null = null
+// Why: multi-window — every live Orca window's top-level webContents is a
+// trusted UI sender. `set(null)` clears the whole set (no-window states).
+const trustedUIRendererWebContentsIds = new Set<number>()
 
 export function setTrustedUIRendererWebContentsId(webContentsId: number | null): void {
-  trustedUIRendererWebContentsId = webContentsId
+  if (webContentsId === null) {
+    trustedUIRendererWebContentsIds.clear()
+    return
+  }
+  trustedUIRendererWebContentsIds.add(webContentsId)
 }
 
 export function clearTrustedUIRendererWebContentsId(webContentsId: number): void {
-  if (trustedUIRendererWebContentsId === webContentsId) {
-    trustedUIRendererWebContentsId = null
-  }
+  trustedUIRendererWebContentsIds.delete(webContentsId)
 }
 
 export function registerUIHandlers(store: Store): void {
@@ -62,8 +66,8 @@ function isTrustedUIRenderer(sender: WebContents): boolean {
   if (sender.isDestroyed() || sender.getType() !== 'window') {
     return false
   }
-  if (trustedUIRendererWebContentsId != null) {
-    return sender.id === trustedUIRendererWebContentsId
+  if (trustedUIRendererWebContentsIds.size > 0) {
+    return trustedUIRendererWebContentsIds.has(sender.id)
   }
 
   const senderUrl = sender.getURL()

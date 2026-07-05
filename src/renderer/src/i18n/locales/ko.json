@@ -34,6 +34,7 @@
   },
   "menu": {
     "checkForUpdates": "업데이트 확인...",
+    "newWindow": "새 창",
     "settings": "설정",
     "exploreOrca": "Orca 둘러보기",
     "gettingStarted": "Orca 시작하기",

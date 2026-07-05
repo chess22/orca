@@ -116,8 +116,9 @@ export class RateLimitService {
   private timer: ReturnType<typeof setInterval> | null = null
   private deferredStartupRefreshTimer: ReturnType<typeof setTimeout> | null = null
   private lastFetchAt = 0
-  private mainWindow: BrowserWindow | null = null
-  private detachWindowListeners: (() => void) | null = null
+  // Why: multi-window — quota updates fan out to every attached window, and
+  // background polling stays active while any of them is focused.
+  private attachedWindows = new Map<BrowserWindow, () => void>()
   private isFetching = false
   private fullFetchQueued = false
   private codexOnlyFetchQueued = false
@@ -209,13 +210,14 @@ export class RateLimitService {
   }
 
   attach(mainWindow: BrowserWindow): void {
-    this.detachWindowListeners?.()
-    this.mainWindow = mainWindow
+    if (this.attachedWindows.has(mainWindow)) {
+      return
+    }
     const refreshOnResume = (): void => {
       void this.refreshIfWindowActive()
     }
-    // Why: attach() can replace windows; the previous closed listener also
-    // captures this service and must be removed with the focus listeners.
+    // Why: the closed listener captures this service and must be removed with
+    // the focus listeners when the window detaches.
     const detachWindowListeners = (): void => {
       mainWindow.removeListener('focus', refreshOnResume)
       mainWindow.removeListener('show', refreshOnResume)
@@ -224,18 +226,13 @@ export class RateLimitService {
     }
     const onClosed = (): void => {
       detachWindowListeners()
-      if (this.detachWindowListeners === detachWindowListeners) {
-        this.detachWindowListeners = null
-      }
-      if (this.mainWindow === mainWindow) {
-        this.mainWindow = null
-      }
+      this.attachedWindows.delete(mainWindow)
     }
     mainWindow.on('focus', refreshOnResume)
     mainWindow.on('show', refreshOnResume)
     mainWindow.on('restore', refreshOnResume)
     mainWindow.on('closed', onClosed)
-    this.detachWindowListeners = detachWindowListeners
+    this.attachedWindows.set(mainWindow, detachWindowListeners)
   }
 
   start(options: { fetchImmediately?: boolean } = {}): void {
@@ -255,9 +252,10 @@ export class RateLimitService {
     this.resolveAndClearFetchIdleWaiters()
     this.stopTimer()
     this.clearDeferredStartupRefresh()
-    this.detachWindowListeners?.()
-    this.detachWindowListeners = null
-    this.mainWindow = null
+    for (const detach of this.attachedWindows.values()) {
+      detach()
+    }
+    this.attachedWindows.clear()
   }
 
   getState(): RateLimitState {
@@ -672,16 +670,20 @@ export class RateLimitService {
   }
 
   private shouldBackgroundPoll(): boolean {
-    if (!this.mainWindow || this.mainWindow.isDestroyed()) {
-      return false
-    }
     // Why: these quota fetches only power in-app UI. When Orca is hidden,
     // minimized, or unfocused, polling only burns CLI/API budget without any
-    // visible benefit. We refresh again as soon as the window becomes active.
-    if (!this.mainWindow.isVisible() || this.mainWindow.isMinimized()) {
-      return false
+    // visible benefit. We refresh again as soon as some window becomes active.
+    for (const window of this.attachedWindows.keys()) {
+      if (
+        !window.isDestroyed() &&
+        window.isVisible() &&
+        !window.isMinimized() &&
+        window.isFocused()
+      ) {
+        return true
+      }
     }
-    return this.mainWindow.isFocused()
+    return false
   }
 
   private async refreshIfWindowActive(): Promise<void> {
@@ -1474,9 +1476,10 @@ export class RateLimitService {
         // ignore — one bad listener must not break the others
       }
     }
-    if (!this.mainWindow || this.mainWindow.isDestroyed()) {
-      return
+    for (const window of this.attachedWindows.keys()) {
+      if (!window.isDestroyed()) {
+        window.webContents.send('rateLimits:update', state)
+      }
     }
-    this.mainWindow.webContents.send('rateLimits:update', state)
   }
 }

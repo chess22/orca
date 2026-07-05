@@ -25,6 +25,7 @@ const isMac = process.platform === 'darwin'
 
 function buildMenuOptions() {
   return {
+    onNewWindow: vi.fn(),
     onCheckForUpdates: vi.fn(),
     onOpenSettings: vi.fn(),
     onOpenSetupGuide: vi.fn(),
@@ -255,9 +256,15 @@ describe('registerAppMenu', () => {
     expect(appLabels).toEqual(
       expect.arrayContaining(['Check for Updates...', `Settings\t${isMac ? '⌘,' : 'Ctrl+,'}`])
     )
-    // Why: on macOS File should NOT duplicate Settings/Exit — those live in
-    // the system app menu. Without global Export, there is no File item left.
-    expect(template.find((item) => item.label === 'File')).toBeUndefined()
+    // Why: on macOS File must NOT duplicate Settings/Exit — those live in the
+    // system app menu. It exists only for New Window (multi-window) + Close.
+    const macFileSubmenu = getSubmenu(template, 'File')
+    const macFileLabels = macFileSubmenu.map((item) => item.label ?? item.role)
+    expect(macFileLabels).toEqual([
+      `New Window\t${isMac ? '⌘⇧N' : 'Ctrl+Shift+N'}`,
+      undefined,
+      'close'
+    ])
     const helpLabels = getSubmenu(template, 'Help').map((item) => item.label)
     expect(helpLabels).toEqual([
       'Report Crash...',

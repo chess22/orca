@@ -169,9 +169,16 @@ describe('updater', () => {
 
   it('does not load or configure electron-updater during dev setup', async () => {
     isMock.dev = true
-    const mainWindow = { webContents: { send: vi.fn() } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: vi.fn(), isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never)
 
@@ -193,9 +200,16 @@ describe('updater', () => {
     })
 
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -224,9 +238,16 @@ describe('updater', () => {
     })
 
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -268,9 +289,16 @@ describe('updater', () => {
       return new Promise(() => {})
     })
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -306,9 +334,16 @@ describe('updater', () => {
     )
     autoUpdaterMock.checkForUpdates.mockImplementation(() => new Promise(() => {}))
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => null })
 
@@ -343,9 +378,16 @@ describe('updater', () => {
     )
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => null })
     checkForUpdatesFromMenu()
@@ -374,9 +416,16 @@ describe('updater', () => {
     fetchNewerReleaseTagsMock.mockResolvedValue({ tags: [], state: 'no-newer' })
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => null })
 
@@ -407,9 +456,16 @@ describe('updater', () => {
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
     const sendMock = vi.fn()
     const setLastUpdateCheckAt = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => Date.now(),
@@ -434,9 +490,16 @@ describe('updater', () => {
     fetchNewerReleaseTagsMock.mockResolvedValue({ tags: [], state: 'no-newer' })
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => null,
@@ -463,9 +526,16 @@ describe('updater', () => {
     fetchNewerReleaseTagsMock.mockResolvedValue({ tags: [], state: 'no-newer' })
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -494,9 +564,16 @@ describe('updater', () => {
       )
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -549,9 +626,16 @@ describe('updater', () => {
       return new Promise(() => {})
     })
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -602,9 +686,16 @@ describe('updater', () => {
       return Promise.resolve(undefined)
     })
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -659,9 +750,16 @@ describe('updater', () => {
       return new Promise(() => {})
     })
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -701,9 +799,16 @@ describe('updater', () => {
       return new Promise(() => {})
     })
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -744,9 +849,16 @@ describe('updater', () => {
       )
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -787,9 +899,16 @@ describe('updater', () => {
     vi.useFakeTimers()
     fetchNewerReleaseTagsMock.mockImplementation(() => new Promise(() => {}))
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -819,9 +938,16 @@ describe('updater', () => {
     )
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -860,9 +986,16 @@ describe('updater', () => {
       )
       .mockResolvedValueOnce(undefined)
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     appMock.getVersion.mockReturnValue('1.4.35')
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => null })
@@ -917,9 +1050,16 @@ describe('updater', () => {
       return Promise.reject(new Error('net::ERR_FAILED'))
     })
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => null })
     checkForUpdatesFromMenu()
@@ -966,9 +1106,16 @@ describe('updater', () => {
         })
     )
     autoUpdaterMock.checkForUpdates.mockImplementation(() => new Promise(() => {}))
-    const mainWindow = { webContents: { send: vi.fn() } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: vi.fn(), isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -985,9 +1132,16 @@ describe('updater', () => {
     appMock.getVersion.mockReturnValue('1.3.17')
     fetchNewerReleaseTagsMock.mockResolvedValue(['v1.3.18-rc.1'])
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
-    const mainWindow = { webContents: { send: vi.fn() } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: vi.fn(), isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     // Why: pass a recent timestamp so the startup background check is
     // deferred. We want to observe the state of the updater *before* any
@@ -1016,9 +1170,16 @@ describe('updater', () => {
     appMock.getVersion.mockReturnValue('1.4.120')
     fetchNewerReleaseTagsMock.mockResolvedValue(['v1.4.121-rc.6.perf'])
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
-    const mainWindow = { webContents: { send: vi.fn() } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: vi.fn(), isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
 
@@ -1043,9 +1204,16 @@ describe('updater', () => {
     fetchNewerReleaseTagsMock.mockResolvedValue({ tags: [], state: 'no-newer' })
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     const setupFeedUrlCalls = autoUpdaterMock.setFeedURL.mock.calls.length
@@ -1074,9 +1242,16 @@ describe('updater', () => {
       .mockResolvedValueOnce(['v1.4.121'])
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
 
@@ -1105,9 +1280,16 @@ describe('updater', () => {
 
   it('leaves the feed URL alone for a normal user-initiated check', async () => {
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
-    const mainWindow = { webContents: { send: vi.fn() } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: vi.fn(), isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     const initialFeedUrlCalls = autoUpdaterMock.setFeedURL.mock.calls.length
@@ -1133,9 +1315,16 @@ describe('updater', () => {
       return new Promise(() => {})
     })
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu, downloadUpdate } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -1161,8 +1350,15 @@ describe('updater', () => {
   it('defers quitAndInstall through the shared main-process entrypoint', async () => {
     vi.useFakeTimers()
 
-    const mainWindow = { webContents: { send: vi.fn() } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: vi.fn(), isDestroyed: () => false }
+    }
     const { setupAutoUpdater, quitAndInstall } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never)
     quitAndInstall()
@@ -1181,8 +1377,15 @@ describe('updater', () => {
     vi.useFakeTimers()
 
     const onBeforeQuit = vi.fn()
-    const mainWindow = { webContents: { send: vi.fn() } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: vi.fn(), isDestroyed: () => false }
+    }
     const { setupAutoUpdater, quitAndInstall } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { onBeforeQuit })
     quitAndInstall()
@@ -1199,8 +1402,15 @@ describe('updater', () => {
   it('ignores duplicate quitAndInstall requests while the shared delay is pending', async () => {
     vi.useFakeTimers()
 
-    const mainWindow = { webContents: { send: vi.fn() } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: vi.fn(), isDestroyed: () => false }
+    }
     const { setupAutoUpdater, quitAndInstall } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never)
     quitAndInstall()
@@ -1221,8 +1431,15 @@ describe('updater', () => {
           finishCleanup = resolve
         })
     )
-    const mainWindow = { webContents: { send: vi.fn() } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: vi.fn(), isDestroyed: () => false }
+    }
     const { setupAutoUpdater, quitAndInstall } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { onBeforeQuit })
     quitAndInstall()
@@ -1241,10 +1458,17 @@ describe('updater', () => {
   })
 
   it('runs a startup check immediately when the last background check is stale', async () => {
-    const mainWindow = { webContents: { send: vi.fn() } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: vi.fn(), isDestroyed: () => false }
+    }
     const setLastUpdateCheckAt = vi.fn()
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => Date.now() - 25 * 60 * 60 * 1000,
@@ -1258,11 +1482,18 @@ describe('updater', () => {
   })
 
   it('starts nudge polling only after updater initialization is complete', async () => {
-    const mainWindow = { webContents: { send: vi.fn() } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: vi.fn(), isDestroyed: () => false }
+    }
     fetchNudgeMock.mockResolvedValue({ id: 'campaign-1', minVersion: '1.0.0' })
     shouldApplyNudgeMock.mockReturnValue(true)
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never)
 
@@ -1281,10 +1512,17 @@ describe('updater', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-04-03T12:00:00Z'))
 
-    const mainWindow = { webContents: { send: vi.fn() } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: vi.fn(), isDestroyed: () => false }
+    }
     const setLastUpdateCheckAt = vi.fn()
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => Date.now() - 23 * 60 * 60 * 1000,
@@ -1305,11 +1543,18 @@ describe('updater', () => {
 
   it('deduplicates rapid focus-triggered daily checks before checking status arrives', async () => {
     let lastUpdateCheckAt = Date.now()
-    const mainWindow = { webContents: { send: vi.fn() } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: vi.fn(), isDestroyed: () => false }
+    }
 
     autoUpdaterMock.checkForUpdates.mockImplementation(() => new Promise(() => {}))
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => lastUpdateCheckAt
@@ -1328,7 +1573,12 @@ describe('updater', () => {
     let lastUpdateCheckAt = Date.now()
     const setLastUpdateCheckAt = vi.fn()
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     autoUpdaterMock.checkForUpdates.mockImplementation(() => {
       autoUpdaterMock.emit('checking-for-update')
@@ -1339,6 +1589,8 @@ describe('updater', () => {
     })
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => lastUpdateCheckAt,
@@ -1371,9 +1623,16 @@ describe('updater', () => {
     })
 
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => null,
@@ -1407,9 +1666,16 @@ describe('updater', () => {
 
     const sendMock = vi.fn()
     const setLastUpdateCheckAt = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => null,
@@ -1439,7 +1705,12 @@ describe('updater', () => {
 
   it('does not leak a nudge marker into a later ordinary update cycle', async () => {
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     fetchNudgeMock.mockResolvedValue({ id: 'campaign-1', minVersion: '1.0.0' })
     shouldApplyNudgeMock.mockReturnValue(true)
@@ -1449,6 +1720,8 @@ describe('updater', () => {
     })
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     // Why: pass a recent timestamp so the normal startup check is deferred,
     // letting the nudge check run without hitting the 'checking' guard.
@@ -1495,7 +1768,12 @@ describe('updater', () => {
 
   it('preserves the pending nudge marker across a later background check', async () => {
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     autoUpdaterMock.checkForUpdates.mockImplementation(() => {
       autoUpdaterMock.emit('checking-for-update')
@@ -1503,6 +1781,8 @@ describe('updater', () => {
     })
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => null,
@@ -1526,7 +1806,12 @@ describe('updater', () => {
 
   it('does not trigger a nudge check while an updater check is already in progress', async () => {
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     fetchNudgeMock.mockResolvedValue({ id: 'campaign-1', minVersion: '1.0.0' })
     shouldApplyNudgeMock.mockReturnValue(true)
@@ -1537,6 +1822,8 @@ describe('updater', () => {
     })
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => null,
@@ -1558,13 +1845,20 @@ describe('updater', () => {
     vi.setSystemTime(new Date('2026-04-12T12:00:00Z'))
 
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     fetchNudgeMock.mockResolvedValue({ id: 'campaign-1', minVersion: '1.0.0' })
     shouldApplyNudgeMock.mockReturnValue(true)
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never)
 
@@ -1590,7 +1884,12 @@ describe('updater', () => {
 
   it('clears pending nudge campaign when the follow-up check ends in not-available', async () => {
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
     const setPendingUpdateNudgeId = vi.fn()
     const setDismissedUpdateNudgeId = vi.fn()
 
@@ -1602,6 +1901,8 @@ describe('updater', () => {
     })
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => Date.now(),
@@ -1628,7 +1929,12 @@ describe('updater', () => {
   it('clears pending nudge campaign when a silent follow-up check settles not-available', async () => {
     vi.useFakeTimers()
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
     let pendingNudgeId: string | null = null
     const setPendingUpdateNudgeId = vi.fn((id: string | null) => {
       pendingNudgeId = id
@@ -1641,6 +1947,8 @@ describe('updater', () => {
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => Date.now(),
@@ -1665,7 +1973,12 @@ describe('updater', () => {
 
   it('auto-dismisses nudge campaign when the follow-up check errors out', async () => {
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
     const setPendingUpdateNudgeId = vi.fn()
     const setDismissedUpdateNudgeId = vi.fn()
 
@@ -1677,6 +1990,8 @@ describe('updater', () => {
     })
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => Date.now(),
@@ -1700,7 +2015,12 @@ describe('updater', () => {
 
   it('does not preserve a pending nudge for ordinary manifest transition errors', async () => {
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
     const setPendingUpdateNudgeId = vi.fn()
     const setDismissedUpdateNudgeId = vi.fn()
     const missingManifest = new Error(
@@ -1715,6 +2035,8 @@ describe('updater', () => {
     })
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => Date.now(),
@@ -1733,7 +2055,12 @@ describe('updater', () => {
 
   it('moves pending nudge to dismissed when dismissNudge is called', async () => {
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
     const setPendingUpdateNudgeId = vi.fn()
     const setDismissedUpdateNudgeId = vi.fn()
 
@@ -1745,6 +2072,8 @@ describe('updater', () => {
     })
 
     const { setupAutoUpdater, dismissNudge } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => Date.now(),
@@ -1774,9 +2103,15 @@ describe('updater', () => {
     vi.stubGlobal('process', { ...process, platform: 'win32' })
 
     const { setupAutoUpdater } = await import('./updater')
-
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never)
 
@@ -1791,9 +2126,15 @@ describe('updater', () => {
     vi.stubGlobal('process', { ...process, platform: 'darwin' })
 
     const { setupAutoUpdater } = await import('./updater')
-
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never)
 
@@ -1812,8 +2153,14 @@ describe('updater', () => {
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
-
-    const mainWindow = { webContents: { send: vi.fn() } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: vi.fn(), isDestroyed: () => false }
+    }
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
 
     // Setup pins the default generic feed; resolver only runs per check.
@@ -1846,8 +2193,14 @@ describe('updater', () => {
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
-
-    const mainWindow = { webContents: { send: vi.fn() } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: vi.fn(), isDestroyed: () => false }
+    }
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
 
     checkForUpdatesFromMenu()
@@ -1870,8 +2223,14 @@ describe('updater', () => {
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
-
-    const mainWindow = { webContents: { send: vi.fn() } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: vi.fn(), isDestroyed: () => false }
+    }
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
 
     checkForUpdatesFromMenu()
@@ -1901,9 +2260,16 @@ describe('updater', () => {
     })
 
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     const feedCallsBeforeCheck = autoUpdaterMock.setFeedURL.mock.calls.length
@@ -1954,9 +2320,16 @@ describe('updater', () => {
     })
 
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
 
@@ -1993,9 +2366,16 @@ describe('updater', () => {
     })
     const setLastUpdateCheckAt = vi.fn()
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => null,
@@ -2048,9 +2428,16 @@ describe('updater', () => {
     })
     const setLastUpdateCheckAt = vi.fn()
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => null,
@@ -2091,9 +2478,16 @@ describe('updater', () => {
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
     const setLastUpdateCheckAt = vi.fn()
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => null,
@@ -2137,9 +2531,16 @@ describe('updater', () => {
     })
     const setDismissedUpdateNudgeId = vi.fn()
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => Date.now(),
@@ -2202,9 +2603,16 @@ describe('updater', () => {
     })
     const setDismissedUpdateNudgeId = vi.fn()
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => Date.now(),
@@ -2269,9 +2677,16 @@ describe('updater', () => {
     })
     const setDismissedUpdateNudgeId = vi.fn()
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, dismissNudge } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => Date.now(),
@@ -2341,8 +2756,15 @@ describe('updater', () => {
     })
 
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -2385,8 +2807,15 @@ describe('updater', () => {
     })
 
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -2429,8 +2858,15 @@ describe('updater', () => {
     })
 
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => null })
 
@@ -2477,8 +2913,15 @@ describe('updater', () => {
     })
 
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => lastUpdateCheckAt })
     checkForUpdatesFromMenu()
@@ -2533,8 +2976,15 @@ describe('updater', () => {
     })
 
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -2579,8 +3029,15 @@ describe('updater', () => {
 
     const sendMock = vi.fn()
     const setLastUpdateCheckAt = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => null,
@@ -2627,8 +3084,15 @@ describe('updater', () => {
     })
 
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -2674,8 +3138,15 @@ describe('updater', () => {
     })
 
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => null })
 
@@ -2728,8 +3199,15 @@ describe('updater', () => {
     })
 
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -2784,8 +3262,15 @@ describe('updater', () => {
 
     const sendMock = vi.fn()
     const setLastUpdateCheckAt = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
     const { setupAutoUpdater } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => null,
@@ -2838,8 +3323,15 @@ describe('updater', () => {
 
     const sendMock = vi.fn()
     const setLastUpdateCheckAt = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => Date.now(),
@@ -2893,8 +3385,15 @@ describe('updater', () => {
 
     const sendMock = vi.fn()
     const setLastUpdateCheckAt = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, {
       getLastUpdateCheckAt: () => Date.now(),
@@ -2939,8 +3438,15 @@ describe('updater', () => {
     })
 
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -2969,8 +3475,14 @@ describe('updater', () => {
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
-
-    const mainWindow = { webContents: { send: vi.fn() } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: vi.fn(), isDestroyed: () => false }
+    }
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
 
     checkForUpdatesFromMenu()
@@ -2996,8 +3508,14 @@ describe('updater', () => {
     autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
-
-    const mainWindow = { webContents: { send: vi.fn() } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: vi.fn(), isDestroyed: () => false }
+    }
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
 
     checkForUpdatesFromMenu({ includePrerelease: true })

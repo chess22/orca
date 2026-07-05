@@ -19,11 +19,13 @@ import { StatsCollector, initStatsPath } from './stats/collector'
 import { ClaudeUsageStore, initClaudeUsagePath } from './claude-usage/store'
 import { CodexUsageStore, initCodexUsagePath } from './codex-usage/store'
 import { OpenCodeUsageStore, initOpenCodeUsagePath } from './opencode-usage/store'
-import { killAllPty } from './ipc/pty'
+import { killAllPty, sendPtyEventToOwnerWindow } from './ipc/pty'
 import { initDaemonPtyProvider, disconnectDaemon, shutdownDaemon } from './daemon/daemon-init'
 import { closeAllWatchers } from './ipc/filesystem-watcher'
 import { disposeWorktreeBaseDirectoryWatchers } from './ipc/worktree-base-directory-watcher'
 import { registerCoreHandlers } from './ipc/register-core-handlers'
+import { removeTrustedBrowserRendererWebContentsId } from './ipc/browser'
+import { removeTrustedClipboardRendererWebContentsId } from './window/clipboard-ipc-handlers'
 import { initObservability, shutdownObservability } from './observability'
 import { startSpan } from './observability/tracer'
 import { registerMobileHandlers } from './ipc/mobile'
@@ -109,6 +111,16 @@ import {
   ensureAutoUpdaterConfigured
 } from './window/attach-main-window-services'
 import { createMainWindow, loadMainWindow } from './window/createMainWindow'
+import {
+  broadcastToOrcaWindows,
+  getLastFocusedOrcaWindow,
+  getNextOrcaWindowSlot,
+  getOrcaWindowByWebContentsId,
+  getOrcaWindowCount,
+  getOrcaWindows,
+  getPrimaryOrcaWindow,
+  registerOrcaWindow
+} from './window/orca-window-registry'
 import { createSystemTray, destroySystemTray } from './tray/system-tray'
 import { focusExistingMainWindow } from './window/focus-existing-window'
 import { CodexAccountService } from './codex-accounts/service'
@@ -187,7 +199,6 @@ import { CliInstaller } from './cli/cli-installer'
 import { installLinuxBareOrcaDispatcher } from './cli/linux-bare-orca-dispatcher'
 import { selfHealRuntimeEnvironmentFocus } from './runtime-environment-focus-self-heal'
 
-let mainWindow: BrowserWindow | null = null
 /** Whether a manual app.quit() (Cmd+Q, etc.) is in progress. Shared with the
  *  window close handler so it can tell the renderer to skip the running-process
  *  confirmation dialog and proceed directly to buffer capture + close. */
@@ -440,8 +451,8 @@ startMainThreadChurnProbe()
 function focusExistingWindow(): void {
   focusExistingMainWindow({
     app,
-    getWindow: () => mainWindow,
-    openWindow: openMainWindow,
+    getWindow: () => getLastFocusedOrcaWindow(),
+    openWindow: openOrcaWindow,
     warn: console.warn
   })
 }
@@ -708,23 +719,24 @@ function prepareCodexRuntimeHomeForLaunch(target?: CodexAccountSelectionTarget):
 }
 
 // Why: tray "Open Orca" / left-click restores the window the close handler may
-// have hidden to the tray; if the window was fully torn down, reopen it the
+// have hidden to the tray; if every window was fully torn down, reopen one the
 // same way macOS dock re-activation does (guarded against update relaunch).
 function showMainWindowFromTray(): void {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore()
+  const window = getLastFocusedOrcaWindow()
+  if (window && !window.isDestroyed()) {
+    if (window.isMinimized()) {
+      window.restore()
     }
-    mainWindow.show()
-    mainWindow.focus()
+    window.show()
+    window.focus()
     return
   }
   if (!isQuittingForUpdate()) {
-    openMainWindow()
+    openOrcaWindow()
   }
 }
 
-function openMainWindow(): BrowserWindow {
+function openOrcaWindow(): BrowserWindow {
   logStartupMilestone('open-main-window-start')
   if (!store) {
     throw new Error('Store must be initialized before opening the main window')
@@ -786,7 +798,18 @@ function openMainWindow(): BrowserWindow {
     })
   }
 
+  // Why: the slot is the window's stable persistence identity (bounds,
+  // session partition); reserve it before construction so createMainWindow can
+  // restore that slot's saved geometry.
+  const windowSlot = getNextOrcaWindowSlot()
+  const cascadeSource = getLastFocusedOrcaWindow()
   const window = createMainWindow(store, {
+    windowSlot,
+    cascadeFromBounds:
+      cascadeSource && !cascadeSource.isDestroyed() ? cascadeSource.getBounds() : null,
+    onNewWindow: () => {
+      openOrcaWindow()
+    },
     getIsQuitting: () => isQuitting,
     onQuitAborted: () => {
       isQuitting = false
@@ -817,19 +840,22 @@ function openMainWindow(): BrowserWindow {
         reason: details.reason,
         expectedTeardown: getExpectedTeardownScope(webContentsId)
       }),
-    onRendererRecoveryExhausted: ({ details, recentRecoveryCount }) => {
+    onRendererRecoveryExhausted: ({ details, webContentsId, recentRecoveryCount }) => {
       recordCrashBreadcrumb('renderer_recovery_circuit_breaker_open', {
         reason: details.reason,
         exitCode: details.exitCode ?? null,
         recentRecoveryCount
       })
-      void presentRendererRecoveryPrompt(recentRecoveryCount)
+      void presentRendererRecoveryPrompt(
+        recentRecoveryCount,
+        getOrcaWindowByWebContentsId(webContentsId)
+      )
     },
     deferLoad: true,
     title: devInstanceIdentity.name,
     getKeybindings: () => keybindings?.getOverrides(),
     onBeforeReload: ({ ignoreCache, webContentsId }) => {
-      if (mainWindow?.webContents.id === webContentsId) {
+      if (getOrcaWindowByWebContentsId(webContentsId)) {
         markExpectedRendererReload(webContentsId)
       }
       recordCrashBreadcrumb('manual_reload_requested', { ignoreCache })
@@ -841,6 +867,7 @@ function openMainWindow(): BrowserWindow {
       recordCrashBreadcrumb('renderer_recovery_reload')
     }
   })
+  registerOrcaWindow(window, windowSlot)
   recordCrashBreadcrumb('main_window_created')
   logStartupMilestone('window-created')
   // Why: new Tray() is a synchronous Shell_NotifyIcon call that can block for
@@ -862,9 +889,9 @@ function openMainWindow(): BrowserWindow {
       appIcon: store.getSettings().appIcon,
       onOpen: showMainWindowFromTray,
       onQuit: () => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
+        if (getOrcaWindowCount() > 0) {
           // Why: a real quit can still surface renderer save/discard prompts;
-          // the window must be visible if a hidden-to-tray session vetoes
+          // a window must be visible if a hidden-to-tray session vetoes
           // shutdown.
           showMainWindowFromTray()
         }
@@ -931,7 +958,9 @@ function openMainWindow(): BrowserWindow {
       }
     }
   )
-  automations.setWebContents(window.webContents)
+  // Why: automations dispatch through a single renderer; keep them bound to
+  // the primary (lowest-slot) window across window opens/closes.
+  automations.setWebContents(getPrimaryOrcaWindow()?.webContents ?? window.webContents)
   automations.start()
   attachMainWindowServices(
     window,
@@ -960,30 +989,32 @@ function openMainWindow(): BrowserWindow {
   // compete with first paint.
   rateLimits.start({ fetchImmediately: false })
   window.on('closed', () => {
-    if (mainWindow === window) {
-      mainWindow = null
-    }
     clearExpectedRendererReload(rendererWebContentsId)
-    automations?.setWebContents(null)
-    // Why: detach the agent hook listener on window close so the server
-    // never fires into a destroyed webContents during the gap before
-    // reopen (e.g. macOS dock re-activation). This also ensures the
-    // replay-loop through lastStatusByPaneKey runs only on deliberate
-    // window recreations instead of stacking on top of stale listeners.
-    agentHookServer.setListener(null)
-    agentHookServer.setPaneStatusClearListener(null)
-    setMigrationUnsupportedPtyListener(null)
-    // Why: any running synthesized-title spinner timer would fire into a
-    // destroyed webContents; stop it here instead of deferring to per-pane
-    // teardown, which may never run for restored-but-never-torn-down panes
-    // when the window goes away.
-    stopAllSyntheticTitleSpinners()
+    removeTrustedBrowserRendererWebContentsId(rendererWebContentsId)
+    removeTrustedClipboardRendererWebContentsId(rendererWebContentsId)
+    // Why: automations dispatch through one renderer — rebind to the surviving
+    // primary window, or drop the reference when the last window closes.
+    automations?.setWebContents(getPrimaryOrcaWindow()?.webContents ?? null)
+    if (getOrcaWindowCount() === 0) {
+      // Why: detach the agent hook listener when the LAST window closes so the
+      // server never fires into destroyed webContents during the gap before
+      // reopen (e.g. macOS dock re-activation). This also ensures the
+      // replay-loop through lastStatusByPaneKey runs only on deliberate
+      // window recreations instead of stacking on top of stale listeners.
+      agentHookServer.setListener(null)
+      agentHookServer.setPaneStatusClearListener(null)
+      setMigrationUnsupportedPtyListener(null)
+      // Why: any running synthesized-title spinner timer would fire into a
+      // destroyed webContents; stop it here instead of deferring to per-pane
+      // teardown, which may never run for restored-but-never-torn-down panes
+      // when the last window goes away.
+      stopAllSyntheticTitleSpinners()
+    }
   })
-  mainWindow = window
   window.on('show', resumeSyntheticTitleSpinnerTimer)
   window.on('restore', resumeSyntheticTitleSpinnerTimer)
-  window.on('hide', stopSyntheticTitleSpinnerTimer)
-  window.on('minimize', stopSyntheticTitleSpinnerTimer)
+  window.on('hide', stopSyntheticTitleSpinnerTimerIfNoVisibleWindow)
+  window.on('minimize', stopSyntheticTitleSpinnerTimerIfNoVisibleWindow)
   agentHookServer.setListener(
     ({
       paneKey,
@@ -997,13 +1028,15 @@ function openMainWindow(): BrowserWindow {
       providerSession,
       isReplay
     }) => {
-      if (mainWindow?.isDestroyed()) {
+      if (getOrcaWindowCount() === 0) {
         return
       }
       maybeAutoRenameBranchOnFirstWorkFromHook({ paneKey, tabId, worktreeId, payload, isReplay })
       const orchestration = runtime?.getAgentStatusOrchestrationContextForPaneKey(paneKey)
       const terminalHandle = runtime?.getAgentStatusTerminalHandleForPaneKey(paneKey)
-      mainWindow?.webContents.send('agentStatus:set', {
+      // Why: agent status powers the worktree sidebar, which every window
+      // renders — broadcast instead of targeting a single renderer.
+      broadcastToOrcaWindows('agentStatus:set', {
         ...payload,
         paneKey,
         ...(launchToken ? { launchToken } : {}),
@@ -1039,19 +1072,13 @@ function openMainWindow(): BrowserWindow {
     }
   )
   agentHookServer.setPaneStatusClearListener((paneKey) => {
-    if (mainWindow?.isDestroyed()) {
-      return
-    }
-    mainWindow?.webContents.send('agentStatus:clear', { paneKey })
+    broadcastToOrcaWindows('agentStatus:clear', { paneKey })
   })
   setMigrationUnsupportedPtyListener((event) => {
-    if (mainWindow?.isDestroyed()) {
-      return
-    }
     if (event.type === 'set') {
-      mainWindow?.webContents.send('agentStatus:migrationUnsupported', event.entry)
+      broadcastToOrcaWindows('agentStatus:migrationUnsupported', event.entry)
     } else {
-      mainWindow?.webContents.send('agentStatus:migrationUnsupportedClear', {
+      broadcastToOrcaWindows('agentStatus:migrationUnsupportedClear', {
         ptyId: event.ptyId
       })
     }
@@ -1063,30 +1090,40 @@ function openMainWindow(): BrowserWindow {
 
 function sendOpenFeatureTour(targetWindow?: BrowserWindow | null): void {
   const webContents =
-    targetWindow && !targetWindow.isDestroyed() ? targetWindow.webContents : mainWindow?.webContents
+    targetWindow && !targetWindow.isDestroyed()
+      ? targetWindow.webContents
+      : getLastFocusedOrcaWindow()?.webContents
   webContents?.send('ui:openFeatureTour')
 }
 
 function sendOpenSetupGuide(targetWindow?: BrowserWindow | null): void {
   const webContents =
-    targetWindow && !targetWindow.isDestroyed() ? targetWindow.webContents : mainWindow?.webContents
+    targetWindow && !targetWindow.isDestroyed()
+      ? targetWindow.webContents
+      : getLastFocusedOrcaWindow()?.webContents
   webContents?.send('ui:openSetupGuide')
 }
 
 function sendOpenCrashReport(targetWindow?: BrowserWindow | null): void {
   const webContents =
-    targetWindow && !targetWindow.isDestroyed() ? targetWindow.webContents : mainWindow?.webContents
+    targetWindow && !targetWindow.isDestroyed()
+      ? targetWindow.webContents
+      : getLastFocusedOrcaWindow()?.webContents
   webContents?.send('ui:openCrashReport')
 }
 
 // Why: when the renderer crash-loops, the breaker stops auto-reloading and the
 // window is left blank. The renderer is dead, so a main-process dialog is the
 // only surface that can offer a retry or a clean quit instead of a silent loop.
-async function presentRendererRecoveryPrompt(recentRecoveryCount: number): Promise<void> {
+async function presentRendererRecoveryPrompt(
+  recentRecoveryCount: number,
+  crashedWindow?: BrowserWindow | null
+): Promise<void> {
   if (isQuitting) {
     return
   }
-  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined
+  const candidate = crashedWindow ?? getLastFocusedOrcaWindow()
+  const window = candidate && !candidate.isDestroyed() ? candidate : undefined
   const options = {
     type: 'error' as const,
     buttons: ['Reload', 'Quit'],
@@ -1099,9 +1136,9 @@ async function presentRendererRecoveryPrompt(recentRecoveryCount: number): Promi
   const { response } = window
     ? await dialog.showMessageBox(window, options)
     : await dialog.showMessageBox(options)
-  if (response === 0 && mainWindow && !mainWindow.isDestroyed()) {
+  if (response === 0 && window && !window.isDestroyed()) {
     recordCrashBreadcrumb('renderer_recovery_manual_retry')
-    loadMainWindow(mainWindow)
+    loadMainWindow(window)
   } else if (response === 1) {
     isQuitting = true
     app.quit()
@@ -1455,7 +1492,7 @@ registerPaneKeyTeardownListener((paneKey) => {
 })
 
 function sendSyntheticTitle(ptyId: string, data: string, options: { force?: boolean } = {}): void {
-  if (!mainWindow || mainWindow.isDestroyed()) {
+  if (getOrcaWindowCount() === 0) {
     return
   }
   // Why: repeated working-spinner frames are decorative and can arrive every
@@ -1468,15 +1505,14 @@ function sendSyntheticTitle(ptyId: string, data: string, options: { force?: bool
   ) {
     return
   }
-  mainWindow.webContents.send('pty:data', { id: ptyId, data })
+  // Why: multi-window — synthesized title frames ride the pty:data channel, so
+  // they must reach the window whose renderer owns the PTY.
+  sendPtyEventToOwnerWindow(ptyId, 'pty:data', { id: ptyId, data })
 }
 
 function isSyntheticTitleWindowVisible(): boolean {
-  return (
-    mainWindow !== null &&
-    !mainWindow.isDestroyed() &&
-    mainWindow.isVisible() &&
-    !mainWindow.isMinimized()
+  return getOrcaWindows().some(
+    (window) => !window.isDestroyed() && window.isVisible() && !window.isMinimized()
   )
 }
 
@@ -1546,6 +1582,14 @@ function ensureSyntheticTitleSpinnerTimer(): void {
 
 function resumeSyntheticTitleSpinnerTimer(): void {
   ensureSyntheticTitleSpinnerTimer()
+}
+
+// Why: multi-window — hiding/minimizing one window must not stop spinner
+// frames for terminals visible in another window.
+function stopSyntheticTitleSpinnerTimerIfNoVisibleWindow(): void {
+  if (!isSyntheticTitleWindowVisible()) {
+    stopSyntheticTitleSpinnerTimer()
+  }
 }
 
 function driveSyntheticTitleFromHook(
@@ -1933,15 +1977,18 @@ app.whenReady().then(async () => {
       ensureAutoUpdaterConfigured()
       return checkForUpdatesFromMenu(options)
     },
+    onNewWindow: () => {
+      openOrcaWindow()
+    },
     onBeforeReload: ({ ignoreCache, webContentsId }) => {
-      if (mainWindow?.webContents.id === webContentsId) {
+      if (getOrcaWindowByWebContentsId(webContentsId)) {
         markExpectedRendererReload(webContentsId)
       }
       recordCrashBreadcrumb('manual_reload_requested', { ignoreCache })
     },
     onOpenSettings: () => {
       recordCrashBreadcrumb('settings_opened')
-      mainWindow?.webContents.send('ui:openSettings')
+      getLastFocusedOrcaWindow()?.webContents.send('ui:openSettings')
     },
     onOpenSetupGuide: (targetWindow) => {
       recordCrashBreadcrumb('setup_guide_opened')
@@ -1962,19 +2009,19 @@ app.whenReady().then(async () => {
       sendOpenFeatureTour(targetBrowserWindow)
     },
     onZoomIn: () => {
-      mainWindow?.webContents.send('terminal:zoom', 'in')
+      getLastFocusedOrcaWindow()?.webContents.send('terminal:zoom', 'in')
     },
     onZoomOut: () => {
-      mainWindow?.webContents.send('terminal:zoom', 'out')
+      getLastFocusedOrcaWindow()?.webContents.send('terminal:zoom', 'out')
     },
     onZoomReset: () => {
-      mainWindow?.webContents.send('terminal:zoom', 'reset')
+      getLastFocusedOrcaWindow()?.webContents.send('terminal:zoom', 'reset')
     },
     onToggleLeftSidebar: () => {
-      mainWindow?.webContents.send('ui:toggleLeftSidebar')
+      getLastFocusedOrcaWindow()?.webContents.send('ui:toggleLeftSidebar')
     },
     onToggleRightSidebar: () => {
-      mainWindow?.webContents.send('ui:toggleRightSidebar')
+      getLastFocusedOrcaWindow()?.webContents.send('ui:toggleRightSidebar')
     },
     onToggleAppearance: (key) => {
       if (!store) {
@@ -1985,7 +2032,7 @@ app.whenReady().then(async () => {
         // (ui:set/ui:get), not settings. The renderer owns the authoritative
         // toggle logic (it knows the current value and persists it back), so
         // we forward the event and let it flip + store.
-        mainWindow?.webContents.send('ui:toggleStatusBar')
+        getLastFocusedOrcaWindow()?.webContents.send('ui:toggleStatusBar')
         return
       }
       const current = store.getSettings()
@@ -2136,7 +2183,7 @@ app.whenReady().then(async () => {
   // spawns are gated inside registerPtyHandlers so RPC can bind immediately
   // without racing the daemon provider swap.
   const [win] = await Promise.all([
-    Promise.resolve(openMainWindow()),
+    Promise.resolve(openOrcaWindow()),
     runtimeRpc.start().catch((error) => {
       console.error('[runtime] Failed to start local RPC transport:', error)
     })
@@ -2162,8 +2209,8 @@ app.whenReady().then(async () => {
     // Don't re-open a window while Squirrel's ShipIt is replacing the .app
     // bundle.  Without this guard the old version gets resurrected and the
     // update never applies.
-    if (BrowserWindow.getAllWindows().length === 0 && !isQuittingForUpdate()) {
-      openMainWindow()
+    if (getOrcaWindowCount() === 0 && !isQuittingForUpdate()) {
+      openOrcaWindow()
     }
   })
 })

@@ -34,6 +34,7 @@ export type KeybindingActionId =
   | 'worktree.navigateDown'
   | 'app.settings'
   | 'app.forceReload'
+  | 'window.new'
   | 'workspace.create'
   | 'workspace.rename'
   | 'workspace.delete'
@@ -246,12 +247,23 @@ export const KEYBINDING_DEFINITIONS: readonly KeybindingDefinition[] = [
     defaultBindings: platformBindings(['Mod+Shift+ArrowDown'])
   },
   {
+    id: 'window.new',
+    title: 'New Window',
+    group: 'Global',
+    scope: 'global',
+    searchKeywords: ['shortcut', 'global', 'window', 'new window', 'open window'],
+    // Why: Mod+Shift+N follows the platform convention (VS Code, Chrome). It
+    // previously aliased workspace.create, which keeps Mod+N as its default.
+    defaultBindings: platformBindings(['Mod+Shift+N']),
+    conflictGroup: 'menu'
+  },
+  {
     id: 'workspace.create',
     title: 'Create worktree',
     group: 'Global',
     scope: 'global',
     searchKeywords: ['shortcut', 'global', 'worktree', 'create', 'new workspace'],
-    defaultBindings: platformBindings(['Mod+N', 'Mod+Shift+N'])
+    defaultBindings: platformBindings(['Mod+N'])
   },
   {
     id: 'workspace.rename',

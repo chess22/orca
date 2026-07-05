@@ -34,7 +34,9 @@ import {
   type BrowserSetAnnotationViewportBridgeArgs
 } from '../../shared/browser-annotation-viewport-bridge'
 
-let trustedBrowserRendererWebContentsId: number | null = null
+// Why: multi-window — every live Orca window's top-level webContents is a
+// trusted browser-IPC sender. `set(null)` clears the whole set.
+const trustedBrowserRendererWebContentsIds = new Set<number>()
 let agentBrowserBridgeRef: AgentBrowserBridge | null = null
 
 // Why: CLI-driven tab creation must wait until the renderer mounts the webview
@@ -139,7 +141,15 @@ export function waitForAnyTabRegistration(timeoutMs = 8_000): Promise<void> {
 }
 
 export function setTrustedBrowserRendererWebContentsId(webContentsId: number | null): void {
-  trustedBrowserRendererWebContentsId = webContentsId
+  if (webContentsId === null) {
+    trustedBrowserRendererWebContentsIds.clear()
+    return
+  }
+  trustedBrowserRendererWebContentsIds.add(webContentsId)
+}
+
+export function removeTrustedBrowserRendererWebContentsId(webContentsId: number): void {
+  trustedBrowserRendererWebContentsIds.delete(webContentsId)
 }
 
 export function setAgentBrowserBridgeRef(bridge: AgentBrowserBridge | null): void {
@@ -150,8 +160,8 @@ function isTrustedBrowserRenderer(sender: Electron.WebContents): boolean {
   if (sender.isDestroyed() || sender.getType() !== 'window') {
     return false
   }
-  if (trustedBrowserRendererWebContentsId != null) {
-    return sender.id === trustedBrowserRendererWebContentsId
+  if (trustedBrowserRendererWebContentsIds.size > 0) {
+    return trustedBrowserRendererWebContentsIds.has(sender.id)
   }
 
   const senderUrl = sender.getURL()

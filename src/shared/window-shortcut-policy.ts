@@ -38,6 +38,7 @@ export type WindowShortcutAction =
   | { type: 'openQuickOpen' }
   | { type: 'toggleQuickCommandsMenu' }
   | { type: 'openNewWorkspace' }
+  | { type: 'newWindow' }
   | { type: 'deleteCurrentWorkspace' }
   | { type: 'openWorkspaceBoard' }
   | { type: 'openTasks' }
@@ -235,6 +236,12 @@ export function resolveWindowShortcutAction(
     return { type: 'openNewWorkspace' }
   }
 
+  // Why: checked after workspace.create so a user override that rebinds
+  // workspace.create onto Mod+Shift+N keeps winning over the default here.
+  if (actionMatches('window.new', input, platform, keybindings, options)) {
+    return { type: 'newWindow' }
+  }
+
   if (actionMatches('workspace.delete', input, platform, keybindings, options)) {
     return { type: 'deleteCurrentWorkspace' }
   }
@@ -318,6 +325,8 @@ export function getWindowShortcutActionId(action: WindowShortcutAction): Keybind
       return 'tab.openQuickCommandsMenu'
     case 'openNewWorkspace':
       return 'workspace.create'
+    case 'newWindow':
+      return 'window.new'
     case 'deleteCurrentWorkspace':
       return 'workspace.delete'
     case 'openWorkspaceBoard':

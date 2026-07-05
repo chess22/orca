@@ -201,6 +201,7 @@ import {
   SSH_SESSION_EXPIRED_ERROR
 } from '../providers/ssh-pty-provider'
 import { _resetWslCachesForTests, _setWslCachesForTests } from '../wsl'
+import { resetOrcaWindowRegistryForTesting } from '../window/orca-window-registry'
 
 const POWERSHELL_OSC133_ARGS = [
   '-NoLogo',
@@ -231,14 +232,24 @@ function makeDeferred() {
   return { promise, resolve }
 }
 
+// Why: multi-window — pty.ts tracks per-webContents-id sweep/lifecycle
+// registration state at module scope with no test-reset hook, so every test
+// must hand registerPtyHandlers a never-before-seen webContents.id or the
+// dedup guards silently skip re-attaching listeners for the shared stub below.
+let nextTestWebContentsId = 1
+
 describe('registerPtyHandlers', () => {
   const handlers = new Map<string, (_event: unknown, args: unknown) => unknown>()
   const mainWindow = {
+    id: 1,
+    on: vi.fn(),
     isDestroyed: () => false,
     webContents: {
+      id: 1,
       on: vi.fn(),
       send: vi.fn(),
-      removeListener: vi.fn()
+      removeListener: vi.fn(),
+      isDestroyed: () => false
     }
   }
   const mainWindowIpcEvent = { sender: mainWindow.webContents }
@@ -314,9 +325,17 @@ describe('registerPtyHandlers', () => {
     clearMigrationUnsupportedPtyMock.mockReset()
     clearMigrationUnsupportedPtysForPaneKeyMock.mockReset()
     clearPaneKeyAliasesForPtyMock.mockReset()
+    mainWindow.on.mockReset()
     mainWindow.webContents.on.mockReset()
     mainWindow.webContents.send.mockReset()
     mainWindow.webContents.removeListener.mockReset()
+    // Why: multi-window — the registry and pty.ts's per-webContents-id sweep
+    // guards are module-scoped singletons with no full-state reset hook. A
+    // fresh id every test keeps the sweep/lifecycle-reset dedup guards from
+    // treating the shared mainWindow stub as "already attached" leftover from
+    // a previous test.
+    resetOrcaWindowRegistryForTesting()
+    mainWindow.webContents.id = nextTestWebContentsId++
 
     // Why: mirror real Electron — ipcMain.handle throws on a duplicate channel
     // unless removeHandler cleared it first. This catches a re-registration
@@ -8218,10 +8237,15 @@ describe('registerPtyHandlers', () => {
     )
   })
 
-  it('removes the previous orphan-cleanup listener from its original webContents', () => {
+  // Why: multi-window — the orphan sweep now attaches per-webContents-id
+  // instead of migrating a single tracked listener, so registering a second,
+  // distinct window must NOT tear down the first window's listener (each live
+  // Orca window keeps its own sweep for as long as it stays open).
+  it("keeps a window's orphan-cleanup listener attached when a second window registers", () => {
     const firstWindow = {
       isDestroyed: () => false,
       webContents: {
+        id: nextTestWebContentsId++,
         on: vi.fn(),
         send: vi.fn(),
         removeListener: vi.fn()
@@ -8230,6 +8254,7 @@ describe('registerPtyHandlers', () => {
     const secondWindow = {
       isDestroyed: () => false,
       webContents: {
+        id: nextTestWebContentsId++,
         on: vi.fn(),
         send: vi.fn(),
         removeListener: vi.fn()
@@ -8242,6 +8267,9 @@ describe('registerPtyHandlers', () => {
     )?.[1] as (() => void) | undefined
     expect(didFinishLoad).toBeTypeOf('function')
 
+    // Why: the sweep only attaches for LocalPtyProvider; swapping to a
+    // non-local provider before the second window registers means it gets no
+    // sweep listener of its own — this must not affect the first window.
     setLocalPtyProvider({
       spawn: vi.fn(),
       write: vi.fn(),
@@ -8255,10 +8283,7 @@ describe('registerPtyHandlers', () => {
     } as never)
     registerPtyHandlers(secondWindow as never)
 
-    expect(firstWindow.webContents.removeListener).toHaveBeenCalledWith(
-      'did-finish-load',
-      didFinishLoad
-    )
+    expect(firstWindow.webContents.removeListener).not.toHaveBeenCalled()
     expect(
       secondWindow.webContents.on.mock.calls.some(([eventName]) => eventName === 'did-finish-load')
     ).toBe(false)

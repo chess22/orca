@@ -768,20 +768,30 @@ describe('resolveWindowShortcutAction', () => {
     ).toBeNull()
   })
 
-  it('routes Cmd/Ctrl+Shift+N to the unified new-workspace composer', () => {
-    // Why: keep the former Create-from shortcut accepted so muscle memory
-    // still opens the composer; source switching now lives in the smart name field.
+  it('routes Cmd/Ctrl+Shift+N to opening a new window', () => {
+    // Why: Mod+Shift+N moved from the workspace composer to New Window,
+    // matching the platform convention. Mod+N still opens the composer.
     expect(
       resolveWindowShortcutAction(
         { code: 'KeyN', key: 'n', meta: true, control: false, alt: false, shift: true },
         'darwin'
       )
-    ).toEqual({ type: 'openNewWorkspace' })
+    ).toEqual({ type: 'newWindow' })
 
     expect(
       resolveWindowShortcutAction(
         { code: 'KeyN', key: 'n', meta: false, control: true, alt: false, shift: true },
         'linux'
+      )
+    ).toEqual({ type: 'newWindow' })
+
+    // A user override that rebinds workspace.create onto Mod+Shift+N must win
+    // over the New Window default.
+    expect(
+      resolveWindowShortcutAction(
+        { code: 'KeyN', key: 'n', meta: true, control: false, alt: false, shift: true },
+        'darwin',
+        { 'workspace.create': ['Mod+Shift+N'] }
       )
     ).toEqual({ type: 'openNewWorkspace' })
 

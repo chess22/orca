@@ -1501,7 +1501,9 @@ describe('createMainWindow', () => {
 
     createMainWindow(null, { onRendererProcessGone })
 
-    ipcHandlers['window:confirm-close']?.()
+    // Why: the confirm-close handler now validates the sender against the
+    // window's own webContents (multi-window IPC isolation).
+    ipcHandlers['window:confirm-close']?.({ sender: webContents } as never)
     windowHandlers['render-process-gone']?.(
       {} as never,
       {
@@ -1759,7 +1761,9 @@ describe('createMainWindow', () => {
 
     expect(syncListener).toBeTypeOf('function')
 
-    syncListener?.({} as never, 1.2)
+    // Why: per-window IPC listeners now validate the sender against this
+    // window's own webContents (multi-window IPC isolation).
+    syncListener?.({ sender: webContents } as never, 1.2)
 
     if (process.platform === 'darwin') {
       expect(browserWindowInstance.setWindowButtonPosition).toHaveBeenCalledWith({ x: 16, y: 16 })
@@ -3024,7 +3028,9 @@ describe('createMainWindow', () => {
       const store = makeStore(true, true)
 
       createMainWindow(store as never, { getIsQuitting: () => false })
-      ipcHandlers['window:request-close']?.()
+      // Why: per-window IPC listeners now validate the sender against this
+      // window's own webContents (multi-window IPC isolation).
+      ipcHandlers['window:request-close']?.({ sender: webContents } as never)
 
       expect(instance.hide).toHaveBeenCalledTimes(1)
       expect(webContents.send).not.toHaveBeenCalledWith('window:close-requested', expect.anything())
@@ -3037,7 +3043,7 @@ describe('createMainWindow', () => {
       const store = makeStore(false, true)
 
       createMainWindow(store as never, { getIsQuitting: () => false })
-      ipcHandlers['window:request-close']?.()
+      ipcHandlers['window:request-close']?.({ sender: webContents } as never)
 
       expect(instance.hide).not.toHaveBeenCalled()
       expect(webContents.send).toHaveBeenCalledWith('window:close-requested', {

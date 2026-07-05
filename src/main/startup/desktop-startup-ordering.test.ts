@@ -16,7 +16,7 @@ describe('desktop startup ordering', () => {
     expect(source).toContain('firstWindowStartupServicesReady = startupServices.firstWindowReady')
     expect(source).toContain('localPtyStartupReady = startupServices.localPtyReady')
 
-    const windowIndex = desktopStartup.indexOf('Promise.resolve(openMainWindow())')
+    const windowIndex = desktopStartup.indexOf('Promise.resolve(openOrcaWindow())')
     const rpcStartIndex = desktopStartup.indexOf('desktopRuntimeRpc.start()')
     const legacyRpcStartIndex = desktopStartup.indexOf('runtimeRpc.start()')
 
@@ -40,7 +40,10 @@ describe('desktop startup ordering', () => {
     const serveReturn = source.indexOf('return', serveReady)
     const runtimeRpcStart = source.indexOf('await runtimeRpc.start()', serveStart)
     const automationStart = source.indexOf('automations.start()', serveStart)
-    const desktopSetWebContents = source.indexOf('automations.setWebContents(window.webContents)')
+    // Why: multi-window — automations stay bound to the primary window.
+    const desktopSetWebContents = source.indexOf(
+      'automations.setWebContents(getPrimaryOrcaWindow()?.webContents ?? window.webContents)'
+    )
     const desktopAutomationStart = source.indexOf('automations.start()', desktopSetWebContents + 1)
 
     expect(serveStart).toBeGreaterThanOrEqual(0)

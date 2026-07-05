@@ -6021,6 +6021,56 @@ describe('Store', () => {
     expect(store.getWorkspaceSession()).toEqual(session)
   })
 
+  it('keeps secondary-window session partitions separate from the legacy local session', async () => {
+    const store = await createStore()
+    const primarySession = {
+      activeRepoId: 'r1',
+      activeWorktreeId: 'wt1',
+      activeTabId: 'tab1',
+      tabsByWorktree: {},
+      terminalLayoutsByTabId: {}
+    }
+    const secondarySession = {
+      activeRepoId: 'r2',
+      activeWorktreeId: 'wt2',
+      activeTabId: 'tab2',
+      tabsByWorktree: {},
+      terminalLayoutsByTabId: {}
+    }
+    store.setWorkspaceSession(primarySession)
+    store.setWorkspaceSession(secondarySession, null, 2)
+
+    // Why: two windows must never restore (and double-attach) the same tabs.
+    expect(store.getWorkspaceSession()).toEqual(primarySession)
+    expect(store.getWorkspaceSession(null, 1)).toEqual(primarySession)
+    expect(store.getWorkspaceSession(null, 2)).toEqual(secondarySession)
+
+    store.patchWorkspaceSession({ activeTabId: 'tab2-patched' }, null, 2)
+    expect(store.getWorkspaceSession(null, 2).activeTabId).toBe('tab2-patched')
+    expect(store.getWorkspaceSession().activeTabId).toBe('tab1')
+  })
+
+  it('restores secondary-window session partitions across reloads', async () => {
+    const store = await createStore()
+    store.setWorkspaceSession(
+      {
+        activeRepoId: 'r2',
+        activeWorktreeId: 'wt2',
+        activeTabId: 'tab2',
+        tabsByWorktree: {},
+        terminalLayoutsByTabId: {}
+      },
+      null,
+      2
+    )
+    store.flush()
+
+    const reloaded = await createStore()
+    expect(reloaded.getWorkspaceSession(null, 2).activeWorktreeId).toBe('wt2')
+    // The legacy local partition stays untouched by slot writes.
+    expect(reloaded.getWorkspaceSession().activeWorktreeId).toBeNull()
+  })
+
   it('patches workspace session without replacing unchanged slices', async () => {
     const store = await createStore()
     const tabsByWorktree = {

@@ -1297,6 +1297,10 @@ type RuntimeNotifier = {
   browserDriverChanged?(browserPageId: string, driver: RuntimeBrowserDriverState): void
 }
 
+// Why: setNotifier callers without a windowId (tests, single-notifier
+// embedders) register under this sentinel; routing falls back to it last.
+const DEFAULT_NOTIFIER_WINDOW_KEY = -1
+
 type TerminalHandleRecord = {
   handle: string
   runtimeId: string
@@ -2002,9 +2006,20 @@ export class OrcaRuntimeService {
   private readonly store: RuntimeStore | null
   private rendererGraphEpoch = 0
   private graphStatus: RuntimeGraphStatus = 'unavailable'
+  // Why: multi-window — the primary (first-attached) window id, kept for the
+  // status contract. Per-window lifecycle lives in windowGraphStatuses.
   private authoritativeWindowId: number | null = null
+  private windowGraphStatuses = new Map<number, RuntimeGraphStatus>()
+  // Why: tabs/leaves stay merged across windows for window-agnostic lookups;
+  // these maps record which window published each entry so pushes route back
+  // to the owning window and a window close removes only its own entries.
+  private tabWindowIds = new Map<string, number>()
+  private leafWindowIds = new Map<string, number>()
   private tabs = new Map<string, RuntimeSyncedTab>()
   private mobileSessionTabsByWorktree = new Map<string, RuntimeMobileSessionTabsSnapshot>()
+  // Why: multi-window — records which window last published each worktree's
+  // mobile snapshot so one window's sync cannot drop another window's entries.
+  private mobileSessionTabWindowIds = new Map<string, number>()
   // Why: idempotency map for mobile terminal creation — a retried create with the
   // same clientMutationId returns the in-flight operation instead of duplicating.
   private mobileTerminalCreateByMutationId = new Map<
@@ -2023,6 +2038,9 @@ export class OrcaRuntimeService {
   private graphSyncCallbacks: (() => void)[] = []
   private waitersByHandle = new Map<string, Set<TerminalWaiter>>()
   private ptyController: RuntimePtyController | null = null
+  // Why: multi-window — `notifier` is a dispatching facade over the per-window
+  // notifiers registered here; see setNotifier/buildDispatchingNotifier.
+  private notifiersByWindow = new Map<number, RuntimeNotifier>()
   private notifier: RuntimeNotifier | null = null
   private clientEventListeners = new Set<(event: RuntimeClientEvent) => void>()
   private forkBackfillStarted = false
@@ -2742,14 +2760,176 @@ export class OrcaRuntimeService {
     this.ptyController = controller
   }
 
-  setNotifier(notifier: RuntimeNotifier | null): void {
-    this.notifier = notifier
+  setNotifier(notifier: RuntimeNotifier | null, windowId?: number): void {
+    // Why: multi-window — one notifier per window. `this.notifier` stays as a
+    // dispatching facade so the ~50 internal call sites keep their shape:
+    // broadcast-style events fan out to every window, targeted events route to
+    // the window that owns the tab/worktree (focused window as fallback).
+    const key = windowId ?? DEFAULT_NOTIFIER_WINDOW_KEY
+    if (notifier === null) {
+      this.notifiersByWindow.delete(key)
+    } else {
+      this.notifiersByWindow.set(key, notifier)
+    }
+    this.notifier = this.notifiersByWindow.size > 0 ? this.buildDispatchingNotifier() : null
     // Why: run the one-shot fork-upstream backfill once a renderer is attached,
     // so existing forks self-correct on launch and the result can be broadcast.
     if (notifier && !this.forkBackfillStarted) {
       this.forkBackfillStarted = true
       void this.backfillForkUpstreams()
     }
+  }
+
+  private forEachNotifier(fn: (notifier: RuntimeNotifier) => void): void {
+    for (const notifier of this.notifiersByWindow.values()) {
+      fn(notifier)
+    }
+  }
+
+  private notifierForWindowId(windowId: number | null | undefined): RuntimeNotifier | null {
+    if (windowId != null) {
+      const exact = this.notifiersByWindow.get(windowId)
+      if (exact) {
+        return exact
+      }
+    }
+    for (const [id, notifier] of this.notifiersByWindow) {
+      const win = this.liveWindowById(id)
+      if (win && this.isWindowFocused(win)) {
+        return notifier
+      }
+    }
+    if (this.authoritativeWindowId != null) {
+      const primary = this.notifiersByWindow.get(this.authoritativeWindowId)
+      if (primary) {
+        return primary
+      }
+    }
+    return this.notifiersByWindow.values().next().value ?? null
+  }
+
+  private notifierForTab(tabId: string): RuntimeNotifier | null {
+    return this.notifierForWindowId(this.tabWindowIds.get(tabId))
+  }
+
+  private notifierForWorktree(worktreeId: string): RuntimeNotifier | null {
+    let fallback: number | null | undefined = undefined
+    for (const [tabId, tab] of this.tabs) {
+      if (tab.worktreeId !== worktreeId) {
+        continue
+      }
+      const ownerWindowId = this.tabWindowIds.get(tabId)
+      if (ownerWindowId == null) {
+        continue
+      }
+      const ownerWindow = this.liveWindowById(ownerWindowId)
+      if (ownerWindow && this.isWindowFocused(ownerWindow)) {
+        return this.notifierForWindowId(ownerWindowId)
+      }
+      fallback = fallback === undefined ? ownerWindowId : fallback
+    }
+    return this.notifierForWindowId(fallback === undefined ? null : fallback)
+  }
+
+  // Why: optional methods are declared on the facade only when some window
+  // implements them — capability checks like `!this.notifier?.moveSessionTab`
+  // must keep reporting method_not_supported for partial notifiers (tests and
+  // older embedders rely on it).
+  private buildDispatchingNotifier(): RuntimeNotifier {
+    const anyHas = (key: keyof RuntimeNotifier): boolean =>
+      [...this.notifiersByWindow.values()].some((n) => typeof n[key] === 'function')
+    // Why: forward optional trailing params via rest tuples — passing an
+    // explicit `undefined` would change the observable call arity for
+    // embedders/tests that assert exact notifier arguments.
+    const facade: RuntimeNotifier = {
+      worktreesChanged: (...args: Parameters<RuntimeNotifier['worktreesChanged']>) =>
+        this.forEachNotifier((n) => n.worktreesChanged(...args)),
+      reposChanged: () => this.forEachNotifier((n) => n.reposChanged()),
+      activateWorktree: (repoId, worktreeId, ...rest) =>
+        this.notifierForWorktree(worktreeId)?.activateWorktree(repoId, worktreeId, ...rest),
+      createTerminal: (worktreeId, opts) =>
+        this.notifierForWorktree(worktreeId)?.createTerminal(worktreeId, opts),
+      splitTerminal: (tabId, paneRuntimeId, opts) =>
+        this.notifierForTab(tabId)?.splitTerminal(tabId, paneRuntimeId, opts),
+      renameTerminal: (tabId, title) => this.notifierForTab(tabId)?.renameTerminal(tabId, title),
+      focusTerminal: (tabId, worktreeId, ...rest) =>
+        (this.tabWindowIds.has(tabId)
+          ? this.notifierForTab(tabId)
+          : this.notifierForWorktree(worktreeId)
+        )?.focusTerminal(tabId, worktreeId, ...rest),
+      closeTerminal: (tabId, ...rest) => this.notifierForTab(tabId)?.closeTerminal(tabId, ...rest),
+      sleepWorktree: (worktreeId) => this.forEachNotifier((n) => n.sleepWorktree(worktreeId)),
+      terminalFitOverrideChanged: (ptyId, mode, cols, rows) =>
+        this.forEachNotifier((n) => n.terminalFitOverrideChanged(ptyId, mode, cols, rows)),
+      terminalDriverChanged: (ptyId, driver) =>
+        this.forEachNotifier((n) => n.terminalDriverChanged(ptyId, driver))
+    }
+    if (anyHas('worktreeBaseStatus')) {
+      facade.worktreeBaseStatus = (event) =>
+        this.forEachNotifier((n) => n.worktreeBaseStatus?.(event))
+    }
+    if (anyHas('worktreeRemoteBranchConflict')) {
+      facade.worktreeRemoteBranchConflict = (event) =>
+        this.forEachNotifier((n) => n.worktreeRemoteBranchConflict?.(event))
+    }
+    if (anyHas('revealTerminalSession')) {
+      facade.revealTerminalSession = (worktreeId, opts) =>
+        this.notifierForWorktree(worktreeId)?.revealTerminalSession?.(worktreeId, opts)
+    }
+    if (anyHas('focusEditorTab')) {
+      facade.focusEditorTab = (tabId, worktreeId) =>
+        this.notifierForWorktree(worktreeId)?.focusEditorTab?.(tabId, worktreeId)
+    }
+    if (anyHas('closeSessionTab')) {
+      facade.closeSessionTab = (tabId, worktreeId) =>
+        this.notifierForWorktree(worktreeId)?.closeSessionTab?.(tabId, worktreeId)
+    }
+    if (anyHas('moveSessionTab')) {
+      facade.moveSessionTab = (worktreeId, move) =>
+        this.notifierForWorktree(worktreeId)?.moveSessionTab?.(worktreeId, move)
+    }
+    if (anyHas('openFile')) {
+      facade.openFile = (worktreeId, filePath, relativePath, runtimeEnvironmentId) =>
+        this.notifierForWorktree(worktreeId)?.openFile?.(
+          worktreeId,
+          filePath,
+          relativePath,
+          runtimeEnvironmentId
+        )
+    }
+    if (anyHas('openDiff')) {
+      facade.openDiff = (worktreeId, filePath, relativePath, staged, runtimeEnvironmentId) =>
+        this.notifierForWorktree(worktreeId)?.openDiff?.(
+          worktreeId,
+          filePath,
+          relativePath,
+          staged,
+          runtimeEnvironmentId
+        )
+    }
+    if (anyHas('readMobileMarkdownTab')) {
+      facade.readMobileMarkdownTab = (worktreeId, tabId) => {
+        const notifier = this.notifierForWorktree(worktreeId)
+        if (!notifier?.readMobileMarkdownTab) {
+          return Promise.reject(new Error('method_not_supported'))
+        }
+        return notifier.readMobileMarkdownTab(worktreeId, tabId)
+      }
+    }
+    if (anyHas('saveMobileMarkdownTab')) {
+      facade.saveMobileMarkdownTab = (worktreeId, tabId, baseVersion, content) => {
+        const notifier = this.notifierForWorktree(worktreeId)
+        if (!notifier?.saveMobileMarkdownTab) {
+          return Promise.reject(new Error('method_not_supported'))
+        }
+        return notifier.saveMobileMarkdownTab(worktreeId, tabId, baseVersion, content)
+      }
+    }
+    if (anyHas('browserDriverChanged')) {
+      facade.browserDriverChanged = (browserPageId, driver) =>
+        this.forEachNotifier((n) => n.browserDriverChanged?.(browserPageId, driver))
+    }
+    return facade
   }
 
   onClientEvent(listener: (event: RuntimeClientEvent) => void): () => void {
@@ -2817,24 +2997,58 @@ export class OrcaRuntimeService {
     if (this.authoritativeWindowId === null) {
       this.authoritativeWindowId = windowId
     }
+    if (!this.windowGraphStatuses.has(windowId)) {
+      this.windowGraphStatuses.set(windowId, 'unavailable')
+    }
+  }
+
+  // Why: the merged graph is 'ready' as soon as any window has published; a
+  // reloading secondary window must not block CLI/mobile ops on the others.
+  private recomputeGraphStatus(): void {
+    let status: RuntimeGraphStatus = 'unavailable'
+    for (const windowStatus of this.windowGraphStatuses.values()) {
+      if (windowStatus === 'ready') {
+        this.graphStatus = 'ready'
+        return
+      }
+      if (windowStatus === 'reloading') {
+        status = 'reloading'
+      }
+    }
+    this.graphStatus = status
   }
 
   syncWindowGraph(windowId: number, graph: RuntimeSyncWindowGraph): RuntimeSyncWindowGraphResult {
-    if (this.authoritativeWindowId === null) {
-      this.authoritativeWindowId = windowId
-    }
-    if (windowId !== this.authoritativeWindowId) {
-      throw new Error('Runtime graph publisher does not match the authoritative window')
-    }
+    this.attachWindow(windowId)
 
-    this.tabs = new Map(graph.tabs.map((tab) => [tab.tabId, tab]))
-    this.syncMobileSessionTabs(graph.mobileSessionTabs)
+    // Why: multi-window — a sync replaces only the publishing window's slice
+    // of the merged graph; other windows' tabs/leaves stay untouched.
+    const mergedTabs = new Map<string, RuntimeSyncedTab>()
+    for (const [tabId, tab] of this.tabs) {
+      if (this.tabWindowIds.get(tabId) !== windowId) {
+        mergedTabs.set(tabId, tab)
+      } else {
+        this.tabWindowIds.delete(tabId)
+      }
+    }
+    for (const tab of graph.tabs) {
+      mergedTabs.set(tab.tabId, tab)
+      this.tabWindowIds.set(tab.tabId, windowId)
+    }
+    this.tabs = mergedTabs
+    this.syncMobileSessionTabs(graph.mobileSessionTabs, windowId)
     const nextLeaves = new Map<string, RuntimeLeafRecord>()
+    for (const [leafKey, leaf] of this.leaves) {
+      if (this.leafWindowIds.get(leafKey) !== windowId) {
+        nextLeaves.set(leafKey, leaf)
+      }
+    }
     const graphSyncedAt = this.nextTitleObservationSequence()
 
     // Why: renderer reloads can briefly republish the same leaf with no ptyId;
     // keep live CLI handles usable while the UI graph rebuilds.
-    const preserveLivePtysDuringReload = this.graphStatus === 'reloading'
+    const preserveLivePtysDuringReload =
+      (this.windowGraphStatuses.get(windowId) ?? 'unavailable') === 'reloading'
     for (const leaf of graph.leaves) {
       const leafKey = this.getLeafKey(leaf.tabId, leaf.leafId)
       const existing = this.leaves.get(leafKey)
@@ -2884,13 +3098,17 @@ export class OrcaRuntimeService {
         })
       }
 
+      this.leafWindowIds.set(leafKey, windowId)
+
       if (existing && (existing.ptyId !== ptyId || existing.ptyGeneration !== ptyGeneration)) {
         this.invalidateLeafHandle(leafKey)
       }
     }
 
     for (const oldLeafKey of this.leaves.keys()) {
-      if (!nextLeaves.has(oldLeafKey)) {
+      // Why: multi-window — only this window's stale leaves are removable;
+      // other windows' leaves were carried into nextLeaves above.
+      if (!nextLeaves.has(oldLeafKey) && this.leafWindowIds.get(oldLeafKey) === windowId) {
         const oldLeaf = this.leaves.get(oldLeafKey)
         if (
           preserveLivePtysDuringReload &&
@@ -2902,6 +3120,7 @@ export class OrcaRuntimeService {
           nextLeaves.set(oldLeafKey, oldLeaf)
         } else {
           this.invalidateLeafHandle(oldLeafKey)
+          this.leafWindowIds.delete(oldLeafKey)
         }
       }
     }
@@ -2914,14 +3133,24 @@ export class OrcaRuntimeService {
         this.detachedPreAllocatedLeaves.delete(ptyId)
         continue
       }
-      nextLeaves.set(this.getLeafKey(leaf.tabId, leaf.leafId), leaf)
+      const detachedLeafKey = this.getLeafKey(leaf.tabId, leaf.leafId)
+      nextLeaves.set(detachedLeafKey, leaf)
+      if (!this.leafWindowIds.has(detachedLeafKey)) {
+        this.leafWindowIds.set(detachedLeafKey, windowId)
+      }
       nextPtyIds.add(ptyId)
     }
 
     this.leaves = nextLeaves
+    for (const leafKey of this.leafWindowIds.keys()) {
+      if (!this.leaves.has(leafKey)) {
+        this.leafWindowIds.delete(leafKey)
+      }
+    }
     this.rebuildLeafPtyIndex()
     this.notifyMobileSessionTabSnapshots()
-    this.graphStatus = 'ready'
+    this.windowGraphStatuses.set(windowId, 'ready')
+    this.recomputeGraphStatus()
     this.refreshWritableFlags()
     for (const leaf of this.leaves.values()) {
       this.adoptPreAllocatedHandle(leaf)
@@ -15903,12 +16132,17 @@ export class OrcaRuntimeService {
     }
 
     this.assertGraphReady()
-    const win = rendererWindow ?? this.getAuthoritativeWindow()
     // Why: mirrors browserTabCreate — when no worktree is specified, pass
     // undefined so the renderer uses its current active worktree.
     const workspace = worktreeSelector
       ? await this.resolveTerminalWorkspaceLaunchScope(worktreeSelector)
       : null
+    // Why: multi-window — create the tab in a window already showing the
+    // worktree when one exists; otherwise the focused/primary window.
+    const win =
+      rendererWindow ??
+      (workspace ? this.getWindowForWorktree(workspace.id) : null) ??
+      this.getAuthoritativeWindow()
     const launchOpts = workspace
       ? await this.resolveAgentTerminalCreateOptions(workspace, opts)
       : opts
@@ -16071,7 +16305,9 @@ export class OrcaRuntimeService {
     }
     const startupCommand = await this.resolveMobileSessionTerminalCommand(workspace, opts)
 
-    const win = this.getAvailableAuthoritativeWindow()
+    // Why: multi-window — prefer a window already showing this worktree so the
+    // mobile-created tab lands next to its siblings.
+    const win = this.getWindowForWorktree(worktreeId) ?? this.getAvailableAuthoritativeWindow()
     if (!win) {
       return await this.createHeadlessMobileSessionTerminal(
         worktreeId,
@@ -17001,17 +17237,20 @@ export class OrcaRuntimeService {
   }
 
   markRendererReloading(windowId: number): void {
-    if (windowId !== this.authoritativeWindowId) {
+    if (!this.windowGraphStatuses.has(windowId)) {
       return
     }
-    if (this.graphStatus !== 'ready') {
+    if (this.windowGraphStatuses.get(windowId) !== 'ready') {
       return
     }
-    // Why: any renderer reload tears down the published live graph, so live
-    // terminal handles must become stale immediately instead of being reused
-    // against whatever the renderer rebuilds next.
+    // Why: any renderer reload tears down that window's published live graph,
+    // so live terminal handles must become stale immediately instead of being
+    // reused against whatever the renderer rebuilds next. Handle invalidation
+    // stays global (fail closed): handles do not record their window, and a
+    // reload is rare enough that re-adoption on the next sync is acceptable.
     this.rendererGraphEpoch += 1
-    this.graphStatus = 'reloading'
+    this.windowGraphStatuses.set(windowId, 'reloading')
+    this.recomputeGraphStatus()
     this.rememberDetachedPreAllocatedLeaves()
     this.handles.clear()
     this.handleByLeafKey.clear()
@@ -17024,33 +17263,59 @@ export class OrcaRuntimeService {
   }
 
   markGraphReady(windowId: number): void {
-    if (windowId !== this.authoritativeWindowId) {
+    if (!this.windowGraphStatuses.has(windowId)) {
       return
     }
-    this.graphStatus = 'ready'
+    this.windowGraphStatuses.set(windowId, 'ready')
+    this.recomputeGraphStatus()
     this.refreshWritableFlags()
   }
 
   markGraphUnavailable(windowId: number): void {
-    if (windowId !== this.authoritativeWindowId) {
+    if (!this.windowGraphStatuses.has(windowId)) {
       return
     }
-    // Why: once the authoritative renderer graph disappears, Orca must fail
-    // closed for live-terminal operations instead of guessing from old state.
-    if (this.graphStatus !== 'unavailable') {
-      this.rendererGraphEpoch += 1
+    this.windowGraphStatuses.delete(windowId)
+    if (this.authoritativeWindowId === windowId) {
+      this.authoritativeWindowId = this.windowGraphStatuses.keys().next().value ?? null
     }
-    this.graphStatus = 'unavailable'
-    this.authoritativeWindowId = null
+    this.rendererGraphEpoch += 1
+    if (this.windowGraphStatuses.size === 0) {
+      // Why: once the last renderer graph disappears, Orca must fail closed
+      // for live-terminal operations instead of guessing from old state.
+      this.graphStatus = 'unavailable'
+      this.rememberDetachedPreAllocatedLeaves()
+      this.tabs.clear()
+      this.tabWindowIds.clear()
+      this.leaves.clear()
+      this.leafWindowIds.clear()
+      this.leavesByPtyId.clear()
+      this.handles.clear()
+      this.handleByLeafKey.clear()
+      // Why: same as markRendererReloading — pre-allocated CLI handles must
+      // survive graph unavailability so they can be re-adopted on reconnect.
+      this.rejectAllWaiters('terminal_handle_stale')
+      return
+    }
+    // Why: multi-window — a closing window takes only its own tabs/leaves with
+    // it; the surviving windows' graph stays live for CLI/mobile operations.
     this.rememberDetachedPreAllocatedLeaves()
-    this.tabs.clear()
-    this.leaves.clear()
-    this.leavesByPtyId.clear()
-    this.handles.clear()
-    this.handleByLeafKey.clear()
-    // Why: same as markRendererReloading — pre-allocated CLI handles must
-    // survive graph unavailability so they can be re-adopted on reconnect.
-    this.rejectAllWaiters('terminal_handle_stale')
+    for (const [tabId, ownerWindowId] of this.tabWindowIds) {
+      if (ownerWindowId === windowId) {
+        this.tabs.delete(tabId)
+        this.tabWindowIds.delete(tabId)
+      }
+    }
+    for (const [leafKey, ownerWindowId] of this.leafWindowIds) {
+      if (ownerWindowId === windowId) {
+        this.invalidateLeafHandle(leafKey)
+        this.leaves.delete(leafKey)
+        this.leafWindowIds.delete(leafKey)
+      }
+    }
+    this.rebuildLeafPtyIndex()
+    this.recomputeGraphStatus()
+    this.refreshWritableFlags()
   }
 
   private assertGraphReady(): void {
@@ -18334,7 +18599,10 @@ export class OrcaRuntimeService {
     }
   }
 
-  private syncMobileSessionTabs(snapshots: RuntimeMobileSessionTabsSnapshot[] | undefined): void {
+  private syncMobileSessionTabs(
+    snapshots: RuntimeMobileSessionTabsSnapshot[] | undefined,
+    windowId: number
+  ): void {
     if (snapshots === undefined) {
       return
     }
@@ -18347,6 +18615,7 @@ export class OrcaRuntimeService {
     const nextWorktrees = new Set<string>()
     for (const snapshot of snapshots) {
       nextWorktrees.add(snapshot.worktree)
+      this.mobileSessionTabWindowIds.set(snapshot.worktree, windowId)
       const existing = this.mobileSessionTabsByWorktree.get(snapshot.worktree)
       const nextSnapshot = this.mergePreservedHeadlessMobileSessionTabs(snapshot, existing)
       if (
@@ -18359,12 +18628,18 @@ export class OrcaRuntimeService {
     }
     for (const [worktreeId, existing] of [...this.mobileSessionTabsByWorktree.entries()]) {
       if (!nextWorktrees.has(worktreeId)) {
+        // Why: multi-window — another window's snapshots are not stale just
+        // because this window's sync did not mention them.
+        if (this.mobileSessionTabWindowIds.get(worktreeId) !== windowId) {
+          continue
+        }
         const preserved = this.buildPreservedHeadlessMobileSessionSnapshot(existing)
         if (preserved) {
           this.mobileSessionTabsByWorktree.set(worktreeId, preserved)
           nextWorktrees.add(worktreeId)
         } else {
           this.mobileSessionTabsByWorktree.delete(worktreeId)
+          this.mobileSessionTabWindowIds.delete(worktreeId)
           this.notifyMobileSessionTabsRemoved(worktreeId)
         }
       }
@@ -22599,7 +22874,9 @@ export class OrcaRuntimeService {
     info: { deviceUdid: string; streamUrl: string; wsUrl: string; axUrl?: string }
   ): void {
     try {
-      this.getAuthoritativeWindow().webContents.send('ui:emulatorAutoAttach', { worktreeId, info })
+      // Why: multi-window — attach in the window showing the worktree if any.
+      const win = this.getWindowForWorktree(worktreeId) ?? this.getAuthoritativeWindow()
+      win.webContents.send('ui:emulatorAutoAttach', { worktreeId, info })
     } catch {
       // Window may not exist during shutdown
     }
@@ -22613,15 +22890,67 @@ export class OrcaRuntimeService {
     return win
   }
 
-  private getAvailableAuthoritativeWindow(): BrowserWindow | null {
-    if (this.authoritativeWindowId === null) {
+  private liveWindowById(windowId: number | undefined | null): BrowserWindow | null {
+    if (windowId == null || !BrowserWindow?.fromId) {
       return null
     }
+    const win = BrowserWindow.fromId(windowId)
+    return win && !win.isDestroyed() ? win : null
+  }
+
+  // Why: test doubles for BrowserWindow often omit isFocused; treat those as
+  // unfocused instead of throwing inside routing.
+  private isWindowFocused(win: BrowserWindow): boolean {
+    return typeof win.isFocused === 'function' && win.isFocused()
+  }
+
+  // Why: multi-window — context-free pushes go to the focused attached window
+  // first, then the primary, then any surviving attached window.
+  private getAvailableAuthoritativeWindow(): BrowserWindow | null {
     if (!BrowserWindow?.fromId) {
       return null
     }
-    const win = BrowserWindow.fromId(this.authoritativeWindowId)
-    return win && !win.isDestroyed() ? win : null
+    let primary: BrowserWindow | null = null
+    let fallback: BrowserWindow | null = null
+    for (const windowId of this.windowGraphStatuses.keys()) {
+      const win = this.liveWindowById(windowId)
+      if (!win) {
+        continue
+      }
+      if (this.isWindowFocused(win)) {
+        return win
+      }
+      if (windowId === this.authoritativeWindowId) {
+        primary = win
+      }
+      fallback ??= win
+    }
+    return primary ?? fallback ?? this.liveWindowById(this.authoritativeWindowId)
+  }
+
+  /** Window that published the given tab, if it is still alive. */
+  private getWindowForTab(tabId: string): BrowserWindow | null {
+    return this.liveWindowById(this.tabWindowIds.get(tabId))
+  }
+
+  /** A live window currently showing the given worktree — the focused one when
+   *  several do. Used to route worktree-scoped pushes to the right renderer. */
+  private getWindowForWorktree(worktreeId: string): BrowserWindow | null {
+    let fallback: BrowserWindow | null = null
+    for (const [tabId, tab] of this.tabs) {
+      if (tab.worktreeId !== worktreeId) {
+        continue
+      }
+      const win = this.getWindowForTab(tabId)
+      if (!win) {
+        continue
+      }
+      if (this.isWindowFocused(win)) {
+        return win
+      }
+      fallback ??= win
+    }
+    return fallback
   }
 }
 

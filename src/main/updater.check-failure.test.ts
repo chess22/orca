@@ -132,9 +132,16 @@ describe('updater check failure handling', () => {
     makeBenignCheckFailure('Unable to find latest version on GitHub')
 
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -166,9 +173,16 @@ describe('updater check failure handling', () => {
     makeBenignCheckFailure('Cannot find channel "latest-mac.yml" update info: HttpError: 404')
 
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -194,9 +208,16 @@ describe('updater check failure handling', () => {
     makeBenignCheckFailure('Unable to find latest version on GitHub')
 
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdates } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdates()
