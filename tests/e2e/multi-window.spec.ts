@@ -30,6 +30,13 @@ test('File > New Window opens an independent second window', async ({ electronAp
   const secondPage: Page = await secondWindowPromise
   await expect.poll(liveWindowCount).toBe(initialCount + 1)
 
+  // Why: getStoreState throws (rather than retrying) when window.__store is
+  // missing, so a freshly-opened window must reach domcontentloaded and expose
+  // the store via a real polling wait first — matching the sharedPage fixture's
+  // startup sequence — before waitForSessionReady's expect.poll can be used.
+  await secondPage.waitForLoadState('domcontentloaded')
+  await secondPage.waitForFunction(() => Boolean(window.__store), null, { timeout: 30_000 })
+
   // Why: session-ready in the second window proves the runtime accepted a
   // second graph publisher and the per-slot session partition restored
   // without colliding with the first window's session.
