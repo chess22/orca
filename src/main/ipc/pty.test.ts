@@ -6705,6 +6705,55 @@ describe('registerPtyHandlers', () => {
     }
   })
 
+  it("does not hide another window's visible PTY when a second window registers or reloads", async () => {
+    vi.useFakeTimers()
+    const mockProc = createMockProc()
+    spawnMock.mockReturnValue(mockProc.proc)
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      const spawnResult = (await handlers.get('pty:spawn')!(mainWindowIpcEvent, {
+        cols: 80,
+        rows: 24,
+        cwd: '/tmp'
+      })) as { id: string }
+      const setRendererPtyVisible = getPtySetRendererPtyVisibleListener()
+      setRendererPtyVisible(mainWindowIpcEvent, { id: spawnResult.id, visible: true })
+
+      // Why: a second, distinct window registering (and later reloading) must
+      // not mark the first window's already-visible, owned PTY hidden.
+      const secondWindow = {
+        id: nextTestWebContentsId++,
+        on: vi.fn(),
+        isDestroyed: () => false,
+        webContents: {
+          id: nextTestWebContentsId++,
+          on: vi.fn(),
+          send: vi.fn(),
+          removeListener: vi.fn(),
+          isDestroyed: () => false
+        }
+      }
+      registerPtyHandlers(secondWindow as never)
+      const secondWindowLoading = secondWindow.webContents.on.mock.calls.find(
+        (call: unknown[]) => call[0] === 'did-start-loading'
+      )?.[1] as (() => void) | undefined
+      expect(secondWindowLoading).toBeTypeOf('function')
+      secondWindowLoading?.()
+
+      mainWindow.webContents.send.mockClear()
+      mockProc.emitData('still visible output')
+      vi.advanceTimersByTime(8)
+
+      expect(mainWindow.webContents.send).toHaveBeenCalledWith('pty:data', {
+        id: spawnResult.id,
+        data: 'still visible output'
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('preserves background-origin metadata for repaint output caused by a hidden resize', async () => {
     vi.useFakeTimers()
     const mockProc = createMockProc()

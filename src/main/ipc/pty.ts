@@ -1234,23 +1234,44 @@ export function resetPtyRendererDeliveryDebug(): void {
   resetPtyRendererDeliveryDebugSnapshot()
 }
 
-function markRendererPtysHiddenForRendererLifecycleReset(): void {
-  // Why: renderer-owned hints die with the page; keep known-visibility state so
-  // surviving daemon/SSH PTYs fail closed until the new renderer reports again.
-  activeRendererPtys.clear()
-  visibleRendererPtys.clear()
+// Why: renderer-owned hints die with the page; keep known-visibility state so
+// surviving daemon/SSH PTYs fail closed until the new renderer reports again.
+// Why: multi-window — scoped to the one window whose lifecycle actually
+// reset (by recorded owner), so a sibling window's still-live PTYs don't lose
+// their active/visible hints just because another window reloaded, crashed,
+// or a brand-new window registered. PTYs with no recorded owner (pre-tracking
+// spawns, headless/CLI) aren't scoped to any window and keep the prior
+// broad-reset behavior.
+function markRendererPtysHiddenForRendererLifecycleReset(webContentsId: number): void {
+  const ownsOrUnowned = (ptyId: string): boolean => {
+    const owner = ptyRendererOwnerWebContentsIds.get(ptyId)
+    return owner === undefined || owner === webContentsId
+  }
+  for (const ptyId of activeRendererPtys) {
+    if (ownsOrUnowned(ptyId)) {
+      activeRendererPtys.delete(ptyId)
+    }
+  }
+  for (const ptyId of visibleRendererPtys) {
+    if (ownsOrUnowned(ptyId)) {
+      visibleRendererPtys.delete(ptyId)
+    }
+  }
 }
 
 function registerRendererLifecycleResetHandlers(webContents: WebContents): void {
-  markRendererPtysHiddenForRendererLifecycleReset()
   // Why: multi-window — attach once per renderer webContents; the headless
   // serve stub has no usable id/listeners, so skip it.
   const webContentsId = typeof webContents.id === 'number' ? webContents.id : null
-  if (webContentsId === null || rendererLifecycleResetAttachedWebContents.has(webContentsId)) {
+  if (webContentsId === null) {
+    return
+  }
+  markRendererPtysHiddenForRendererLifecycleReset(webContentsId)
+  if (rendererLifecycleResetAttachedWebContents.has(webContentsId)) {
     return
   }
   rendererLifecycleResetAttachedWebContents.add(webContentsId)
-  const handler = markRendererPtysHiddenForRendererLifecycleReset
+  const handler = (): void => markRendererPtysHiddenForRendererLifecycleReset(webContentsId)
   webContents.on('did-start-loading', handler)
   webContents.on('render-process-gone', handler)
   webContents.on('destroyed', () => {
