@@ -45,6 +45,18 @@ const winSpeechNativeResource = {
 module.exports = {
   appId: 'com.stablyai.orca.dev',
   productName: 'Orca Dev',
+  // Why: Electron's default userData dir comes from the bundled app.asar's
+  // package.json "name" field, not from productName/appId above — the root
+  // package.json stays "orca" for the pnpm workspace, so without this override
+  // a packaged Orca Dev.app silently resolves to the same
+  // `~/Library/Application Support/orca` profile as production Orca, causing
+  // the single-instance lock (and daemon socket, both scoped under userData)
+  // to collide. Distinct from the interactive `pnpm dev` profile name
+  // ("orca-dev", see configure-process.ts) so the packaged app never shares
+  // state with a developer's unlocked `pnpm dev` session either.
+  extraMetadata: {
+    name: 'orca-dev-app'
+  },
   directories: {
     buildResources: 'resources/build'
   },
