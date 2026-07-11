@@ -18615,6 +18615,16 @@ export class OrcaRuntimeService {
     })
     const nextWorktrees = new Set<string>()
     for (const snapshot of snapshots) {
+      const currentOwnerWindowId = this.mobileSessionTabWindowIds.get(snapshot.worktree)
+      const currentOwnerIsLive =
+        currentOwnerWindowId !== undefined && this.windowGraphStatuses.has(currentOwnerWindowId)
+      // Why: the same worktree can be open in more than one window. Once a
+      // live window claims ownership of its mobile-session tabs, a second
+      // window's sync must not steal or overwrite that state (last-writer-wins
+      // caused ownership to flip on every heartbeat between the two windows).
+      if (currentOwnerIsLive && currentOwnerWindowId !== windowId) {
+        continue
+      }
       nextWorktrees.add(snapshot.worktree)
       this.mobileSessionTabWindowIds.set(snapshot.worktree, windowId)
       const existing = this.mobileSessionTabsByWorktree.get(snapshot.worktree)
