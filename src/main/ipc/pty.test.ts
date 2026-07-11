@@ -201,7 +201,10 @@ import {
   SSH_SESSION_EXPIRED_ERROR
 } from '../providers/ssh-pty-provider'
 import { _resetWslCachesForTests, _setWslCachesForTests } from '../wsl'
-import { resetOrcaWindowRegistryForTesting } from '../window/orca-window-registry'
+import {
+  registerOrcaWindow,
+  resetOrcaWindowRegistryForTesting
+} from '../window/orca-window-registry'
 
 const POWERSHELL_OSC133_ARGS = [
   '-NoLogo',
@@ -725,7 +728,7 @@ describe('registerPtyHandlers', () => {
       expect(prepareClaudeAuth).toHaveBeenCalledTimes(1)
       expect(hasLiveClaudePtys()).toBe(true)
 
-      await handlers.get('pty:kill')!(null, { id: spawnResult.id })
+      await handlers.get('pty:kill')!(mainWindowIpcEvent, { id: spawnResult.id })
 
       expect(hasLiveClaudePtys()).toBe(false)
     })
@@ -2392,7 +2395,7 @@ describe('registerPtyHandlers', () => {
 
         try {
           await expect(
-            handlers.get('pty:kill')!(null, { id: 'remote-pty', keepHistory: false })
+            handlers.get('pty:kill')!(mainWindowIpcEvent, { id: 'remote-pty', keepHistory: false })
           ).rejects.toThrow('Multiplexer disposed')
         } finally {
           deletePtyOwnership('remote-pty')
@@ -3096,9 +3099,9 @@ describe('registerPtyHandlers', () => {
     handlers.clear()
     registerPtyHandlers(mainWindow as never)
 
-    await expect(handlers.get('pty:kill')!(null, { id: 'local-pty' })).rejects.toThrow(
-      'daemon unavailable'
-    )
+    await expect(
+      handlers.get('pty:kill')!(mainWindowIpcEvent, { id: 'local-pty' })
+    ).rejects.toThrow('daemon unavailable')
   })
 
   it('synthesizes runtime exit after ordinary daemon-backed pty kill', async () => {
@@ -3132,7 +3135,7 @@ describe('registerPtyHandlers', () => {
     handlers.clear()
     registerPtyHandlers(mainWindow as never, runtime as never)
 
-    await handlers.get('pty:kill')!(null, { id: 'local-pty', keepHistory: true })
+    await handlers.get('pty:kill')!(mainWindowIpcEvent, { id: 'local-pty', keepHistory: true })
 
     expect(shutdown).toHaveBeenCalledWith('local-pty', {
       immediate: true,
@@ -3184,7 +3187,7 @@ describe('registerPtyHandlers', () => {
     handlers.clear()
     registerPtyHandlers(mainWindow as never, runtime as never)
 
-    await handlers.get('pty:kill')!(null, { id: 'local-pty' })
+    await handlers.get('pty:kill')!(mainWindowIpcEvent, { id: 'local-pty' })
 
     expect(runtime.onPtyExit).toHaveBeenCalledTimes(1)
     expect(runtime.onPtyExit).toHaveBeenCalledWith('local-pty', 0)
@@ -3227,7 +3230,7 @@ describe('registerPtyHandlers', () => {
     handlers.clear()
     registerPtyHandlers(mainWindow as never, runtime as never)
 
-    await handlers.get('pty:kill')!(null, { id: 'local-pty' })
+    await handlers.get('pty:kill')!(mainWindowIpcEvent, { id: 'local-pty' })
     for (const listener of exitListeners) {
       listener({ id: 'local-pty', code: 0 })
     }
@@ -3577,7 +3580,7 @@ describe('registerPtyHandlers', () => {
       ])
     )
 
-    await handlers.get('pty:kill')!(null, { id: 'remote-pty' })
+    await handlers.get('pty:kill')!(mainWindowIpcEvent, { id: 'remote-pty' })
     expect(sshShutdown).toHaveBeenCalledWith('remote-pty', {
       immediate: true,
       keepHistory: false
@@ -3745,8 +3748,8 @@ describe('registerPtyHandlers', () => {
       ])
     )
 
-    await handlers.get('pty:kill')!(null, { id: 'ssh:ssh-a@@pty-1' })
-    await handlers.get('pty:kill')!(null, { id: 'ssh:ssh-b@@pty-1' })
+    await handlers.get('pty:kill')!(mainWindowIpcEvent, { id: 'ssh:ssh-a@@pty-1' })
+    await handlers.get('pty:kill')!(mainWindowIpcEvent, { id: 'ssh:ssh-b@@pty-1' })
 
     expect(shutdownA).toHaveBeenCalledWith('ssh:ssh-a@@pty-1', {
       immediate: true,
@@ -3815,7 +3818,7 @@ describe('registerPtyHandlers', () => {
       store as never
     )
 
-    await handlers.get('pty:kill')!(null, { id: 'ssh:ssh-1@@relay-pty' })
+    await handlers.get('pty:kill')!(mainWindowIpcEvent, { id: 'ssh:ssh-1@@relay-pty' })
 
     expect(sshShutdown).toHaveBeenCalledWith('ssh:ssh-1@@relay-pty', {
       immediate: true,
@@ -3859,7 +3862,7 @@ describe('registerPtyHandlers', () => {
       store as never
     )
 
-    await handlers.get('pty:kill')!(null, { id: 'ssh:ssh-1@@relay-pty' })
+    await handlers.get('pty:kill')!(mainWindowIpcEvent, { id: 'ssh:ssh-1@@relay-pty' })
 
     expect(localShutdown).not.toHaveBeenCalled()
     expect(store.markSshRemotePtyLease).toHaveBeenCalledWith('ssh-1', 'relay-pty', 'terminated')
@@ -3927,7 +3930,9 @@ describe('registerPtyHandlers', () => {
       listenerFor('pty:signal')(null, { id: 'remote-pty', signal: 'SIGINT' })
     ).not.toThrow()
 
-    await expect(handlers.get('pty:kill')!(null, { id: 'remote-pty' })).resolves.toBeUndefined()
+    await expect(
+      handlers.get('pty:kill')!(mainWindowIpcEvent, { id: 'remote-pty' })
+    ).resolves.toBeUndefined()
     expect(store.markSshRemotePtyLease).toHaveBeenCalledWith('ssh-1', 'remote-pty', 'terminated')
   })
 
@@ -6717,7 +6722,7 @@ describe('registerPtyHandlers', () => {
       mainWindow.webContents.send.mockClear()
 
       setRendererPtyVisible(null, { id: spawnResult.id, visible: false })
-      resizePty(null, { id: spawnResult.id, cols: 72, rows: 24 })
+      resizePty(mainWindowIpcEvent, { id: spawnResult.id, cols: 72, rows: 24 })
       setRendererPtyVisible(null, { id: spawnResult.id, visible: true })
       mockProc.emitData('\x1b[2Khidden-resize redraw')
       vi.advanceTimersByTime(8)
@@ -6729,7 +6734,7 @@ describe('registerPtyHandlers', () => {
       })
 
       mainWindow.webContents.send.mockClear()
-      resizePty(null, { id: spawnResult.id, cols: 80, rows: 24 })
+      resizePty(mainWindowIpcEvent, { id: spawnResult.id, cols: 80, rows: 24 })
       mockProc.emitData('visible repaint')
       vi.advanceTimersByTime(8)
 
@@ -6760,7 +6765,7 @@ describe('registerPtyHandlers', () => {
       mainWindow.webContents.send.mockClear()
 
       setRendererPtyVisible(null, { id: spawnResult.id, visible: false })
-      resizePty(null, { id: spawnResult.id, cols: 72, rows: 24 })
+      resizePty(mainWindowIpcEvent, { id: spawnResult.id, cols: 72, rows: 24 })
       setRendererPtyVisible(null, { id: spawnResult.id, visible: true })
       writePty(mainWindowIpcEvent, { id: spawnResult.id, data: 'x' })
       mockProc.emitData('x')
@@ -7822,6 +7827,51 @@ describe('registerPtyHandlers', () => {
     expect(mockProc.proc.write).not.toHaveBeenCalled()
   })
 
+  it('rejects pty:write/resize/kill IPC from a second live window that does not own the PTY', async () => {
+    const mockProc = createMockProc()
+    spawnMock.mockReturnValue(mockProc.proc)
+    registerPtyHandlers(mainWindow as never)
+    const result = (await handlers.get('pty:spawn')!(mainWindowIpcEvent, {
+      cols: 80,
+      rows: 24
+    })) as { id: string }
+
+    // Why: a second live (but non-owning) Orca window — registered directly
+    // via the real window registry rather than a second registerPtyHandlers
+    // call, so the assertions below exercise the same handler closures the
+    // owning window uses, differing only by event.sender.
+    const secondWindow = {
+      id: nextTestWebContentsId++,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: nextTestWebContentsId++, isDestroyed: () => false }
+    }
+    registerOrcaWindow(secondWindow as never)
+    const secondWindowIpcEvent = { sender: secondWindow.webContents }
+
+    const write = getPtyWriteListener() as (event: unknown, args: unknown) => void
+    const resize = getPtyResizeListener()
+
+    write(secondWindowIpcEvent, { id: result.id, data: 'x' })
+    expect(mockProc.proc.write).not.toHaveBeenCalled()
+
+    resize(secondWindowIpcEvent, { id: result.id, cols: 100, rows: 40 })
+    expect(mockProc.proc.resize).not.toHaveBeenCalled()
+
+    await handlers.get('pty:kill')!(secondWindowIpcEvent, { id: result.id })
+    expect(
+      mainWindow.webContents.send.mock.calls.some(
+        (call) => call[0] === 'pty:exit' && (call[1] as { id: string }).id === result.id
+      )
+    ).toBe(false)
+
+    // Positive control: the owning window's own IPC still reaches the provider.
+    resize(mainWindowIpcEvent, { id: result.id, cols: 100, rows: 40 })
+    expect(mockProc.proc.resize).toHaveBeenCalledWith(100, 40)
+    write(mainWindowIpcEvent, { id: result.id, data: 'x' })
+    expect(mockProc.proc.write).toHaveBeenCalledWith('x')
+  })
+
   it('chunks large acknowledged pty writes before provider writes', async () => {
     const mockProc = createMockProc()
     spawnMock.mockReturnValue(mockProc.proc)
@@ -8114,7 +8164,7 @@ describe('registerPtyHandlers', () => {
       rows: 24
     })) as { id: string }
 
-    await handlers.get('pty:kill')!(null, { id: spawnResult.id })
+    await handlers.get('pty:kill')!(mainWindowIpcEvent, { id: spawnResult.id })
 
     expect(openCodeClearPtyMock).toHaveBeenCalledWith(spawnResult.id)
     expect(piClearPtyMock).toHaveBeenCalledWith(spawnResult.id)
@@ -8145,7 +8195,7 @@ describe('registerPtyHandlers', () => {
       rows: 24
     })) as { id: string }
 
-    await handlers.get('pty:kill')!(null, { id: spawnResult.id })
+    await handlers.get('pty:kill')!(mainWindowIpcEvent, { id: spawnResult.id })
 
     expect(onDataDisposable.dispose.mock.invocationCallOrder[0]).toBeLessThan(
       killSpy.mock.invocationCallOrder[0]
@@ -8479,7 +8529,7 @@ describe('registerPtyHandlers', () => {
       rows: 24
     })) as { id: string }
 
-    await handlers.get('pty:kill')!(null, { id: spawnResult.id })
+    await handlers.get('pty:kill')!(mainWindowIpcEvent, { id: spawnResult.id })
 
     expect(await handlers.get('pty:hasChildProcesses')!(null, { id: spawnResult.id })).toBe(false)
     expect(openCodeClearPtyMock).toHaveBeenCalledWith(spawnResult.id)

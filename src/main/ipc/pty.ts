@@ -3477,6 +3477,31 @@ export function registerPtyHandlers(
     return win !== null && win.webContents === sender
   }
 
+  // Why: multi-window — a PTY belongs to whichever window's renderer spawned
+  // it (ptyRendererOwnerWebContentsIds). Without this check any live Orca
+  // window could write/resize/signal/kill a PTY it merely knows the id of,
+  // reaching another window's terminal. PTYs spawned without a renderer
+  // sender (CLI/daemon/headless) stay ownerless and keep the prior
+  // broadcast-permissive behavior, as does a recorded owner whose window has
+  // since closed.
+  const isPtyCallerAuthorizedForId = (
+    event: IpcMainEvent | IpcMainInvokeEvent,
+    id: string
+  ): boolean => {
+    if (!isPtyWriteEventFromMainWindow(event)) {
+      return false
+    }
+    const ownerWebContentsId = ptyRendererOwnerWebContentsIds.get(id)
+    if (ownerWebContentsId === undefined) {
+      return true
+    }
+    const ownerWindow = getOrcaWindowByWebContentsId(ownerWebContentsId)
+    if (!ownerWindow || ownerWindow.webContents.isDestroyed()) {
+      return true
+    }
+    return event.sender.id === ownerWebContentsId
+  }
+
   const writePtyInput = (args: PtyWritePayload): boolean | Promise<boolean> => {
     // Why: defense-in-depth for the mobile-presence lock. The renderer's
     // xterm.onData guard already drops desktop keystrokes when mobile is
@@ -3533,13 +3558,13 @@ export function registerPtyHandlers(
   }
 
   ipcMain.on('pty:write', (event, args: unknown) => {
-    if (!isPtyWriteEventFromMainWindow(event) || !isPtyWritePayload(args)) {
+    if (!isPtyWritePayload(args) || !isPtyCallerAuthorizedForId(event, args.id)) {
       return
     }
     writePtyInput(args)
   })
   ipcMain.handle('pty:writeAccepted', (event, args: unknown): boolean | Promise<boolean> => {
-    if (!isPtyWriteEventFromMainWindow(event) || !isPtyWritePayload(args)) {
+    if (!isPtyWritePayload(args) || !isPtyCallerAuthorizedForId(event, args.id)) {
       return false
     }
     return writePtyInputAccepted(args)
@@ -3549,7 +3574,10 @@ export function registerPtyHandlers(
   // Using ipcMain.on (not .handle) halves IPC traffic by avoiding the
   // empty acknowledgement message back to the renderer.
   ipcMain.removeAllListeners('pty:resize')
-  ipcMain.on('pty:resize', (_event, args: { id: string; cols: number; rows: number }) => {
+  ipcMain.on('pty:resize', (event, args: { id: string; cols: number; rows: number }) => {
+    if (!isPtyCallerAuthorizedForId(event, args.id)) {
+      return
+    }
     // Why: after a desktop-fit override change, the desktop renderer's
     // re-render cascade runs safeFit on ALL panes (not just the affected
     // one). Background-tab panes get measured at full-width (214) instead
@@ -3677,14 +3705,20 @@ export function registerPtyHandlers(
   })
 
   ipcMain.removeAllListeners('pty:signal')
-  ipcMain.on('pty:signal', (_event, args: { id: string; signal: string }) => {
+  ipcMain.on('pty:signal', (event, args: { id: string; signal: string }) => {
+    if (!isPtyCallerAuthorizedForId(event, args.id)) {
+      return
+    }
     tryGetProviderForPty(args.id)
       ?.sendSignal(args.id, args.signal)
       .catch(() => {})
   })
 
   ipcMain.removeAllListeners('pty:clearBuffer')
-  ipcMain.on('pty:clearBuffer', (_event, args: { id: string }) => {
+  ipcMain.on('pty:clearBuffer', (event, args: { id: string }) => {
+    if (!isPtyCallerAuthorizedForId(event, args.id)) {
+      return
+    }
     // Why: the renderer already cleared its own xterm buffer. This clears the
     // PTY-side state (ConPTY screen buffer, daemon emulator, SSH host buffer)
     // so the next prompt repaint doesn't land at a stale cursor row.
@@ -3694,7 +3728,10 @@ export function registerPtyHandlers(
     runtime?.clearHeadlessTerminalBuffer(args.id).catch(() => {})
   })
 
-  ipcMain.handle('pty:kill', async (_event, args: { id: string; keepHistory?: boolean }) => {
+  ipcMain.handle('pty:kill', async (event, args: { id: string; keepHistory?: boolean }) => {
+    if (!isPtyCallerAuthorizedForId(event, args.id)) {
+      return
+    }
     const ownedConnectionId = ptyOwnership.get(args.id)
     const parsedSshId = ownedConnectionId === undefined ? parseAppSshPtyId(args.id) : null
     const connectionId = ownedConnectionId ?? parsedSshId?.connectionId
