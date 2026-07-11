@@ -6,6 +6,18 @@ const BASE_APP_NAME = 'Orca'
 const BASE_APP_USER_MODEL_ID = 'com.stablyai.orca'
 const MAX_LABEL_LENGTH = 80
 
+// Why: must match extraMetadata.name in config/electron-builder.config.cjs —
+// that's the bundled app.asar package.json "name" Electron reports via
+// app.getName() before this module's caller renames the app, and it's the
+// only runtime signal that a *packaged* build is the parallel Orca Dev
+// variant rather than production Orca (is.dev only distinguishes unpackaged
+// `pnpm dev` runs). Without this, updater.ts's dev-identity check never
+// matches on the packaged Orca Dev build and it keeps polling the production
+// release feed.
+const DEV_PACKAGED_APP_NAME = 'orca-dev-app'
+const DEV_IDENTITY_APP_NAME = 'Orca Dev'
+const DEV_IDENTITY_APP_USER_MODEL_ID = 'com.stablyai.orca.dev'
+
 export type DevInstanceIdentity = AppIdentity & {
   appUserModelId: string
 }
@@ -45,9 +57,22 @@ function createDevAppUserModelId(identityKey: string | null): string {
 
 export function getDevInstanceIdentity(
   isDev: boolean,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  packagedAppName?: string
 ): DevInstanceIdentity {
   if (!isDev) {
+    if (packagedAppName === DEV_PACKAGED_APP_NAME) {
+      return {
+        name: DEV_IDENTITY_APP_NAME,
+        isDev: false,
+        devLabel: null,
+        devBranch: null,
+        devWorktreeName: null,
+        devRepoRoot: null,
+        dockBadgeLabel: null,
+        appUserModelId: DEV_IDENTITY_APP_USER_MODEL_ID
+      }
+    }
     return {
       name: BASE_APP_NAME,
       isDev: false,

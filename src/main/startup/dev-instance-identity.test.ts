@@ -12,6 +12,16 @@ describe('dev-instance-identity', () => {
     })
   })
 
+  it('recognizes the packaged Orca Dev parallel-build variant', () => {
+    expect(getDevInstanceIdentity(false, {}, 'orca-dev-app')).toMatchObject({
+      name: 'Orca Dev',
+      isDev: false,
+      devLabel: null,
+      dockBadgeLabel: null,
+      appUserModelId: 'com.stablyai.orca.dev'
+    })
+  })
+
   it('derives a readable dev label from worktree and branch env', () => {
     const identity = getDevInstanceIdentity(true, {
       ORCA_DEV_REPO_ROOT: '/repo/worktrees/dev-indicator',
