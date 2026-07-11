@@ -17280,6 +17280,7 @@ export class OrcaRuntimeService {
       this.authoritativeWindowId = this.windowGraphStatuses.keys().next().value ?? null
     }
     this.rendererGraphEpoch += 1
+    this.cleanupMobileSessionTabsForWindow(windowId)
     if (this.windowGraphStatuses.size === 0) {
       // Why: once the last renderer graph disappears, Orca must fail closed
       // for live-terminal operations instead of guessing from old state.
@@ -18642,6 +18643,30 @@ export class OrcaRuntimeService {
           this.mobileSessionTabWindowIds.delete(worktreeId)
           this.notifyMobileSessionTabsRemoved(worktreeId)
         }
+      }
+    }
+  }
+
+  // Why: multi-window — a closing window's mobile-session snapshots must not
+  // outlive it. Without this, mobileSessionTabWindowIds/mobileSessionTabsByWorktree
+  // kept the closed window's stale tabs visible to mobile/CLI routing forever
+  // (they're keyed by worktree, not window, and only syncMobileSessionTabs's
+  // "still reporting" path ever pruned them). Reuses the same preserve-or-remove
+  // rule as a normal sync so headless-serve-owned tabs still survive the window.
+  private cleanupMobileSessionTabsForWindow(windowId: number): void {
+    for (const [worktreeId, ownerWindowId] of [...this.mobileSessionTabWindowIds.entries()]) {
+      if (ownerWindowId !== windowId) {
+        continue
+      }
+      const existing = this.mobileSessionTabsByWorktree.get(worktreeId)
+      const preserved = existing ? this.buildPreservedHeadlessMobileSessionSnapshot(existing) : null
+      if (preserved) {
+        this.mobileSessionTabsByWorktree.set(worktreeId, preserved)
+        this.mobileSessionTabWindowIds.delete(worktreeId)
+      } else {
+        this.mobileSessionTabsByWorktree.delete(worktreeId)
+        this.mobileSessionTabWindowIds.delete(worktreeId)
+        this.notifyMobileSessionTabsRemoved(worktreeId)
       }
     }
   }
