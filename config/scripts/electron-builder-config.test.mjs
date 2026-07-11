@@ -24,6 +24,13 @@ describe('electron-builder config', () => {
     expect(electronBuilderConfig.productName).toBe('Orca Dev')
   })
 
+  it('overrides the packaged package.json name so userData does not collide with production Orca', () => {
+    // The bundled package.json "name" (not productName/appId) drives Electron's
+    // default userData dir, so this must differ from both "orca" (production)
+    // and "orca-dev" (the interactive `pnpm dev` profile).
+    expect(electronBuilderConfig.extraMetadata.name).toBe('orca-dev-app')
+  })
+
   it('excludes repo-only source trees from app.asar', () => {
     expect(electronBuilderConfig.files).toEqual(
       expect.arrayContaining([
