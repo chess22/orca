@@ -27,16 +27,32 @@ describe('getDefaultUserDataPath', () => {
     process.env.XDG_CONFIG_HOME = originalXdgConfigHomeEnv
   })
 
-  // Why: ORCA_USER_DATA_PATH is the explicit override used by interactive
-  // `pnpm dev` sessions (see config/scripts/orca-dev.mjs) and must win over
-  // any app.asar discovery.
-  it('prefers the ORCA_USER_DATA_PATH override when set', () => {
+  // Why: ORCA_USER_DATA_PATH is the CLI's only way to find the right instance
+  // when it cannot read its own bundled identity (interactive `pnpm dev`, see
+  // config/scripts/orca-dev.mjs, and SSH relay) and must still win there.
+  it('uses the ORCA_USER_DATA_PATH override when bundle discovery is unavailable', () => {
     process.env.ORCA_USER_DATA_PATH = '/custom/user-data'
+    const root = mkdtempSync(join(tmpdir(), 'orca-metadata-'))
+
+    expect(getDefaultUserDataPath('darwin', root, undefined)).toBe('/custom/user-data')
+  })
+
+  // Why: a packaged CLI can always self-identify via its own app.asar, and
+  // every packaged Orca instance (prod or a parallel build) stamps its own
+  // ORCA_USER_DATA_PATH into every terminal it spawns (configureOrcaUserDataPathEnv
+  // in main/startup/configure-process.ts). Without this, a Dev-bundled CLI
+  // invoked from inside a production-owned terminal would inherit production's
+  // ORCA_USER_DATA_PATH and silently reconnect to production's runtime instead
+  // of its own — self-identification must win over that ambient inheritance.
+  it('prefers the bundled app.asar package name over an ambient ORCA_USER_DATA_PATH from a different app', () => {
+    process.env.ORCA_USER_DATA_PATH = '/Users/chess/Library/Application Support/orca'
     const root = mkdtempSync(join(tmpdir(), 'orca-metadata-'))
     const resourcesPath = join(root, 'Resources')
     writePackagedAppAsar(resourcesPath, 'orca-dev-app')
 
-    expect(getDefaultUserDataPath('darwin', root, resourcesPath)).toBe('/custom/user-data')
+    expect(getDefaultUserDataPath('darwin', root, resourcesPath)).toBe(
+      join(root, 'Library', 'Application Support', 'orca-dev-app')
+    )
   })
 
   // Why: a packaged Orca Dev CLI invoked with ELECTRON_RUN_AS_NODE must resolve
