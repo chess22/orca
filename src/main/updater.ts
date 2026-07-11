@@ -7,6 +7,7 @@ import { killAllPty } from './ipc/pty'
 import { withUpdaterSpan } from './observability/instrumentation'
 import { loadElectronAutoUpdater, type ElectronAutoUpdater } from './electron-updater-loader'
 import { writeMainThreadDiagnosticMarker } from './diagnostics/main-thread-churn-probe'
+import { isDevIdentityAppName } from './startup/dev-instance-identity'
 import {
   beginMacUpdateDownload,
   deferMacQuitUntilInstallerReady,
@@ -47,7 +48,6 @@ const QUIT_AND_INSTALL_DELAY_MS = 100
 const PRE_QUIT_CLEANUP_TIMEOUT_MS = 2_500
 const UPDATE_CHECK_SILENT_SETTLE_DELAY_MS = 1_000
 const UPDATE_CHECK_STALL_TIMEOUT_MS = 45_000
-const DEV_IDENTITY_APP_NAME = 'Orca Dev'
 
 let mainWindowRef: BrowserWindow | null = null
 let currentStatus: UpdateStatus = { state: 'idle' }
@@ -116,7 +116,7 @@ let autoUpdater: ElectronAutoUpdater | null = null
 function isDevIdentityBuild(): boolean {
   // Why: hand-built parallel installs must never consume the production Orca
   // release feed, even when they are packaged and outside Electron dev mode.
-  return app.getName() === DEV_IDENTITY_APP_NAME
+  return isDevIdentityAppName(app.getName())
 }
 
 function getAutoUpdater(): ElectronAutoUpdater {

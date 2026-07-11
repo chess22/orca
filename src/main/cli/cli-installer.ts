@@ -17,6 +17,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { CliInstallMethod, CliInstallStatus } from '../../shared/cli-install-types'
+import { isDevIdentityAppName } from '../startup/dev-instance-identity'
 import { buildAppImageCliWrapper } from './appimage-cli-wrapper'
 
 const execFileAsync = promisify(execFile)
@@ -45,6 +46,8 @@ type CliInstallerOptions = {
   userPathWriter?: (value: string) => Promise<void>
   /** Why: AppImage reports a stable outer file path via $APPIMAGE while bundled resources live in an ephemeral FUSE mount. */
   appImagePath?: string | null
+  /** Test seam for the packaged Orca Dev identity check; defaults from app.getName(). */
+  isDevIdentityBuild?: boolean
 }
 
 type InstallSpec = {
@@ -68,10 +71,12 @@ export class CliInstaller {
   private readonly userPathReader: () => Promise<string | null>
   private readonly userPathWriter: (value: string) => Promise<void>
   private readonly appImagePath: string | null
+  private readonly isDevIdentityBuild: boolean
 
   private get commandName(): string {
-    if (!this.isPackaged && !this.commandPathOverride) {
-      // Why: development builds must not claim the production shell command.
+    if ((!this.isPackaged || this.isDevIdentityBuild) && !this.commandPathOverride) {
+      // Why: development builds — and packaged parallel Orca Dev builds — must
+      // not claim the production shell command.
       return DEV_COMMAND_NAME
     }
     // Why: packaged Linux uses `orca-ide` to avoid shadowing GNOME Orca's /usr/bin/orca.
@@ -111,9 +116,34 @@ export class CliInstaller {
       this.platform === 'linux' && this.isPackaged
         ? (options.appImagePath ?? process.env.APPIMAGE ?? null)
         : null
+    this.isDevIdentityBuild = options.isDevIdentityBuild ?? isDevIdentityAppName(app.getName())
   }
 
   async getStatus(): Promise<CliInstallStatus> {
+    if (this.isPackaged && this.isDevIdentityBuild && !this.commandPathOverride) {
+      // Why: the packaged Orca Dev bundle's Contents/MacOS binary is named
+      // "Orca Dev", which resources/darwin/bin/orca's launcher script does not
+      // account for (it hardcodes Contents/MacOS/Orca). Registering any shell
+      // command here — production `orca` or even a renamed `orca-dev` — would
+      // install a symlink to a launcher that fails at runtime, and worse, could
+      // reclaim the production `orca` symlink out from under the real Orca.app.
+      return {
+        platform: this.platform,
+        commandName: this.commandName,
+        commandPath: null,
+        pathDirectory: null,
+        pathConfigured: false,
+        launcherPath: null,
+        installMethod: null,
+        supported: false,
+        state: 'unsupported',
+        currentTarget: null,
+        unsupportedReason: 'dev_identity_build',
+        detail:
+          'CLI shell command registration is disabled for this parallel Orca Dev build to avoid conflicting with the production `orca` command.'
+      }
+    }
+
     const defaultSpec = this.resolveInstallSpec()
     if (!defaultSpec) {
       return {
