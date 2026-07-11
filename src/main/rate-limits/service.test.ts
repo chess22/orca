@@ -156,7 +156,9 @@ describe('RateLimitService', () => {
     expect(fetchCodexRateLimits).toHaveBeenCalledTimes(2)
   })
 
-  it('removes all window listeners when replacing the attached window', () => {
+  it('keeps both windows attached and independently detachable (multi-window)', () => {
+    // Why: attach() no longer replaces the previously attached window — every
+    // live Orca window stays attached until it closes or the service stops.
     const service = new RateLimitService()
     const firstWindow = new FakeRateLimitWindow()
     const secondWindow = new FakeRateLimitWindow()
@@ -168,6 +170,19 @@ describe('RateLimitService', () => {
     expect(firstWindow.listenerCount('closed')).toBe(1)
 
     service.attach(asRateLimitWindow(secondWindow))
+
+    // The first window's listeners are untouched by attaching a second window.
+    expect(firstWindow.listenerCount('focus')).toBe(1)
+    expect(firstWindow.listenerCount('show')).toBe(1)
+    expect(firstWindow.listenerCount('restore')).toBe(1)
+    expect(firstWindow.listenerCount('closed')).toBe(1)
+    expect(secondWindow.listenerCount('focus')).toBe(1)
+    expect(secondWindow.listenerCount('show')).toBe(1)
+    expect(secondWindow.listenerCount('restore')).toBe(1)
+    expect(secondWindow.listenerCount('closed')).toBe(1)
+
+    // Closing one window detaches only it.
+    firstWindow.emit('closed')
 
     expect(firstWindow.listenerCount('focus')).toBe(0)
     expect(firstWindow.listenerCount('show')).toBe(0)
@@ -184,6 +199,46 @@ describe('RateLimitService', () => {
     expect(secondWindow.listenerCount('show')).toBe(0)
     expect(secondWindow.listenerCount('restore')).toBe(0)
     expect(secondWindow.listenerCount('closed')).toBe(0)
+  })
+
+  it('re-attaching the same window object is a no-op', () => {
+    const service = new RateLimitService()
+    const window = new FakeRateLimitWindow()
+
+    service.attach(asRateLimitWindow(window))
+    expect(window.listenerCount('focus')).toBe(1)
+
+    service.attach(asRateLimitWindow(window))
+    expect(window.listenerCount('focus')).toBe(1)
+    expect(window.listenerCount('show')).toBe(1)
+    expect(window.listenerCount('restore')).toBe(1)
+    expect(window.listenerCount('closed')).toBe(1)
+
+    service.stop()
+  })
+
+  it('pushes rateLimits:update to every attached window', async () => {
+    vi.mocked(fetchClaudeRateLimits).mockResolvedValue(okProvider('claude', 10))
+    vi.mocked(fetchCodexRateLimits).mockResolvedValue(okProvider('codex', 20))
+    const service = new RateLimitService()
+    const firstWindow = new FakeRateLimitWindow()
+    const secondWindow = new FakeRateLimitWindow()
+
+    service.attach(asRateLimitWindow(firstWindow))
+    service.attach(asRateLimitWindow(secondWindow))
+
+    await serviceInternals(service).fetchAll()
+
+    expect(firstWindow.webContents.send).toHaveBeenCalledWith(
+      'rateLimits:update',
+      expect.anything()
+    )
+    expect(secondWindow.webContents.send).toHaveBeenCalledWith(
+      'rateLimits:update',
+      expect.anything()
+    )
+
+    service.stop()
   })
 
   it('sanitizes renderer-provided polling intervals before scheduling timers', () => {

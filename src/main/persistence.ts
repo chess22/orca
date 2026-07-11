@@ -544,6 +544,48 @@ function parseWorkspaceSessionsByHostId(
   return partitions
 }
 
+/** Normalize the persisted per-window-slot session partitions (slots >= 2;
+ *  slot 1 owns the legacy fields). Each nested host partition is zod-validated
+ *  independently so one corrupt entry cannot poison the others. */
+function parseWorkspaceSessionsByWindowSlot(
+  raw: unknown,
+  defaults: WorkspaceSessionState
+): Record<string, Partial<Record<string, WorkspaceSessionState>>> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {}
+  }
+  const bySlot: Record<string, Partial<Record<string, WorkspaceSessionState>>> = {}
+  for (const [slotKey, hostMap] of Object.entries(raw as Record<string, unknown>)) {
+    const slot = Number(slotKey)
+    if (!Number.isInteger(slot) || slot < 2) {
+      continue
+    }
+    if (!hostMap || typeof hostMap !== 'object' || Array.isArray(hostMap)) {
+      continue
+    }
+    const partitions: Partial<Record<string, WorkspaceSessionState>> = {}
+    for (const [hostKey, value] of Object.entries(hostMap as Record<string, unknown>)) {
+      const hostId = normalizeExecutionHostId(hostKey)
+      if (!hostId) {
+        continue
+      }
+      const result = parseWorkspaceSession(value)
+      if (!result.ok) {
+        console.error(
+          `[persistence] Corrupt workspace session for window slot ${slotKey} host ${hostId}, using defaults:`,
+          result.error
+        )
+        continue
+      }
+      partitions[hostId] = { ...defaults, ...result.value }
+    }
+    if (Object.keys(partitions).length > 0) {
+      bySlot[slotKey] = partitions
+    }
+  }
+  return bySlot
+}
+
 function backupPath(dataFile: string, index: number): string {
   return `${dataFile}.bak.${index}`
 }
@@ -3338,6 +3380,12 @@ export class Store {
             parsed.workspaceSessionsByHostId,
             defaults.workspaceSession
           ),
+          // Why: sessions for secondary windows (multi-window). Slot 1 keeps
+          // the legacy fields above so downgrades still read the workspace.
+          workspaceSessionsByWindowSlot: parseWorkspaceSessionsByWindowSlot(
+            parsed.workspaceSessionsByWindowSlot,
+            defaults.workspaceSession
+          ),
           sshTargets: (parsed.sshTargets ?? []).map(normalizeSshTarget),
           deletedSshConfigAliases: Array.isArray(parsed.deletedSshConfigAliases)
             ? parsed.deletedSshConfigAliases.filter(
@@ -4973,6 +5021,13 @@ export class Store {
     for (const session of Object.values(this.state.workspaceSessionsByHostId ?? {})) {
       changed = migrateSession(session) || changed
     }
+    for (const hostMap of Object.values(this.state.workspaceSessionsByWindowSlot ?? {})) {
+      for (const session of Object.values(hostMap)) {
+        if (session) {
+          changed = migrateSession(session) || changed
+        }
+      }
+    }
     const showDotfiles = this.state.ui?.showDotfilesByWorktree
     if (showDotfiles) {
       changed = moveKey(showDotfiles) || changed
@@ -5459,8 +5514,19 @@ export class Store {
     return normalizeExecutionHostId(hostId) ?? LOCAL_EXECUTION_HOST_ID
   }
 
-  getWorkspaceSession(hostId?: string | null): PersistedState['workspaceSession'] {
+  getWorkspaceSession(
+    hostId?: string | null,
+    windowSlot?: number | null
+  ): PersistedState['workspaceSession'] {
     const resolved = this.resolveHostId(hostId)
+    // Why: secondary windows (slot >= 2) keep fully separate sessions so two
+    // windows never restore — and double-attach — the same terminals.
+    if (windowSlot != null && windowSlot >= 2) {
+      return (
+        this.state.workspaceSessionsByWindowSlot?.[String(windowSlot)]?.[resolved] ??
+        getDefaultWorkspaceSession()
+      )
+    }
     if (resolved === LOCAL_EXECUTION_HOST_ID) {
       return this.state.workspaceSession ?? getDefaultWorkspaceSession()
     }
@@ -5474,16 +5540,62 @@ export class Store {
   /** Resolve the worktree a terminal tab belongs to, from the session's
    *  tab→worktree map. More reliable than agent-echoed hook fields. */
   getWorktreeIdForTab(tabId: string): string | undefined {
-    return findWorktreeIdForTab(this.getWorkspaceSession(), tabId)
+    const local = findWorktreeIdForTab(this.getWorkspaceSession(), tabId)
+    if (local) {
+      return local
+    }
+    // Why: hook events can originate from tabs owned by a secondary window,
+    // whose sessions live in the per-slot partitions.
+    for (const hostMap of Object.values(this.state.workspaceSessionsByWindowSlot ?? {})) {
+      for (const session of Object.values(hostMap)) {
+        const found = session ? findWorktreeIdForTab(session, tabId) : undefined
+        if (found) {
+          return found
+        }
+      }
+    }
+    return undefined
   }
 
-  setWorkspaceSession(session: PersistedState['workspaceSession'], hostId?: string | null): void {
+  setWorkspaceSession(
+    session: PersistedState['workspaceSession'],
+    hostId?: string | null,
+    windowSlot?: number | null
+  ): void {
     const resolved = this.resolveHostId(hostId)
+    if (windowSlot != null && windowSlot >= 2) {
+      this.setWindowSlotWorkspaceSession(windowSlot, resolved, session)
+      return
+    }
     if (resolved === LOCAL_EXECUTION_HOST_ID) {
       this.setLocalWorkspaceSession(session)
       return
     }
     this.setHostWorkspaceSession(resolved, session)
+  }
+
+  /** Persist a secondary window's session partition. Takes the light
+   *  prune-and-store path like host partitions, plus scrollback-snapshot file
+   *  cleanup — secondary-window local terminals write real snapshot files. */
+  private setWindowSlotWorkspaceSession(
+    windowSlot: number,
+    hostId: ExecutionHostId,
+    session: WorkspaceSessionState
+  ): void {
+    const slotKey = String(windowSlot)
+    const prior = this.state.workspaceSessionsByWindowSlot?.[slotKey]?.[hostId]
+    const pruned = pruneWorkspaceSessionBrowserHistory(
+      pruneLocalTerminalScrollbackBuffers(session, this.state.repos)
+    )
+    deleteRemovedTerminalScrollbackSnapshots(prior, pruned)
+    this.state.workspaceSessionsByWindowSlot = {
+      ...this.state.workspaceSessionsByWindowSlot,
+      [slotKey]: {
+        ...this.state.workspaceSessionsByWindowSlot?.[slotKey],
+        [hostId]: pruned
+      }
+    }
+    this.scheduleSave()
   }
 
   /** Persist a non-'local' host partition. The PTY-binding race protections in
@@ -5649,23 +5761,36 @@ export class Store {
     this.scheduleSave()
   }
 
-  patchWorkspaceSession(patch: WorkspaceSessionPatch, hostId?: string | null): void {
+  patchWorkspaceSession(
+    patch: WorkspaceSessionPatch,
+    hostId?: string | null,
+    windowSlot?: number | null
+  ): void {
     const resolved = this.resolveHostId(hostId)
+    const slot = windowSlot != null && windowSlot >= 2 ? windowSlot : null
     // Why: the renderer's debounced hot path sends only changed top-level
     // session slices. Scalar/UI patches avoid the terminal normalization path;
     // terminal topology/layout patches still reuse the stale-PTY protections.
     let next: WorkspaceSessionState = {
-      ...this.getWorkspaceSession(resolved),
+      ...this.getWorkspaceSession(resolved, slot),
       ...patch
     }
     if (workspaceSessionPatchNeedsFullNormalization(patch)) {
-      this.setWorkspaceSession(next, resolved)
+      this.setWorkspaceSession(next, resolved, slot)
       return
     }
     if (Object.hasOwn(patch, 'browserUrlHistory')) {
       next = pruneWorkspaceSessionBrowserHistory(next)
     }
-    if (resolved === LOCAL_EXECUTION_HOST_ID) {
+    if (slot != null) {
+      this.state.workspaceSessionsByWindowSlot = {
+        ...this.state.workspaceSessionsByWindowSlot,
+        [String(slot)]: {
+          ...this.state.workspaceSessionsByWindowSlot?.[String(slot)],
+          [resolved]: next
+        }
+      }
+    } else if (resolved === LOCAL_EXECUTION_HOST_ID) {
       this.state.workspaceSession = next
     } else {
       this.state.workspaceSessionsByHostId = {

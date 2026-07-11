@@ -142,10 +142,17 @@ describe('updater mac install handoff', () => {
     'waits for Squirrel.Mac before honoring a manual quit that should install the update',
     async () => {
       const sendMock = vi.fn()
-      const mainWindow = { webContents: { send: sendMock } }
+      const mainWindow = {
+        id: 1,
+        on: vi.fn(),
+        isDestroyed: () => false,
+        webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+      }
 
       autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
       const { setupAutoUpdater } = await import('./updater')
+      const { registerOrcaWindow } = await import('./window/orca-window-registry')
+      registerOrcaWindow(mainWindow as never)
 
       setupAutoUpdater(mainWindow as never)
       await vi.waitFor(() => {
@@ -194,10 +201,17 @@ describe('updater mac install handoff', () => {
             finishCleanup = resolve
           })
       )
-      const mainWindow = { webContents: { send: vi.fn() } }
+      const mainWindow = {
+        id: 1,
+        on: vi.fn(),
+        isDestroyed: () => false,
+        webContents: { id: 1, send: vi.fn(), isDestroyed: () => false }
+      }
 
       autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
       const { setupAutoUpdater, quitAndInstall } = await import('./updater')
+      const { registerOrcaWindow } = await import('./window/orca-window-registry')
+      registerOrcaWindow(mainWindow as never)
 
       setupAutoUpdater(mainWindow as never, { onBeforeQuit })
       await vi.waitFor(() => {
@@ -276,10 +290,17 @@ describe('updater mac install handoff', () => {
       vi.useFakeTimers()
 
       const sendMock = vi.fn()
-      const mainWindow = { webContents: { send: sendMock } }
+      const mainWindow = {
+        id: 1,
+        on: vi.fn(),
+        isDestroyed: () => false,
+        webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+      }
 
       autoUpdaterMock.checkForUpdates.mockResolvedValue(undefined)
       const { setupAutoUpdater } = await import('./updater')
+      const { registerOrcaWindow } = await import('./window/orca-window-registry')
+      registerOrcaWindow(mainWindow as never)
 
       setupAutoUpdater(mainWindow as never)
       await vi.waitFor(() => {

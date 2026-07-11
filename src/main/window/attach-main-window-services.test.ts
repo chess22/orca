@@ -92,7 +92,11 @@ vi.mock('../updater', () => ({
   setupAutoUpdater: setupAutoUpdaterMock
 }))
 
-import { attachMainWindowServices } from './attach-main-window-services'
+import {
+  attachMainWindowServices,
+  resetAttachMainWindowServicesForTesting
+} from './attach-main-window-services'
+import { resetOrcaWindowRegistryForTesting } from './orca-window-registry'
 
 type MockFn = ReturnType<typeof vi.fn>
 
@@ -197,6 +201,10 @@ describe('attachMainWindowServices', () => {
     browserManagerUnregisterAllMock.mockReset()
     systemPreferencesAskForMediaAccessMock.mockResolvedValue(true)
     systemPreferencesGetMediaAccessStatusMock.mockReturnValue('granted')
+    // Why: the module-level once-guards and the real window registry must not
+    // leak state between tests, or a later test observes a no-op registration.
+    resetAttachMainWindowServicesForTesting()
+    resetOrcaWindowRegistryForTesting()
   })
 
   it('reloads the app renderer through main and marks expected renderer teardown', async () => {
@@ -299,7 +307,10 @@ describe('attachMainWindowServices', () => {
     )
 
     const reloadHandler = handleMock.mock.calls.find(([channel]) => channel === 'app:reload')?.[1]
-    await reloadHandler?.({ sender: { id: 999 } })
+    // Why: the handler now resolves the sender through the real Orca window
+    // registry, so a foreign sender must expose isDestroyed like a real
+    // webContents before the isOrcaWindowWebContents check can reject it.
+    await reloadHandler?.({ sender: { id: 999, isDestroyed: () => false } })
 
     expect(onBeforeRendererReload).not.toHaveBeenCalled()
     expect(mainWindow.webContents.reload).not.toHaveBeenCalled()
@@ -354,46 +365,78 @@ describe('attachMainWindowServices', () => {
     expect(mainWindow.webContents.reload).not.toHaveBeenCalled()
   })
 
-  it('removes the app reload IPC handler when the owning window closes', () => {
+  // Why: app:reload is now registered once, process-wide, and is never removed
+  // on window close — it stays live and rejects senders the registry no
+  // longer recognizes. This replaces the old per-window handler removal test.
+  it('ignores app reload requests from a window after it closes', async () => {
+    const onBeforeRendererReload = vi.fn()
     const mainWindowOnMock = vi.fn()
     const mainWindow = createMainWindow()
     mainWindow.on = mainWindowOnMock
 
-    attachMainWindowServices(mainWindow as never, createStore(), createRuntime() as never)
+    attachMainWindowServices(
+      mainWindow as never,
+      createStore(),
+      createRuntime() as never,
+      undefined,
+      undefined,
+      { onBeforeRendererReload }
+    )
 
-    removeHandlerMock.mockClear()
+    const reloadHandler = handleMock.mock.calls.find(([channel]) => channel === 'app:reload')?.[1]
+    expect(reloadHandler).toBeTypeOf('function')
+
+    // Why: the registry's own 'closed' listener (registered first, via
+    // registerOrcaWindow) must run before app:reload can observe the window
+    // as unregistered, so every captured 'closed' callback is invoked in order.
     const closedHandlers = getClosedHandlers(mainWindowOnMock)
     expect(closedHandlers.length).toBeGreaterThan(0)
     for (const handler of closedHandlers) {
       handler()
     }
 
-    expect(removeHandlerMock).toHaveBeenCalledWith('app:reload')
+    await reloadHandler?.({ sender: mainWindow.webContents })
+
+    expect(onBeforeRendererReload).not.toHaveBeenCalled()
+    expect(mainWindow.webContents.reload).not.toHaveBeenCalled()
   })
 
-  it('keeps a newer app reload handler when an older window closes late', () => {
+  it('keeps servicing reload requests from a newer window after an older window closes late', () => {
+    const onBeforeRendererReload = vi.fn()
     const oldWindowOnMock = vi.fn()
     const oldWindow = createMainWindow()
     oldWindow.on = oldWindowOnMock
-    attachMainWindowServices(oldWindow as never, createStore(), createRuntime() as never)
+    attachMainWindowServices(
+      oldWindow as never,
+      createStore(),
+      createRuntime() as never,
+      undefined,
+      undefined,
+      { onBeforeRendererReload }
+    )
     const oldClosedHandlers = getClosedHandlers(oldWindowOnMock)
 
+    // Why: distinct ids — colliding ids would collide in the real window
+    // registry and make the newer window indistinguishable from the older one.
     const newWindowOnMock = vi.fn()
     const newWindow = createMainWindow()
+    newWindow.id = 2
+    newWindow.webContents.id = 2
     newWindow.on = newWindowOnMock
     attachMainWindowServices(newWindow as never, createStore(), createRuntime() as never)
 
-    removeHandlerMock.mockClear()
     for (const handler of oldClosedHandlers) {
       handler()
     }
 
-    expect(removeHandlerMock).not.toHaveBeenCalledWith('app:reload')
+    const reloadHandler = handleMock.mock.calls.find(([channel]) => channel === 'app:reload')?.[1]
 
-    for (const handler of getClosedHandlers(newWindowOnMock)) {
-      handler()
-    }
-    expect(removeHandlerMock).toHaveBeenCalledWith('app:reload')
+    reloadHandler?.({ sender: oldWindow.webContents })
+    expect(oldWindow.webContents.reload).not.toHaveBeenCalled()
+
+    reloadHandler?.({ sender: newWindow.webContents })
+    expect(onBeforeRendererReload).toHaveBeenCalledWith({ webContentsId: 2, ignoreCache: false })
+    expect(newWindow.webContents.reload).toHaveBeenCalledTimes(1)
   })
 
   it('only allows the explicit permission allowlist', async () => {
@@ -441,15 +484,24 @@ describe('attachMainWindowServices', () => {
 
     attachMainWindowServices(mainWindow as never, createStore(), createRuntime() as never)
 
-    const closedHandler = getClosedHandlers(mainWindowOnMock).at(-1)
-    expect(closedHandler).toBeTypeOf('function')
-    closedHandler?.()
+    // Why: unregisterAll only fires once getOrcaWindowCount() reaches 0, which
+    // requires the registry's own 'closed' listener (registered first) to run
+    // and drop the entry before this handler's count check.
+    const closedHandlers = getClosedHandlers(mainWindowOnMock)
+    expect(closedHandlers.length).toBeGreaterThan(0)
+    for (const handler of closedHandlers) {
+      handler()
+    }
     expect(browserManagerUnregisterAllMock).toHaveBeenCalledTimes(1)
   })
 
-  it('removes the native file-drop relay when the main window closes', () => {
+  // Why: the relay is now registered once, process-wide, and is never removed
+  // on window close — it stays live and rejects senders the registry no
+  // longer recognizes. This replaces the old per-window listener removal test.
+  it('ignores native file drops from a window after it closes', () => {
     const mainWindowOnMock = vi.fn()
-    const mainWindow = createMainWindow({ send: vi.fn() })
+    const sendMock = vi.fn()
+    const mainWindow = createMainWindow({ send: sendMock })
     mainWindow.on = mainWindowOnMock
 
     attachMainWindowServices(mainWindow as never, createStore(), createRuntime() as never)
@@ -464,7 +516,9 @@ describe('attachMainWindowServices', () => {
       handler()
     }
 
-    expect(removeListenerMock).toHaveBeenCalledWith(channel, relayHandler)
+    relayHandler?.({ sender: mainWindow.webContents }, { paths: ['/tmp/a'], target: 'editor' })
+
+    expect(sendMock).not.toHaveBeenCalled()
   })
 
   it('relays native file drops only from the owning renderer webContents', () => {
@@ -477,7 +531,10 @@ describe('attachMainWindowServices', () => {
     const relayHandler = onMock.mock.calls.find(([event]) => event === channel)?.[1]
     const payload = { paths: ['/tmp/a'], target: 'editor' }
 
-    relayHandler?.({ sender: { id: 999 } }, payload)
+    // Why: the handler now resolves the sender through the real Orca window
+    // registry, so a foreign sender must expose isDestroyed like a real
+    // webContents before the isOrcaWindowWebContents check can reject it.
+    relayHandler?.({ sender: { id: 999, isDestroyed: () => false } }, payload)
 
     expect(sendMock).not.toHaveBeenCalled()
 
@@ -536,10 +593,12 @@ describe('attachMainWindowServices', () => {
     }
 
     expect(runtime.markGraphUnavailable).toHaveBeenCalledWith(1)
-    expect(runtime.setNotifier).toHaveBeenCalledWith(null)
+    // Why: the notifier is now keyed per-window id — there is no shared
+    // token-based "keep newer" slot to clobber.
+    expect(runtime.setNotifier).toHaveBeenCalledWith(null, 1)
   })
 
-  it('keeps a newer runtime notifier when an older window closes late', () => {
+  it('clears each window notifier independently, keyed by window id', () => {
     const runtime = createRuntime()
     const oldWindowOnMock = vi.fn()
     const oldWindow = createMainWindow()
@@ -547,8 +606,12 @@ describe('attachMainWindowServices', () => {
     attachMainWindowServices(oldWindow as never, createStore(), runtime as never)
     const oldClosedHandlers = getClosedHandlers(oldWindowOnMock)
 
+    // Why: distinct ids — colliding ids would collide in the real window
+    // registry and make the newer window indistinguishable from the older one.
     const newWindowOnMock = vi.fn()
     const newWindow = createMainWindow()
+    newWindow.id = 2
+    newWindow.webContents.id = 2
     newWindow.on = newWindowOnMock
     attachMainWindowServices(newWindow as never, createStore(), runtime as never)
 
@@ -557,12 +620,13 @@ describe('attachMainWindowServices', () => {
       handler()
     }
 
-    expect(runtime.setNotifier).not.toHaveBeenCalledWith(null)
+    expect(runtime.setNotifier).toHaveBeenCalledWith(null, 1)
+    expect(runtime.setNotifier).not.toHaveBeenCalledWith(null, 2)
 
     for (const handler of getClosedHandlers(newWindowOnMock)) {
       handler()
     }
-    expect(runtime.setNotifier).toHaveBeenCalledWith(null)
+    expect(runtime.setNotifier).toHaveBeenCalledWith(null, 2)
   })
 
   it('forwards runtime notifier events to the renderer', () => {

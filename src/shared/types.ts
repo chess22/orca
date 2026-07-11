@@ -3309,10 +3309,22 @@ export type PersistedUIState = {
   /** Optional Kagi private-session link used only when Kagi is the search engine. */
   browserKagiSessionLink?: string | null
   /** Saved window bounds so the app restores to the user's last position/size
-   *  instead of maximizing on every launch. */
+   *  instead of maximizing on every launch. Legacy single-window key; window
+   *  slot 1 keeps writing it so downgrades restore correctly. */
   windowBounds?: { x: number; y: number; width: number; height: number } | null
-  /** Whether the window was maximized when it was last closed. */
+  /** Whether the window was maximized when it was last closed. Legacy
+   *  single-window key paired with windowBounds. */
   windowMaximized?: boolean
+  /** Per-window-slot bounds for multi-window. Keyed by the stable window slot
+   *  ("1", "2", ...) so reopening a second window restores its own geometry. */
+  windowStateBySlot?: Record<
+    string,
+    {
+      bounds?: { x: number; y: number; width: number; height: number } | null
+      maximized?: boolean
+    }
+  >
+
   /** One-shot migration flag: 'recent' used to mean the weighted smart sort
    *  (v1→v2 rename). When this flag is absent and sortBy is 'recent', the
    *  main-process load() migrates it to 'smart' and sets this flag so the
@@ -3507,6 +3519,10 @@ export type PersistedState = {
    *  Mixed-host writes stay isolated here; 'local' stays in workspaceSession so
    *  pre-partition builds keep working. Optional/absent on legacy files. */
   workspaceSessionsByHostId?: Partial<Record<ExecutionHostId, WorkspaceSessionState>>
+  /** Multi-window: workspace sessions for secondary windows (slot >= 2), keyed
+   *  by window slot then execution host ('local' included). Slot 1 keeps using
+   *  workspaceSession / workspaceSessionsByHostId so downgrades stay intact. */
+  workspaceSessionsByWindowSlot?: Record<string, Partial<Record<string, WorkspaceSessionState>>>
   sshTargets: SshTarget[]
   /** SSH config aliases the user explicitly deleted. Suppresses re-import of the
    *  matching ~/.ssh/config host on the next sync so a deleted host does not

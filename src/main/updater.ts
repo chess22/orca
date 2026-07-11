@@ -4,6 +4,7 @@ import type { NsisUpdater } from 'electron-updater'
 import { is } from '@electron-toolkit/utils'
 import type { UpdateCheckOptions, UpdateStatus } from '../shared/types'
 import { killAllPty } from './ipc/pty'
+import { broadcastToOrcaWindows } from './window/orca-window-registry'
 import { withUpdaterSpan } from './observability/instrumentation'
 import { loadElectronAutoUpdater, type ElectronAutoUpdater } from './electron-updater-loader'
 import { writeMainThreadDiagnosticMarker } from './diagnostics/main-thread-churn-probe'
@@ -49,7 +50,6 @@ const PRE_QUIT_CLEANUP_TIMEOUT_MS = 2_500
 const UPDATE_CHECK_SILENT_SETTLE_DELAY_MS = 1_000
 const UPDATE_CHECK_STALL_TIMEOUT_MS = 45_000
 
-let mainWindowRef: BrowserWindow | null = null
 let currentStatus: UpdateStatus = { state: 'idle' }
 let userInitiatedCheck = false
 let onBeforeQuitCleanup: (() => void | Promise<void>) | null = null
@@ -250,7 +250,8 @@ function sendStatus(status: UpdateStatus): void {
     return
   }
   currentStatus = decoratedStatus
-  mainWindowRef?.webContents.send('updater:status', decoratedStatus)
+  // Why: multi-window — update status banners render in every window.
+  broadcastToOrcaWindows('updater:status', decoratedStatus)
 }
 
 function getOptionsForUpdateCheckVariant(variant: UpdateCheckVariant): UpdateCheckOptions {
@@ -1213,7 +1214,7 @@ async function checkForUpdateNudge(): Promise<void> {
     ) {
       awaitingNudgeCheckOutcome = true
       _setPendingUpdateNudgeId?.(nudge.id)
-      mainWindowRef?.webContents.send('updater:clearDismissal')
+      broadcastToOrcaWindows('updater:clearDismissal')
       runBackgroundUpdateCheck(nudge.id)
     }
   } finally {
@@ -1240,7 +1241,9 @@ export function dismissNudge(): void {
 }
 
 export function setupAutoUpdater(
-  mainWindow: BrowserWindow,
+  // Why: kept for call-site compatibility; updater status now broadcasts to
+  // every Orca window instead of binding to one.
+  _mainWindow: BrowserWindow,
   opts?: {
     getLastUpdateCheckAt?: () => number | null
     onBeforeQuit?: () => void | Promise<void>
@@ -1251,7 +1254,6 @@ export function setupAutoUpdater(
     setDismissedUpdateNudgeId?: (id: string | null) => void
   }
 ): void {
-  mainWindowRef = mainWindow
   onBeforeQuitCleanup = opts?.onBeforeQuit ?? null
   persistLastUpdateCheckAt = opts?.setLastUpdateCheckAt ?? null
   _getLastUpdateCheckAt = opts?.getLastUpdateCheckAt ?? null

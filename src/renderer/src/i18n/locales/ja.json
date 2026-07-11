@@ -34,6 +34,7 @@
   },
   "menu": {
     "checkForUpdates": "アップデートを確認...",
+    "newWindow": "新規ウィンドウ",
     "settings": "設定",
     "exploreOrca": "Orca を探索",
     "gettingStarted": "Orca を使い始める",

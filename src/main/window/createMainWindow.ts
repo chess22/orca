@@ -47,6 +47,7 @@ import {
 import { getMainE2EConfig } from '../e2e-config'
 import { buildEditableContextMenuTemplate } from './editable-context-menu'
 import { clearTrustedUIRendererWebContentsId, setTrustedUIRendererWebContentsId } from '../ipc/ui'
+import { getOrcaWindowCount } from './orca-window-registry'
 import { resolveWindowCloseAction } from './window-close-decision'
 
 function forceRepaint(window: BrowserWindow): void {
@@ -143,6 +144,34 @@ type CreateMainWindowOptions = {
    *  before session restore re-attaches them (#5787). This callback lets the host
    *  mark that one reload so the sweep can be skipped for it. */
   onBeforeRecoveryReload?: (webContentsId: number) => void
+  /** Stable per-window identity for bounds persistence. Slot 1 is the original
+   *  single window and keeps the legacy windowBounds/windowMaximized keys in
+   *  sync so downgrades restore correctly. */
+  windowSlot?: number
+  /** Source-window bounds for cascade placement when this slot has no saved
+   *  geometry (new secondary windows open offset from the invoking window). */
+  cascadeFromBounds?: { x: number; y: number; width: number; height: number } | null
+  /** Invoked by the window.new shortcut; opens another Orca window. */
+  onNewWindow?: () => void
+}
+
+// Why: the renderer's WindowControls mounts after ready-to-show, which is
+// also when savedMaximized is restored — so window:maximize-changed has
+// already fired (or not fired, if maximize() was called pre-mount) before
+// the listener attaches. Expose a synchronous getter so the button can
+// initialize its icon to match the current state on mount. Registered once
+// process-wide (ipcMain.handle throws on double registration) and resolved
+// per sender so every Orca window reads its own state.
+let isMaximizedHandlerRegistered = false
+function registerIsMaximizedHandlerOnce(): void {
+  if (isMaximizedHandlerRegistered) {
+    return
+  }
+  isMaximizedHandlerRegistered = true
+  ipcMain.handle('window:isMaximized', (event): boolean => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    return !!window && !window.isDestroyed() && window.isMaximized()
+  })
 }
 
 export function loadMainWindow(mainWindow: BrowserWindow): void {
@@ -157,7 +186,13 @@ export function createMainWindow(
   store: Store | null,
   opts?: CreateMainWindowOptions
 ): BrowserWindow {
-  const rawSavedBounds = store?.getUI().windowBounds
+  const windowSlot = opts?.windowSlot ?? 1
+  const slotKey = String(windowSlot)
+  const savedSlotState = store?.getUI().windowStateBySlot?.[slotKey]
+  // Why: slot 1 falls back to the legacy single-window keys so existing
+  // profiles restore their geometry the first time this build runs.
+  const rawSavedBounds =
+    savedSlotState?.bounds ?? (windowSlot === 1 ? store?.getUI().windowBounds : undefined)
   // Why: defense in depth — if a previous quit/update path persisted
   // shrink-to-min bounds (see freezeBoundsOnQuit), discard them on restore
   // rather than resurrecting a tiny window. Anything at or below the min
@@ -205,7 +240,9 @@ export function createMainWindow(
       rawSavedBounds
     )
   }
-  const savedMaximized = store?.getUI().windowMaximized ?? false
+  const savedMaximized =
+    savedSlotState?.maximized ??
+    (windowSlot === 1 ? (store?.getUI().windowMaximized ?? false) : false)
   // Why: on first launch (no saved bounds), fill the primary display work area
   // so the window feels spacious without calling maximize(). Saved bounds still
   // win on subsequent launches.
@@ -216,6 +253,21 @@ export function createMainWindow(
     } catch {
       return { width: 1200, height: 800 }
     }
+  })()
+  // Why: a brand-new secondary window should open near the window that spawned
+  // it, not stacked pixel-perfect on top of it. Only used when the slot has no
+  // saved geometry; an off-screen cascade falls back to default placement.
+  const cascadedBounds = (() => {
+    if (rawSavedBounds || !opts?.cascadeFromBounds) {
+      return undefined
+    }
+    const candidate = {
+      x: opts.cascadeFromBounds.x + 24,
+      y: opts.cascadeFromBounds.y + 24,
+      width: opts.cascadeFromBounds.width,
+      height: opts.cascadeFromBounds.height
+    }
+    return rectHasVisibleAreaOnAnyDisplay(candidate) ? candidate : undefined
   })()
 
   const settings = store?.getSettings()
@@ -238,10 +290,11 @@ export function createMainWindow(
         : {}
     : {}
 
+  const initialBounds = savedBounds ?? cascadedBounds
   const mainWindow = new BrowserWindow({
-    width: savedBounds?.width ?? defaultBounds.width,
-    height: savedBounds?.height ?? defaultBounds.height,
-    ...(savedBounds ? { x: savedBounds.x, y: savedBounds.y } : {}),
+    width: initialBounds?.width ?? defaultBounds.width,
+    height: initialBounds?.height ?? defaultBounds.height,
+    ...(initialBounds ? { x: initialBounds.x, y: initialBounds.y } : {}),
     minWidth: MIN_WIDTH,
     minHeight: MIN_HEIGHT,
     title: opts?.title ?? 'Orca',
@@ -384,6 +437,28 @@ export function createMainWindow(
   // relaunch) to come up at minWidth × minHeight. Freeze persistence as soon
   // as 'close' is observed.
   let windowClosing = false
+  // Why: every write goes to this window's slot entry; slot 1 also mirrors the
+  // legacy single-window keys so a downgrade build still restores geometry.
+  const persistWindowState = (
+    maximized: boolean,
+    bounds?: { x: number; y: number; width: number; height: number }
+  ): void => {
+    if (!store) {
+      return
+    }
+    const currentBySlot = store.getUI().windowStateBySlot ?? {}
+    const nextSlotState = {
+      ...currentBySlot[slotKey],
+      maximized,
+      ...(bounds ? { bounds } : {})
+    }
+    store.updateUI({
+      windowStateBySlot: { ...currentBySlot, [slotKey]: nextSlotState },
+      ...(windowSlot === 1
+        ? { windowMaximized: maximized, ...(bounds ? { windowBounds: bounds } : {}) }
+        : {})
+    })
+  }
   const saveBounds = (): void => {
     if (boundsTimer) {
       clearTimeout(boundsTimer)
@@ -400,7 +475,7 @@ export function createMainWindow(
       // which violates the pairing invariant subsequent launches rely on.
       const isMaximized = mainWindow.isMaximized()
       if (isMaximized) {
-        store?.updateUI({ windowMaximized: true })
+        persistWindowState(true)
         return
       }
       const bounds = mainWindow.getBounds()
@@ -414,10 +489,10 @@ export function createMainWindow(
       // launches don't incorrectly restore maximized state.
       if (bounds.width <= MIN_WIDTH || bounds.height <= MIN_HEIGHT) {
         console.warn('[window] Skipping persist of near-minimum windowBounds:', bounds)
-        store?.updateUI({ windowMaximized: false })
+        persistWindowState(false)
         return
       }
-      store?.updateUI({ windowMaximized: false, windowBounds: bounds })
+      persistWindowState(false, bounds)
     }, 500)
   }
   mainWindow.on('resize', saveBounds)
@@ -442,7 +517,7 @@ export function createMainWindow(
     if (windowClosing) {
       return
     }
-    store?.updateUI({ windowMaximized: true })
+    persistWindowState(true)
     mainWindow.webContents.send('window:maximize-changed', true)
   })
   mainWindow.on('unmaximize', () => {
@@ -456,10 +531,10 @@ export function createMainWindow(
     // remembered size.
     if (bounds.width <= MIN_WIDTH || bounds.height <= MIN_HEIGHT) {
       console.warn('[window] Skipping unmaximize-time persist of near-min bounds:', bounds)
-      store?.updateUI({ windowMaximized: false })
+      persistWindowState(false)
       return
     }
-    store?.updateUI({ windowMaximized: false, windowBounds: bounds })
+    persistWindowState(false, bounds)
   })
 
   mainWindow.on('enter-full-screen', () => {
@@ -770,6 +845,11 @@ export function createMainWindow(
         return
       case 'openNewWorkspace':
         mainWindow.webContents.send('ui:openNewWorkspace')
+        return
+      case 'newWindow':
+        // Why: opening a window is a main-process action; nothing to send to
+        // the renderer that received the chord.
+        opts?.onNewWindow?.()
         return
       case 'deleteCurrentWorkspace':
         mainWindow.webContents.send('ui:deleteCurrentWorkspace')
@@ -1106,14 +1186,23 @@ export function createMainWindow(
     opts?.onQuitAborted?.()
   })
 
-  const onConfirmClose = (): void => {
-    windowCloseConfirmed = true
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.close()
+  // Why: multi-window — these channels have one listener per open window, so
+  // every listener must ignore events sent by other windows' renderers.
+  const isOwnRendererEvent = (event: Electron.IpcMainEvent): boolean => {
+    return !mainWindow.isDestroyed() && event.sender === mainWindow.webContents
+  }
+  const onConfirmClose = (event: Electron.IpcMainEvent): void => {
+    if (!isOwnRendererEvent(event)) {
+      return
     }
+    windowCloseConfirmed = true
+    mainWindow.close()
   }
   const trafficLightChannel = 'ui:sync-traffic-lights'
-  const onSyncTrafficLights = (_event: Electron.IpcMainEvent, zoomFactor: number): void => {
+  const onSyncTrafficLights = (event: Electron.IpcMainEvent, zoomFactor: number): void => {
+    if (!isOwnRendererEvent(event)) {
+      return
+    }
     syncTrafficLightPosition(mainWindow, zoomFactor)
   }
   ipcMain.on(trafficLightChannel, onSyncTrafficLights)
@@ -1121,14 +1210,14 @@ export function createMainWindow(
   // Why: renderer-drawn window controls on Windows/Linux desktop send these to
   // replicate the native title bar buttons hidden by custom chrome.
   const minimizeChannel = 'window:minimize'
-  const onMinimize = (): void => {
-    if (!mainWindow.isDestroyed()) {
+  const onMinimize = (event: Electron.IpcMainEvent): void => {
+    if (isOwnRendererEvent(event)) {
       mainWindow.minimize()
     }
   }
   const maximizeChannel = 'window:maximize'
-  const onMaximize = (): void => {
-    if (mainWindow.isDestroyed()) {
+  const onMaximize = (event: Electron.IpcMainEvent): void => {
+    if (!isOwnRendererEvent(event)) {
       return
     }
     if (mainWindow.isMaximized()) {
@@ -1146,8 +1235,8 @@ export function createMainWindow(
   // to what happens when confirmWindowClose() ultimately calls mainWindow.close()
   // with windowCloseConfirmed = true.
   const requestCloseChannel = 'window:request-close'
-  const onRequestClose = (): void => {
-    if (mainWindow.isDestroyed()) {
+  const onRequestClose = (event: Electron.IpcMainEvent): void => {
+    if (!isOwnRendererEvent(event)) {
       return
     }
     // Why: the renderer-drawn X on Windows routes here (not the native close
@@ -1162,23 +1251,16 @@ export function createMainWindow(
   // desktop pops up the application menu at the cursor position, replicating
   // the Alt-key reveal that autoHideMenuBar normally provides.
   const popupMenuChannel = 'menu:popup'
-  const onPopupMenu = (): void => {
-    Menu.getApplicationMenu()?.popup({ window: mainWindow })
-  }
-  // Why: the renderer's WindowControls mounts after ready-to-show, which is
-  // also when savedMaximized is restored — so window:maximize-changed has
-  // already fired (or not fired, if maximize() was called pre-mount) before
-  // the listener attaches. Expose a synchronous getter so the button can
-  // initialize its icon to match the current state on mount.
-  const isMaximizedChannel = 'window:isMaximized'
-  const onIsMaximized = (): boolean => {
-    return !mainWindow.isDestroyed() && mainWindow.isMaximized()
+  const onPopupMenu = (event: Electron.IpcMainEvent): void => {
+    if (isOwnRendererEvent(event)) {
+      Menu.getApplicationMenu()?.popup({ window: mainWindow })
+    }
   }
   ipcMain.on(minimizeChannel, onMinimize)
   ipcMain.on(maximizeChannel, onMaximize)
   ipcMain.on(requestCloseChannel, onRequestClose)
   ipcMain.on(popupMenuChannel, onPopupMenu)
-  ipcMain.handle(isMaximizedChannel, onIsMaximized)
+  registerIsMaximizedHandlerOnce()
 
   ipcMain.on(confirmCloseChannel, onConfirmClose)
   mainWindow.on('closed', () => {
@@ -1194,10 +1276,14 @@ export function createMainWindow(
     ipcMain.removeListener(trafficLightChannel, onSyncTrafficLights)
     ipcMain.removeListener(minimizeChannel, onMinimize)
     ipcMain.removeListener(maximizeChannel, onMaximize)
-    browserManager.setDictationShortcutForwardingPredicate(null)
+    // Why: the predicate is process-global; only drop it once no Orca window
+    // remains, or closing one of several windows would change dictation
+    // shortcut behavior for the survivors.
+    if (getOrcaWindowCount() === 0) {
+      browserManager.setDictationShortcutForwardingPredicate(null)
+    }
     ipcMain.removeListener(requestCloseChannel, onRequestClose)
     ipcMain.removeListener(popupMenuChannel, onPopupMenu)
-    ipcMain.removeHandler(isMaximizedChannel)
     ipcMain.removeListener(confirmCloseChannel, onConfirmClose)
     ipcMain.removeListener(markdownFocusChannel, onMarkdownEditorFocused)
     ipcMain.removeListener(terminalInputFocusChannel, onTerminalInputFocused)

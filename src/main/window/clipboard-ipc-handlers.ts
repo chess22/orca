@@ -35,7 +35,9 @@ import {
 } from './clipboard-remote-file-copy'
 import { saveClipboardImageBufferInRuntime } from './clipboard-runtime-image-upload'
 
-let trustedClipboardRendererWebContentsId: number | null = null
+// Why: multi-window — every live Orca window's top-level webContents is a
+// trusted clipboard sender. `set(null)` clears the whole set.
+const trustedClipboardRendererWebContentsIds = new Set<number>()
 
 type ClipboardWriteFileRequest = {
   filePath: string
@@ -55,7 +57,15 @@ async function saveClipboardImageBufferForTarget(
 }
 
 export function setTrustedClipboardRendererWebContentsId(webContentsId: number | null): void {
-  trustedClipboardRendererWebContentsId = webContentsId
+  if (webContentsId === null) {
+    trustedClipboardRendererWebContentsIds.clear()
+    return
+  }
+  trustedClipboardRendererWebContentsIds.add(webContentsId)
+}
+
+export function removeTrustedClipboardRendererWebContentsId(webContentsId: number): void {
+  trustedClipboardRendererWebContentsIds.delete(webContentsId)
 }
 
 // Run a short-lived OS clipboard helper (PowerShell / wl-copy / xclip), feeding
@@ -229,8 +239,8 @@ function isTrustedClipboardRenderer(sender: WebContents): boolean {
   if (sender.isDestroyed() || sender.getType() !== 'window') {
     return false
   }
-  if (trustedClipboardRendererWebContentsId != null) {
-    return sender.id === trustedClipboardRendererWebContentsId
+  if (trustedClipboardRendererWebContentsIds.size > 0) {
+    return trustedClipboardRendererWebContentsIds.has(sender.id)
   }
 
   const senderUrl = sender.getURL()

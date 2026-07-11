@@ -23,6 +23,7 @@ export function getNextDefaultOnAppearanceSettingValue(current: boolean | undefi
 }
 
 type RegisterAppMenuOptions = {
+  onNewWindow: () => void
   onOpenSettings: () => void
   onOpenSetupGuide: (window?: Electron.BaseWindow | null) => void
   onOpenFeatureTour: (window?: Electron.BaseWindow | null) => void
@@ -41,6 +42,7 @@ type RegisterAppMenuOptions = {
 
 function buildAndApplyMenu(options: RegisterAppMenuOptions): void {
   const {
+    onNewWindow,
     onOpenSettings,
     onOpenSetupGuide,
     onOpenFeatureTour,
@@ -146,12 +148,30 @@ function buildAndApplyMenu(options: RegisterAppMenuOptions): void {
     ]
   }
 
+  // Why: display-only shortcut hint — the chord is resolved in
+  // createMainWindow.ts's before-input-event allowlist (window.new), matching
+  // the other rebindable shortcuts. A real accelerator here would bypass user
+  // keybinding overrides.
+  const newWindowItem: Electron.MenuItemConstructorOptions = {
+    label: `${translateMain('menu.newWindow', 'New Window')}\t${shortcutLabel('window.new')}`,
+    click: () => onNewWindow()
+  }
+
+  // Why: macOS gets a File menu too so New Window is reachable from the menu
+  // bar (and via the dock while no window is open), matching mac conventions.
+  const macFileMenu: Electron.MenuItemConstructorOptions = {
+    label: translateMain('menu.file', 'File'),
+    submenu: [newWindowItem, { type: 'separator' }, { role: 'close' }]
+  }
+
   const fileMenu: Electron.MenuItemConstructorOptions = {
     label: translateMain('menu.file', 'File'),
     // Why: on Windows/Linux there is no app-named menu, so Settings and
     // Quit live under File — matching the common platform convention and
     // keeping all user-facing actions reachable from the in-window menu bar.
     submenu: [
+      newWindowItem,
+      { type: 'separator' },
       settingsItem,
       { type: 'separator' },
       { role: 'quit', label: translateMain('menu.exit', 'Exit') }
@@ -303,7 +323,7 @@ function buildAndApplyMenu(options: RegisterAppMenuOptions): void {
 
   const template: Electron.MenuItemConstructorOptions[] = [
     ...(isMac ? [macAppMenu] : []),
-    ...(isMac ? [] : [fileMenu]),
+    ...(isMac ? [macFileMenu] : [fileMenu]),
     editMenu,
     viewMenu,
     windowMenu,

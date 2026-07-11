@@ -109,6 +109,13 @@ import {
 } from '../project-groups/folder-workspace-path-status'
 import { getSshFilesystemProvider } from '../providers/ssh-filesystem-dispatch'
 import { resolveLocalProjectRuntimeForWorktreeId } from '../local-project-runtime-resolution'
+import {
+  broadcastToOrcaWindows,
+  getOrcaWindowByWebContentsId,
+  getOrcaWindowCount,
+  getPrimaryOrcaWindow,
+  registerOrcaWindow
+} from '../window/orca-window-registry'
 
 // ─── Provider Registry ──────────────────────────────────────────────
 // Routes PTY operations by connectionId. null = local provider.
@@ -125,6 +132,10 @@ const SYNTHETIC_KILL_EXIT_DUPLICATE_WINDOW_MS = 30_000
 // post-spawn operations to the correct provider without the renderer needing
 // to track connectionId per-PTY.
 const ptyOwnership = new Map<string, string | null>()
+// Why: multi-window — renderer-directed PTY events (pty:data, pty:exit,
+// buffer requests) must reach the window whose renderer spawned/attached the
+// PTY. Unknown owners fall back to a broadcast so no event is ever dropped.
+const ptyRendererOwnerWebContentsIds = new Map<string, number>()
 // Why: mobile clients must mirror desktop PTY geometry even when the renderer
 // cannot provide an xterm snapshot yet, such as immediately after tab creation.
 const ptySizes = new Map<string, { cols: number; rows: number }>()
@@ -473,6 +484,7 @@ function finishPtyShutdown(
     store?.markSshRemotePtyLease(connectionId, getRelayPtyId(connectionId, id), 'terminated')
   }
   ptyOwnership.delete(id)
+  ptyRendererOwnerWebContentsIds.delete(id)
   markClaudePtyExited(id)
 }
 
@@ -1025,6 +1037,7 @@ export function clearPtyOwnershipForConnection(connectionId: string): void {
       // for the process lifetime.
       clearProviderPtyState(ptyId)
       ptyOwnership.delete(ptyId)
+      ptyRendererOwnerWebContentsIds.delete(ptyId)
     }
   }
 }
@@ -1112,10 +1125,51 @@ export function clearProviderPtyState(id: string): void {
 
 export function deletePtyOwnership(id: string): void {
   ptyOwnership.delete(id)
+  ptyRendererOwnerWebContentsIds.delete(id)
 }
 
 export function setPtyOwnership(id: string, connectionId: string | null): void {
   ptyOwnership.set(id, connectionId)
+}
+
+export function setPtyRendererOwnerWebContentsId(id: string, webContentsId: number): void {
+  ptyRendererOwnerWebContentsIds.set(id, webContentsId)
+}
+
+/** Record which window's renderer spawned/attached a PTY. Runtime/CLI spawns
+ *  have no renderer sender and keep broadcast delivery (owner stays unset). */
+function recordPtySpawnRendererOwner(
+  id: string,
+  sender: Electron.WebContents | null | undefined
+): void {
+  // Why: harness callers invoke the spawn handler without an IPC event; treat
+  // any sender we cannot positively match to a live Orca window as ownerless.
+  if (!sender || (typeof sender.isDestroyed === 'function' && sender.isDestroyed())) {
+    return
+  }
+  const win = getOrcaWindowByWebContentsId(sender.id)
+  if (win && win.webContents === sender) {
+    ptyRendererOwnerWebContentsIds.set(id, sender.id)
+  }
+}
+
+/** Route a renderer-directed PTY event to the window that owns the PTY, or
+ *  broadcast when ownership was never recorded (pre-tracking PTYs, CLI/daemon
+ *  spawns). Why: a PTY's owner is only cleared on process exit, not on window
+ *  close — a detached PTY that outlives its window keeps a stale recorded
+ *  owner. Broadcasting in that case would leak its data/exit/serialize
+ *  requests into unrelated surviving windows, so a recorded-but-gone owner
+ *  drops the event instead of falling back to broadcast. */
+export function sendPtyEventToOwnerWindow(ptyId: string, channel: string, payload: unknown): void {
+  const ownerWebContentsId = ptyRendererOwnerWebContentsIds.get(ptyId)
+  if (ownerWebContentsId === undefined) {
+    broadcastToOrcaWindows(channel, payload)
+    return
+  }
+  const owner = getOrcaWindowByWebContentsId(ownerWebContentsId)
+  if (owner && !owner.webContents.isDestroyed()) {
+    owner.webContents.send(channel, payload)
+  }
 }
 
 // Why: localProvider.onData/onExit return unsubscribe functions. Without
@@ -1124,10 +1178,10 @@ export function setPtyOwnership(id: string, connectionId: string | null): void {
 // duplicate listeners that forward every event twice.
 let localDataUnsub: (() => void) | null = null
 let localExitUnsub: (() => void) | null = null
-let didFinishLoadHandler: (() => void) | null = null
-let didFinishLoadWebContents: WebContents | null = null
-let rendererLifecycleResetWebContents: WebContents | null = null
-let rendererLifecycleResetHandler: (() => void) | null = null
+// Why: multi-window — every Orca window's renderer gets its own did-finish-load
+// orphan sweep and lifecycle reset listeners; entries clean up on 'destroyed'.
+const didFinishLoadAttachedWebContents = new Set<number>()
+const rendererLifecycleResetAttachedWebContents = new Set<number>()
 
 // Why: the "Restart daemon" path needs to re-bind provider→renderer listeners
 // against the freshly-created adapter after replaceDaemonProvider swaps the
@@ -1186,48 +1240,50 @@ export function resetPtyRendererDeliveryDebug(): void {
   resetPtyRendererDeliveryDebugSnapshot()
 }
 
-function clearDidFinishLoadHandler(): void {
-  if (didFinishLoadHandler && didFinishLoadWebContents) {
-    didFinishLoadWebContents.removeListener('did-finish-load', didFinishLoadHandler)
+// Why: renderer-owned hints die with the page; keep known-visibility state so
+// surviving daemon/SSH PTYs fail closed until the new renderer reports again.
+// Why: multi-window — scoped to the one window whose lifecycle actually
+// reset (by recorded owner), so a sibling window's still-live PTYs don't lose
+// their active/visible hints just because another window reloaded, crashed,
+// or a brand-new window registered. PTYs with no recorded owner (pre-tracking
+// spawns, headless/CLI) aren't scoped to any window and keep the prior
+// broad-reset behavior.
+function markRendererPtysHiddenForRendererLifecycleReset(webContentsId: number): void {
+  const ownsOrUnowned = (ptyId: string): boolean => {
+    const owner = ptyRendererOwnerWebContentsIds.get(ptyId)
+    return owner === undefined || owner === webContentsId
   }
-  didFinishLoadHandler = null
-  didFinishLoadWebContents = null
-}
-
-function markRendererPtysHiddenForRendererLifecycleReset(): void {
-  // Why: renderer-owned hints die with the page; keep known-visibility state so
-  // surviving daemon/SSH PTYs fail closed until the new renderer reports again.
-  activeRendererPtys.clear()
-  visibleRendererPtys.clear()
-}
-
-function clearRendererLifecycleResetHandlers(): void {
-  if (!rendererLifecycleResetWebContents) {
-    return
+  for (const ptyId of activeRendererPtys) {
+    if (ownsOrUnowned(ptyId)) {
+      activeRendererPtys.delete(ptyId)
+    }
   }
-  if (rendererLifecycleResetHandler) {
-    rendererLifecycleResetWebContents.removeListener(
-      'did-start-loading',
-      rendererLifecycleResetHandler
-    )
-    rendererLifecycleResetWebContents.removeListener(
-      'render-process-gone',
-      rendererLifecycleResetHandler
-    )
-    rendererLifecycleResetWebContents.removeListener('destroyed', rendererLifecycleResetHandler)
+  for (const ptyId of visibleRendererPtys) {
+    if (ownsOrUnowned(ptyId)) {
+      visibleRendererPtys.delete(ptyId)
+    }
   }
-  rendererLifecycleResetWebContents = null
-  rendererLifecycleResetHandler = null
 }
 
 function registerRendererLifecycleResetHandlers(webContents: WebContents): void {
-  clearRendererLifecycleResetHandlers()
-  markRendererPtysHiddenForRendererLifecycleReset()
-  rendererLifecycleResetWebContents = webContents
-  rendererLifecycleResetHandler = markRendererPtysHiddenForRendererLifecycleReset
-  webContents.on('did-start-loading', rendererLifecycleResetHandler)
-  webContents.on('render-process-gone', rendererLifecycleResetHandler)
-  webContents.on('destroyed', rendererLifecycleResetHandler)
+  // Why: multi-window — attach once per renderer webContents; the headless
+  // serve stub has no usable id/listeners, so skip it.
+  const webContentsId = typeof webContents.id === 'number' ? webContents.id : null
+  if (webContentsId === null) {
+    return
+  }
+  markRendererPtysHiddenForRendererLifecycleReset(webContentsId)
+  if (rendererLifecycleResetAttachedWebContents.has(webContentsId)) {
+    return
+  }
+  rendererLifecycleResetAttachedWebContents.add(webContentsId)
+  const handler = (): void => markRendererPtysHiddenForRendererLifecycleReset(webContentsId)
+  webContents.on('did-start-loading', handler)
+  webContents.on('render-process-gone', handler)
+  webContents.on('destroyed', () => {
+    handler()
+    rendererLifecycleResetAttachedWebContents.delete(webContentsId)
+  })
 }
 
 // Why: the "Restart daemon" flow needs to detach listeners from the current
@@ -1258,6 +1314,11 @@ export function registerPtyHandlers(
     isRecoveryReloadInFlight?: (webContentsId: number) => boolean
   }
 ): void {
+  // Why: idempotent safety net (mirrors attachMainWindowServices) — window
+  // stubs without a numeric id (headless serve) are intentionally skipped.
+  if (typeof mainWindow.id === 'number' && typeof mainWindow.on === 'function') {
+    registerOrcaWindow(mainWindow)
+  }
   registerRendererLifecycleResetHandlers(mainWindow.webContents)
 
   const getLocalPtyStartupPromise = (connectionId?: string | null): Promise<void> | undefined => {
@@ -1349,6 +1410,7 @@ export function registerPtyHandlers(
       onExit: (id, code) => {
         clearProviderPtyState(id)
         ptyOwnership.delete(id)
+        ptyRendererOwnerWebContentsIds.delete(id)
         markClaudePtyExited(id)
         runtime?.onPtyExit(id, code)
       },
@@ -1558,7 +1620,7 @@ export function registerPtyHandlers(
     rendererInFlightCharsByPty.set(id, (rendererInFlightCharsByPty.get(id) ?? 0) + charCount)
     rendererInFlightTotalChars += charCount
     recordPtyRendererDeliveryPressure()
-    mainWindow.webContents.send('pty:data', payload)
+    sendPtyEventToOwnerWindow(id, 'pty:data', payload)
   }
 
   function rendererPtyIsKnownHidden(id: string): boolean {
@@ -1667,7 +1729,7 @@ export function registerPtyHandlers(
 
   function flushPendingData(): void {
     flushTimer = null
-    if (mainWindow.isDestroyed()) {
+    if (getOrcaWindowCount() === 0) {
       pendingData.clear()
       rendererInFlightCharsByPty.clear()
       rendererInFlightTotalChars = 0
@@ -1757,7 +1819,7 @@ export function registerPtyHandlers(
   }
 
   function sendPtyExitToRenderer(payload: { id: string; code: number }): void {
-    if (mainWindow.isDestroyed()) {
+    if (getOrcaWindowCount() === 0) {
       return
     }
     // Why: flush any batched data for this PTY before sending the exit event,
@@ -1785,7 +1847,7 @@ export function registerPtyHandlers(
     )
     rendererInFlightCharsByPty.delete(payload.id)
     recordPtyRendererDeliveryPressure()
-    mainWindow.webContents.send('pty:exit', payload)
+    sendPtyEventToOwnerWindow(payload.id, 'pty:exit', payload)
   }
 
   async function shutdownProviderAndDetectExit(
@@ -1830,7 +1892,7 @@ export function registerPtyHandlers(
       const rendererData = answerStartupTerminalColorQueriesForPty(payload.id, payload.data)
       const preservesSeq = rendererData === payload.data
       const startSeq = preservesSeq ? getChunkStartSeq(outputSeq, payload.data) : undefined
-      if (mainWindow.isDestroyed()) {
+      if (getOrcaWindowCount() === 0) {
         // Why: clear the pending flush timer so it doesn't fire after the window
         // is gone. Without this, macOS app re-activation leaks orphaned timers
         // from the previous window's registration.
@@ -1903,6 +1965,7 @@ export function registerPtyHandlers(
       if (!isLocalProvider) {
         clearProviderPtyState(payload.id)
         ptyOwnership.delete(payload.id)
+        ptyRendererOwnerWebContentsIds.delete(payload.id)
         markClaudePtyExited(payload.id)
         runtime?.onPtyExit(payload.id, payload.code)
       }
@@ -1977,7 +2040,7 @@ export function registerPtyHandlers(
     ptyId: string,
     opts?: { scrollbackRows?: number; altScreenForcesZeroRows?: boolean }
   ): Promise<SerializeResult> {
-    if (mainWindow.isDestroyed()) {
+    if (getOrcaWindowCount() === 0) {
       return Promise.resolve(null)
     }
 
@@ -1995,7 +2058,7 @@ export function registerPtyHandlers(
       if (opts) {
         payload.opts = opts
       }
-      mainWindow.webContents.send('pty:serializeBuffer:request', payload)
+      sendPtyEventToOwnerWindow(ptyId, 'pty:serializeBuffer:request', payload)
     })
   }
 
@@ -2003,29 +2066,45 @@ export function registerPtyHandlers(
   // Why: only applies to LocalPtyProvider where PTYs live in the Electron main
   // process and can become orphaned on page reload. Daemon-backed sessions
   // survive renderer restarts by design — orphan cleanup would kill them.
-  clearDidFinishLoadHandler()
-  if (localProvider instanceof LocalPtyProvider) {
+  const sweepWebContentsId =
+    typeof mainWindow.webContents.id === 'number' ? mainWindow.webContents.id : null
+  if (
+    localProvider instanceof LocalPtyProvider &&
+    sweepWebContentsId !== null &&
+    !didFinishLoadAttachedWebContents.has(sweepWebContentsId)
+  ) {
+    didFinishLoadAttachedWebContents.add(sweepWebContentsId)
     const lp = localProvider
-    didFinishLoadHandler = () => {
+    const didFinishLoadHandler = (): void => {
       // Why: always advance so the load generation stays monotonic, but skip the
       // sweep (and its per-PTY cleanup) on the crash/freeze-recovery reload — it
-      // would kill live LOCAL PTYs across the single window before session
-      // restore re-attaches them (#5787). The getter consumes the flag, so the
-      // next genuine reload still reclaims genuinely-orphaned PTYs.
+      // would kill live LOCAL PTYs before session restore re-attaches them
+      // (#5787). The getter consumes the flag, so the next genuine reload still
+      // reclaims genuinely-orphaned PTYs.
       const generation = lp.advanceGeneration()
-      if (options?.isRecoveryReloadInFlight?.(mainWindow.webContents.id)) {
+      if (options?.isRecoveryReloadInFlight?.(sweepWebContentsId)) {
         return
       }
-      const killed = lp.killOrphanedPtys(generation - 1)
+      // Why: multi-window — one window's reload must only reclaim PTYs its own
+      // renderer attached. Owner-less PTYs (spawned before ownership tracking)
+      // stay sweepable from the primary window only.
+      const isPrimarySweep = getPrimaryOrcaWindow()?.webContents.id === sweepWebContentsId
+      const killed = lp.killOrphanedPtys(generation - 1, (id) => {
+        const owner = ptyRendererOwnerWebContentsIds.get(id)
+        return owner === undefined ? isPrimarySweep : owner === sweepWebContentsId
+      })
       for (const { id } of killed) {
         clearProviderPtyState(id)
         ptyOwnership.delete(id)
+        ptyRendererOwnerWebContentsIds.delete(id)
         markClaudePtyExited(id)
         runtime?.onPtyExit(id, -1)
       }
     }
-    didFinishLoadWebContents = mainWindow.webContents
     mainWindow.webContents.on('did-finish-load', didFinishLoadHandler)
+    mainWindow.webContents.on('destroyed', () => {
+      didFinishLoadAttachedWebContents.delete(sweepWebContentsId)
+    })
   }
 
   const assertFolderWorkspacePtyPathUsable = async (
@@ -2299,6 +2378,8 @@ export function registerPtyHandlers(
             trustedTerminalHandleEnv.delete(args.preAllocatedHandle)
           }
         }
+        // Why: runtime-controller spawns have no renderer sender; delivery
+        // falls back to broadcast until a renderer attaches the PTY.
         ptyOwnership.set(result.id, args.connectionId ?? null)
         const relayResultId = getRelayPtyId(args.connectionId, result.id)
         const persistSshLease = (): void => {
@@ -2544,7 +2625,7 @@ export function registerPtyHandlers(
       // Why: desktop xterm owns local scrollback, while daemon/SSH providers
       // own their own retained buffers. Clear both surfaces so mobile
       // resubscribe snapshots do not resurrect cleared history.
-      mainWindow.webContents.send('pty:clearBuffer:request', { ptyId })
+      sendPtyEventToOwnerWindow(ptyId, 'pty:clearBuffer:request', { ptyId })
       try {
         await getProviderForPty(ptyId).clearBuffer(ptyId)
       } catch {
@@ -2629,7 +2710,7 @@ export function registerPtyHandlers(
   ipcMain.handle(
     'pty:spawn',
     async (
-      _event,
+      event,
       args: {
         cols: number
         rows: number
@@ -3108,6 +3189,7 @@ export function registerPtyHandlers(
           reattach: result.isReattach ?? false
         })
         ptyOwnership.set(result.id, args.connectionId ?? null)
+        recordPtySpawnRendererOwner(result.id, event?.sender)
         if (startupTerminalColorQueryReplyColors) {
           if (result.isReattach) {
             if (preSpawnStartupTerminalColorReplyPtyId) {
@@ -3411,13 +3493,41 @@ export function registerPtyHandlers(
     (value as { id: string }).id.length > 0 &&
     typeof (value as { data?: unknown }).data === 'string'
 
-  const isPtyWriteEventFromMainWindow = (
+  // Why: multi-window — any live Orca window's top-level renderer may write to
+  // a PTY it owns; webview guests and foreign senders are still rejected.
+  const isPtyWriteEventFromMainWindow = (event: IpcMainEvent | IpcMainInvokeEvent): boolean => {
+    const sender = event?.sender
+    if (!sender || (typeof sender.isDestroyed === 'function' && sender.isDestroyed())) {
+      return false
+    }
+    const win = getOrcaWindowByWebContentsId(sender.id)
+    return win !== null && win.webContents === sender
+  }
+
+  // Why: multi-window — a PTY belongs to whichever window's renderer spawned
+  // it (ptyRendererOwnerWebContentsIds). Without this check any live Orca
+  // window could write/resize/signal/kill a PTY it merely knows the id of,
+  // reaching another window's terminal. PTYs spawned without a renderer
+  // sender (CLI/daemon/headless) stay ownerless and keep the prior
+  // broadcast-permissive behavior, as does a recorded owner whose window has
+  // since closed.
+  const isPtyCallerAuthorizedForId = (
     event: IpcMainEvent | IpcMainInvokeEvent,
-    mainWebContents: WebContents
-  ): boolean =>
-    event.sender === mainWebContents &&
-    !mainWindow.isDestroyed() &&
-    !(typeof mainWebContents.isDestroyed === 'function' && mainWebContents.isDestroyed())
+    id: string
+  ): boolean => {
+    if (!isPtyWriteEventFromMainWindow(event)) {
+      return false
+    }
+    const ownerWebContentsId = ptyRendererOwnerWebContentsIds.get(id)
+    if (ownerWebContentsId === undefined) {
+      return true
+    }
+    const ownerWindow = getOrcaWindowByWebContentsId(ownerWebContentsId)
+    if (!ownerWindow || ownerWindow.webContents.isDestroyed()) {
+      return true
+    }
+    return event.sender.id === ownerWebContentsId
+  }
 
   const writePtyInput = (args: PtyWritePayload): boolean | Promise<boolean> => {
     // Why: defense-in-depth for the mobile-presence lock. The renderer's
@@ -3475,13 +3585,13 @@ export function registerPtyHandlers(
   }
 
   ipcMain.on('pty:write', (event, args: unknown) => {
-    if (!isPtyWriteEventFromMainWindow(event, mainWindow.webContents) || !isPtyWritePayload(args)) {
+    if (!isPtyWritePayload(args) || !isPtyCallerAuthorizedForId(event, args.id)) {
       return
     }
     writePtyInput(args)
   })
   ipcMain.handle('pty:writeAccepted', (event, args: unknown): boolean | Promise<boolean> => {
-    if (!isPtyWriteEventFromMainWindow(event, mainWindow.webContents) || !isPtyWritePayload(args)) {
+    if (!isPtyWritePayload(args) || !isPtyCallerAuthorizedForId(event, args.id)) {
       return false
     }
     return writePtyInputAccepted(args)
@@ -3491,7 +3601,10 @@ export function registerPtyHandlers(
   // Using ipcMain.on (not .handle) halves IPC traffic by avoiding the
   // empty acknowledgement message back to the renderer.
   ipcMain.removeAllListeners('pty:resize')
-  ipcMain.on('pty:resize', (_event, args: { id: string; cols: number; rows: number }) => {
+  ipcMain.on('pty:resize', (event, args: { id: string; cols: number; rows: number }) => {
+    if (!isPtyCallerAuthorizedForId(event, args.id)) {
+      return
+    }
     // Why: after a desktop-fit override change, the desktop renderer's
     // re-render cascade runs safeFit on ALL panes (not just the affected
     // one). Background-tab panes get measured at full-width (214) instead
@@ -3619,14 +3732,20 @@ export function registerPtyHandlers(
   })
 
   ipcMain.removeAllListeners('pty:signal')
-  ipcMain.on('pty:signal', (_event, args: { id: string; signal: string }) => {
+  ipcMain.on('pty:signal', (event, args: { id: string; signal: string }) => {
+    if (!isPtyCallerAuthorizedForId(event, args.id)) {
+      return
+    }
     tryGetProviderForPty(args.id)
       ?.sendSignal(args.id, args.signal)
       .catch(() => {})
   })
 
   ipcMain.removeAllListeners('pty:clearBuffer')
-  ipcMain.on('pty:clearBuffer', (_event, args: { id: string }) => {
+  ipcMain.on('pty:clearBuffer', (event, args: { id: string }) => {
+    if (!isPtyCallerAuthorizedForId(event, args.id)) {
+      return
+    }
     // Why: the renderer already cleared its own xterm buffer. This clears the
     // PTY-side state (ConPTY screen buffer, daemon emulator, SSH host buffer)
     // so the next prompt repaint doesn't land at a stale cursor row.
@@ -3636,7 +3755,10 @@ export function registerPtyHandlers(
     runtime?.clearHeadlessTerminalBuffer(args.id).catch(() => {})
   })
 
-  ipcMain.handle('pty:kill', async (_event, args: { id: string; keepHistory?: boolean }) => {
+  ipcMain.handle('pty:kill', async (event, args: { id: string; keepHistory?: boolean }) => {
+    if (!isPtyCallerAuthorizedForId(event, args.id)) {
+      return
+    }
     const ownedConnectionId = ptyOwnership.get(args.id)
     const parsedSshId = ownedConnectionId === undefined ? parseAppSshPtyId(args.id) : null
     const connectionId = ownedConnectionId ?? parsedSshId?.connectionId

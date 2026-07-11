@@ -1023,10 +1023,18 @@ export class LocalPtyProvider implements IPtyProvider {
   // ─── Local-only helpers (not part of IPtyProvider interface) ───────
 
   /** Kill orphaned PTYs from previous page loads. */
-  killOrphanedPtys(currentGeneration: number): { id: string }[] {
+  killOrphanedPtys(
+    currentGeneration: number,
+    shouldKill?: (id: string) => boolean
+  ): { id: string }[] {
     const killed: { id: string }[] = []
     for (const [id, proc] of ptyProcesses) {
       if ((ptyLoadGeneration.get(id) ?? -1) < currentGeneration) {
+        // Why: multi-window — one window's reload sweep must spare PTYs owned
+        // by other windows; the caller scopes the sweep via this predicate.
+        if (shouldKill && !shouldKill(id)) {
+          continue
+        }
         safeKillAndClean(id, proc)
         killed.push({ id })
       }

@@ -63,8 +63,10 @@ import type { IPtyProvider } from './types'
 describe('PTY provider dispatch', () => {
   const handlers = new Map<string, (...args: unknown[]) => unknown>()
   const mainWindow = {
+    id: 1,
+    on: vi.fn(),
     isDestroyed: () => false,
-    webContents: { on: vi.fn(), send: vi.fn(), removeListener: vi.fn() }
+    webContents: { id: 1, on: vi.fn(), send: vi.fn(), removeListener: vi.fn() }
   }
   const mainWindowIpcEvent = { sender: mainWindow.webContents }
 

@@ -42,6 +42,12 @@ import type { CodexAccountSelectionTarget } from '../codex-accounts/runtime-sele
 import type { ClaudeAccountSelectionTarget } from '../claude-accounts/runtime-selection'
 import { runWorktreeChangeInvalidators } from '../ipc/worktree-change-invalidators'
 import {
+  getBroadcastWindowFacade,
+  getOrcaWindowCount,
+  isOrcaWindowWebContents,
+  registerOrcaWindow
+} from './orca-window-registry'
+import {
   scheduleWorktreeBaseDirectoryWatcherSync,
   setWorktreeBaseDirectoryWatcherSyncContext
 } from '../ipc/worktree-base-directory-watcher'
@@ -54,15 +60,25 @@ const UPDATER_SETUP_FALLBACK_MS = 15_000
 // against a configured updater (listeners, autoDownload=false, window ref),
 // so those entry points force the pending setup first.
 let pendingAutoUpdaterSetup: (() => void) | null = null
+let updaterSetupDone = false
 
 export function ensureAutoUpdaterConfigured(): void {
   pendingAutoUpdaterSetup?.()
 }
 
-let appReloadHandlerTokenCounter = 0
-let activeAppReloadHandlerToken: number | null = null
-let runtimeNotifierTokenCounter = 0
-let activeRuntimeNotifierToken: number | null = null
+/** Test-only: reset the module-level once-guards so each unit test observes a
+ *  fresh registration pass. */
+export function resetAttachMainWindowServicesForTesting(): void {
+  globalWindowServicesRegistered = false
+  updaterSetupDone = false
+  pendingAutoUpdaterSetup = null
+}
+
+// Why: multi-window — the process-global IPC surface (repos, worktrees, PTY
+// management, SSH, updater setup) must register exactly once; per-window state
+// (runtime notifier, permission handlers, PTY renderer lifecycle) attaches on
+// every window. The broadcast facade fans window-directed sends to all windows.
+let globalWindowServicesRegistered = false
 
 export function attachMainWindowServices(
   mainWindow: BrowserWindow,
@@ -80,13 +96,13 @@ export function attachMainWindowServices(
     onBeforeUpdateQuit?: () => void | Promise<void>
   }
 ): void {
-  registerAppReloadHandler(mainWindow, options?.onBeforeRendererReload)
-  registerRepoHandlers(mainWindow, store)
-  registerWorktreeHandlers(mainWindow, store, runtime)
-  // Why: repo/settings mutations resync watchers through this attached main-window context.
-  setWorktreeBaseDirectoryWatcherSyncContext(store, mainWindow)
-  scheduleWorktreeBaseDirectoryWatcherSync(store, mainWindow)
-  registerWorkspaceCleanupHandlers(store, { runtime, getLocalPtyProvider })
+  const broadcastWindow = getBroadcastWindowFacade()
+  // Why: idempotent safety net — openOrcaWindow registers first in production,
+  // but every window that reaches service attachment must be in the registry
+  // or sender-validated global handlers would reject its renderer.
+  registerOrcaWindow(mainWindow)
+  // Why: registerPtyHandlers is re-entrant (it re-registers global handlers and
+  // attaches per-webContents lifecycle listeners), so it runs for every window.
   registerPtyHandlers(
     mainWindow,
     runtime,
@@ -99,18 +115,28 @@ export function attachMainWindowServices(
       isRecoveryReloadInFlight: options?.isRecoveryReloadInFlight
     }
   )
-  // Why: the Manage Sessions settings panel (docs/daemon-staleness-ux.md §Phase 1)
-  // uses a narrow `pty:management:*` IPC surface that reads the live
-  // DaemonPtyRouter via getDaemonProvider(). Registering here — after
-  // registerPtyHandlers — keeps this wiring alongside the rest of the PTY IPC
-  // and ensures the handlers are re-installed on macOS app re-activation when
-  // the main window is recreated.
-  registerDaemonManagementHandlers()
-  // Why: do not enumerate repo paths from background GC. `git worktree list`
-  // can re-touch protected folders on macOS and trigger folder-access prompts.
-  scheduleHistoryGc(async () => {
-    return getKnownWorktreeIdsForHistoryGc(store)
-  })
+  if (!globalWindowServicesRegistered) {
+    globalWindowServicesRegistered = true
+    registerAppReloadHandler(options?.onBeforeRendererReload)
+    registerRepoHandlers(broadcastWindow, store)
+    registerWorktreeHandlers(broadcastWindow, store, runtime)
+    // Why: repo/settings mutations resync watchers through this attached context.
+    setWorktreeBaseDirectoryWatcherSyncContext(store, broadcastWindow)
+    scheduleWorktreeBaseDirectoryWatcherSync(store, broadcastWindow)
+    registerWorkspaceCleanupHandlers(store, { runtime, getLocalPtyProvider })
+    // Why: the Manage Sessions settings panel (docs/daemon-staleness-ux.md §Phase 1)
+    // uses a narrow `pty:management:*` IPC surface that reads the live
+    // DaemonPtyRouter via getDaemonProvider().
+    registerDaemonManagementHandlers()
+    // Why: do not enumerate repo paths from background GC. `git worktree list`
+    // can re-touch protected folders on macOS and trigger folder-access prompts.
+    scheduleHistoryGc(async () => {
+      return getKnownWorktreeIdsForHistoryGc(store)
+    })
+    registerSshHandlers(store, () => getBroadcastWindowFacade(), runtime)
+    registerRemoteWorkspaceHandlers(store, () => getBroadcastWindowFacade())
+    registerFileDropRelay()
+  }
   // Why: warm-reattach gap.
   // Daemon-hosted PTYs survive renderer restarts on purpose, so on a fresh
   // Orca launch the daemon's `listSessions()` returns sessions that
@@ -133,15 +159,13 @@ export function attachMainWindowServices(
         )
       })
   }
-  registerSshHandlers(store, () => mainWindow, runtime)
-  registerRemoteWorkspaceHandlers(store, () => mainWindow)
-  registerFileDropRelay(mainWindow)
   // Why: setupAutoUpdater's first getAutoUpdater() call synchronously
   // require()s electron-updater in packaged builds — seconds on a cold
   // Windows disk under Defender scanning (part of issue #7225's pre-paint
   // stall) — so defer it past first paint. The timer fallback keeps update
   // checks alive for renderers that crash-loop before ever painting.
-  let updaterSetupDone = false
+  // Why: the flag is module-scoped — a second window must not re-run updater
+  // setup and stack duplicate autoUpdater listeners.
   const setupAutoUpdaterDeferred = (): void => {
     if (updaterSetupDone || mainWindow.isDestroyed()) {
       return
@@ -210,41 +234,26 @@ export function attachMainWindowServices(
 
   mainWindow.on('closed', () => {
     // Why: browser webviews are renderer-owned guest surfaces. Clearing
-    // main-owned guest registrations on window close prevents stale
-    // tab→webContents ids from leaking across app relaunch or hot-reload cycles.
-    browserManager.unregisterAll()
+    // main-owned guest registrations when the LAST window closes prevents
+    // stale tab→webContents ids from leaking across relaunch/hot-reload;
+    // surviving windows keep their live guest registrations.
+    if (getOrcaWindowCount() === 0) {
+      browserManager.unregisterAll()
+    }
   })
 }
 
 function registerAppReloadHandler(
-  mainWindow: BrowserWindow,
   onBeforeRendererReload?: (args: { webContentsId: number; ignoreCache: boolean }) => void
 ): void {
-  // Why: the process-global IPC handler can outlive the BrowserWindow, so keep
-  // the registered WebContents and guard both lifetimes before using it.
-  const handlerToken = ++appReloadHandlerTokenCounter
-  activeAppReloadHandlerToken = handlerToken
-  const mainWebContents = mainWindow.webContents
+  // Why: multi-window — registered once, reloads whichever Orca window asked.
   ipcMain.removeHandler('app:reload')
   ipcMain.handle('app:reload', (event) => {
-    if (
-      mainWindow.isDestroyed() ||
-      mainWebContents.isDestroyed() ||
-      event.sender !== mainWebContents
-    ) {
+    if (!isOrcaWindowWebContents(event?.sender)) {
       return
     }
-    onBeforeRendererReload?.({ webContentsId: mainWebContents.id, ignoreCache: false })
-    mainWebContents.reload()
-  })
-  mainWindow.on('closed', () => {
-    if (activeAppReloadHandlerToken !== handlerToken) {
-      return
-    }
-    // Why: macOS can keep the process alive with no window, and this global
-    // handler otherwise keeps the closed BrowserWindow reachable until reopen.
-    ipcMain.removeHandler('app:reload')
-    activeAppReloadHandlerToken = null
+    onBeforeRendererReload?.({ webContentsId: event.sender.id, ignoreCache: false })
+    event.sender.reload()
   })
 }
 
@@ -252,15 +261,13 @@ function registerRuntimeWindowLifecycle(
   mainWindow: BrowserWindow,
   runtime: OrcaRuntimeService
 ): void {
-  const notifierToken = ++runtimeNotifierTokenCounter
-  activeRuntimeNotifierToken = notifierToken
   runtime.attachWindow(mainWindow.id)
   const send = (channel: string, ...args: unknown[]): void => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send(channel, ...args)
     }
   }
-  runtime.setNotifier({
+  const notifier = {
     worktreesChanged: (repoId, renamed) => {
       // Why: clear detected-worktree scan caches before renderer listeners
       // handle this event, preventing stale TTL reads after mutations.
@@ -399,7 +406,10 @@ function registerRuntimeWindowLifecycle(
       send('runtime:terminalDriverChanged', { ptyId, driver }),
     browserDriverChanged: (browserPageId, driver) =>
       send('runtime:browserDriverChanged', { browserPageId, driver })
-  })
+  } satisfies Parameters<OrcaRuntimeService['setNotifier']>[0]
+  // Why: multi-window — each window registers its own notifier keyed by its
+  // BrowserWindow id; the runtime routes/broadcasts across them.
+  runtime.setNotifier(notifier, mainWindow.id)
   // Why: the runtime must fail closed while the renderer graph is being torn
   // down or rebuilt, otherwise future CLI calls could act on stale terminal
   // mappings during reload transitions.
@@ -408,26 +418,20 @@ function registerRuntimeWindowLifecycle(
   })
   mainWindow.on('closed', () => {
     runtime.markGraphUnavailable(mainWindow.id)
-    if (activeRuntimeNotifierToken === notifierToken) {
-      // Why: the notifier closes over the BrowserWindow for mobile/CLI UI
-      // relays; clear it during the no-window gap so the runtime does not
-      // retain destroyed window graphs.
-      runtime.setNotifier(null)
-      activeRuntimeNotifierToken = null
-    }
+    // Why: the notifier closes over the BrowserWindow for mobile/CLI UI
+    // relays; drop this window's entry so the runtime does not retain
+    // destroyed window graphs.
+    runtime.setNotifier(null, mainWindow.id)
   })
 }
 
-function registerFileDropRelay(mainWindow: BrowserWindow): void {
+function registerFileDropRelay(): void {
   const channel = 'terminal:file-dropped-from-preload'
-  const mainWebContents = mainWindow.webContents
   ipcMain.removeAllListeners(channel)
   const relayFileDrop = (event: Electron.IpcMainEvent, args: NativeFileDropPayload): void => {
-    if (
-      mainWindow.isDestroyed() ||
-      mainWebContents.isDestroyed() ||
-      event.sender !== mainWebContents
-    ) {
+    // Why: multi-window — relay back to the window whose preload observed the
+    // drop; foreign/guest senders are rejected.
+    if (!isOrcaWindowWebContents(event?.sender)) {
       return
     }
     if (!isNativeFileDropPayload(args)) {
@@ -436,14 +440,9 @@ function registerFileDropRelay(mainWindow: BrowserWindow): void {
 
     // Why: relay exactly one IPC event per drop gesture so the renderer
     // receives the full batch of paths without timer-based reconstruction.
-    mainWindow.webContents.send('terminal:file-drop', args)
+    event.sender.send('terminal:file-drop', args)
   }
   ipcMain.on(channel, relayFileDrop)
-  mainWindow.on('closed', () => {
-    // Why: macOS can keep the app process alive after the window closes; drop
-    // the relay closure so a destroyed BrowserWindow is not retained.
-    ipcMain.removeListener(channel, relayFileDrop)
-  })
 }
 
 export function registerUpdaterHandlers(_store: Store): void {

@@ -34,6 +34,7 @@
   },
   "menu": {
     "checkForUpdates": "检查更新...",
+    "newWindow": "新窗口",
     "settings": "设置",
     "exploreOrca": "探索 Orca",
     "gettingStarted": "Orca 入门",

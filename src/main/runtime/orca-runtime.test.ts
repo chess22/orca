@@ -12311,6 +12311,104 @@ describe('OrcaRuntimeService', () => {
     ])
   })
 
+  it("keeps a live window's mobile-session tab ownership when a second window opens the same worktree", async () => {
+    const runtime = new OrcaRuntimeService(store)
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [],
+      leaves: [],
+      mobileSessionTabs: [
+        {
+          worktree: TEST_WORKTREE_ID,
+          publicationEpoch: 'epoch-1',
+          snapshotVersion: 1,
+          activeGroupId: 'group-1',
+          activeTabId: 'tab-1::pane:1',
+          activeTabType: 'terminal',
+          tabs: [
+            {
+              type: 'terminal',
+              id: 'tab-1::pane:1',
+              parentTabId: 'tab-1',
+              leafId: 'pane:1',
+              title: 'Window 1 Terminal',
+              isActive: true
+            }
+          ]
+        }
+      ]
+    })
+
+    // Why: a second live window syncing the same worktree must not steal
+    // ownership from window 1 or overwrite its snapshot (last-writer-wins
+    // previously flipped ownership on every heartbeat between the windows).
+    runtime.attachWindow(2)
+    runtime.syncWindowGraph(2, {
+      tabs: [],
+      leaves: [],
+      mobileSessionTabs: [
+        {
+          worktree: TEST_WORKTREE_ID,
+          publicationEpoch: 'epoch-1',
+          snapshotVersion: 1,
+          activeGroupId: 'group-2',
+          activeTabId: 'tab-2::pane:1',
+          activeTabType: 'terminal',
+          tabs: [
+            {
+              type: 'terminal',
+              id: 'tab-2::pane:1',
+              parentTabId: 'tab-2',
+              leafId: 'pane:1',
+              title: 'Window 2 Terminal',
+              isActive: true
+            }
+          ]
+        }
+      ]
+    })
+
+    expect(runtime['mobileSessionTabWindowIds'].get(TEST_WORKTREE_ID)).toBe(1)
+    const result = await runtime.listMobileSessionTabs(`id:${TEST_WORKTREE_ID}`)
+    expect(result.tabs).toEqual([
+      expect.objectContaining({ id: 'tab-1::pane:1', title: 'Window 1 Terminal' })
+    ])
+
+    // Why: once window 1 closes, ownership must become reclaimable so window
+    // 2's next sync is no longer blocked by a now-dead owner.
+    runtime.markGraphUnavailable(1)
+    runtime.syncWindowGraph(2, {
+      tabs: [],
+      leaves: [],
+      mobileSessionTabs: [
+        {
+          worktree: TEST_WORKTREE_ID,
+          publicationEpoch: 'epoch-1',
+          snapshotVersion: 2,
+          activeGroupId: 'group-2',
+          activeTabId: 'tab-2::pane:1',
+          activeTabType: 'terminal',
+          tabs: [
+            {
+              type: 'terminal',
+              id: 'tab-2::pane:1',
+              parentTabId: 'tab-2',
+              leafId: 'pane:1',
+              title: 'Window 2 Terminal',
+              isActive: true
+            }
+          ]
+        }
+      ]
+    })
+
+    expect(runtime['mobileSessionTabWindowIds'].get(TEST_WORKTREE_ID)).toBe(2)
+    const afterHandoff = await runtime.listMobileSessionTabs(`id:${TEST_WORKTREE_ID}`)
+    expect(afterHandoff.tabs).toEqual([
+      expect.objectContaining({ id: 'tab-2::pane:1', title: 'Window 2 Terminal' })
+    ])
+  })
+
   it('keeps mobile terminal surfaces pending while a live leaf has no PTY', async () => {
     const runtime = new OrcaRuntimeService(store)
     runtime.attachWindow(1)
