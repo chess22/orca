@@ -1154,16 +1154,22 @@ function recordPtySpawnRendererOwner(
 }
 
 /** Route a renderer-directed PTY event to the window that owns the PTY, or
- *  broadcast when ownership is unknown (pre-tracking PTYs, torn-down windows). */
+ *  broadcast when ownership was never recorded (pre-tracking PTYs, CLI/daemon
+ *  spawns). Why: a PTY's owner is only cleared on process exit, not on window
+ *  close — a detached PTY that outlives its window keeps a stale recorded
+ *  owner. Broadcasting in that case would leak its data/exit/serialize
+ *  requests into unrelated surviving windows, so a recorded-but-gone owner
+ *  drops the event instead of falling back to broadcast. */
 export function sendPtyEventToOwnerWindow(ptyId: string, channel: string, payload: unknown): void {
   const ownerWebContentsId = ptyRendererOwnerWebContentsIds.get(ptyId)
-  const owner =
-    ownerWebContentsId !== undefined ? getOrcaWindowByWebContentsId(ownerWebContentsId) : null
-  if (owner && !owner.webContents.isDestroyed()) {
-    owner.webContents.send(channel, payload)
+  if (ownerWebContentsId === undefined) {
+    broadcastToOrcaWindows(channel, payload)
     return
   }
-  broadcastToOrcaWindows(channel, payload)
+  const owner = getOrcaWindowByWebContentsId(ownerWebContentsId)
+  if (owner && !owner.webContents.isDestroyed()) {
+    owner.webContents.send(channel, payload)
+  }
 }
 
 // Why: localProvider.onData/onExit return unsubscribe functions. Without

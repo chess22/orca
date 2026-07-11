@@ -6829,6 +6829,50 @@ describe('registerPtyHandlers', () => {
     }
   })
 
+  it('does not broadcast pty:data to unrelated windows once the owning window has closed', async () => {
+    vi.useFakeTimers()
+    const mockProc = createMockProc()
+    spawnMock.mockReturnValue(mockProc.proc)
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      const spawnResult = (await handlers.get('pty:spawn')!(mainWindowIpcEvent, {
+        cols: 80,
+        rows: 24,
+        cwd: '/tmp'
+      })) as { id: string }
+
+      // Why: a second live window, distinct from the (about to close) owner —
+      // proves a recorded-but-gone owner drops the event instead of falling
+      // back to broadcasting it into every other live window.
+      const secondWindow = {
+        id: nextTestWebContentsId++,
+        on: vi.fn(),
+        isDestroyed: () => false,
+        webContents: { id: nextTestWebContentsId++, isDestroyed: () => false, send: vi.fn() }
+      }
+      registerOrcaWindow(secondWindow as never)
+
+      mainWindow.webContents.send.mockClear()
+      const wasDestroyed = mainWindow.isDestroyed
+      mainWindow.isDestroyed = () => true
+      try {
+        mockProc.emitData('after-close output')
+        vi.advanceTimersByTime(8)
+      } finally {
+        mainWindow.isDestroyed = wasDestroyed
+      }
+
+      expect(mainWindow.webContents.send).not.toHaveBeenCalledWith(
+        'pty:data',
+        expect.objectContaining({ id: spawnResult.id })
+      )
+      expect(secondWindow.webContents.send).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('answers agent startup OSC color queries before renderer batching', async () => {
     vi.useFakeTimers()
     const mockProc = createMockProc()
