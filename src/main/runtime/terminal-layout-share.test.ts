@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeTerminalLeafShare } from './terminal-layout-share'
+import { computeTerminalLeafShare, resolveNewPaneRatioFromSizePx } from './terminal-layout-share'
 import type { TerminalPaneLayoutNode } from '../../shared/types'
 
 const leaf = (leafId: string): TerminalPaneLayoutNode => ({ type: 'leaf', leafId })
@@ -86,5 +86,23 @@ describe('computeTerminalLeafShare', () => {
       widthRatio: expect.closeTo(0.4),
       heightRatio: 0.75
     })
+  })
+})
+
+describe('resolveNewPaneRatioFromSizePx', () => {
+  it('returns undefined when sizePx or the total axis size is missing', () => {
+    expect(resolveNewPaneRatioFromSizePx(undefined, 400)).toBeUndefined()
+    expect(resolveNewPaneRatioFromSizePx(100, undefined)).toBeUndefined()
+    expect(resolveNewPaneRatioFromSizePx(0, 400)).toBeUndefined()
+    expect(resolveNewPaneRatioFromSizePx(100, 0)).toBeUndefined()
+  })
+
+  it('computes the new pane share from px against the source leaf size', () => {
+    expect(resolveNewPaneRatioFromSizePx(100, 400)).toBeCloseTo(0.25)
+  })
+
+  it('clamps out-of-range requests to the minimum usable sliver', () => {
+    expect(resolveNewPaneRatioFromSizePx(390, 400)).toBeCloseTo(0.95)
+    expect(resolveNewPaneRatioFromSizePx(10, 400)).toBeCloseTo(0.05)
   })
 })

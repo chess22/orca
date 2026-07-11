@@ -31,3 +31,26 @@ export function computeTerminalLeafShare(
     ? { widthRatio: child.widthRatio * factor, heightRatio: child.heightRatio }
     : { widthRatio: child.widthRatio, heightRatio: child.heightRatio * factor }
 }
+
+// Why: headless/SSH splits have no DOM to measure — fall back to the source
+// leaf's last graph-synced widthPx/heightPx so `--size-px` still persists a
+// real ratio instead of silently collapsing to an even split. Returns the
+// NEW pane's share (wire format), matching resolveRatioFromNewPaneSizePx in
+// pane-tree-ops.ts but inverted since callers here persist newLeafRatio.
+const MIN_PX_DERIVED_PANE_RATIO = 0.05
+
+export function resolveNewPaneRatioFromSizePx(
+  newPaneSizePx: number | undefined,
+  splitAxisTotalPx: number | undefined
+): number | undefined {
+  if (
+    newPaneSizePx === undefined ||
+    newPaneSizePx <= 0 ||
+    splitAxisTotalPx === undefined ||
+    splitAxisTotalPx <= 0
+  ) {
+    return undefined
+  }
+  const newPaneShare = newPaneSizePx / splitAxisTotalPx
+  return Math.min(1 - MIN_PX_DERIVED_PANE_RATIO, Math.max(MIN_PX_DERIVED_PANE_RATIO, newPaneShare))
+}

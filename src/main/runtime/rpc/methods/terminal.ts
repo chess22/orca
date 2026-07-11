@@ -685,6 +685,9 @@ const TerminalSplit = TerminalHandle.extend({
   ratio: z.number().gt(0).lt(1).optional(),
   sizePx: z.number().int().positive().optional(),
   telemetrySource: z.enum(TERMINAL_PANE_SPLIT_SOURCES).optional()
+}).refine((v) => !(v.ratio !== undefined && v.sizePx !== undefined), {
+  message: 'Pass either ratio or sizePx, not both',
+  path: ['sizePx']
 })
 
 const TerminalStop = z.object({

@@ -305,7 +305,7 @@ import type {
 import type { AutomationService } from '../automations/service'
 import { RuntimeBrowserCommands } from './orca-runtime-browser'
 import { buildHeadlessTerminalSplitLayout } from './headless-terminal-split-layout'
-import { computeTerminalLeafShare } from './terminal-layout-share'
+import { computeTerminalLeafShare, resolveNewPaneRatioFromSizePx } from './terminal-layout-share'
 import {
   buildHeadlessTabGroupMove,
   buildHeadlessTabGroupSplit
@@ -16784,12 +16784,18 @@ export class OrcaRuntimeService {
       throw error
     }
     if (createdPty) {
+      // Why: headless/SSH splits have no DOM to measure a --size-px request
+      // against, so fall back to the source leaf's last graph-synced size.
+      const sourceLeaf = this.leaves.get(this.getLeafKey(parentTabId, parsedPaneKey.leafId))
+      const splitAxisTotalPx = direction === 'vertical' ? sourceLeaf?.widthPx : sourceLeaf?.heightPx
+      const newLeafRatio =
+        opts.ratio ?? resolveNewPaneRatioFromSizePx(opts.sizePx, splitAxisTotalPx)
       this.publishPtyBackedMobileSessionTerminal(workspace.id, createdPty, {
         tabId: parentTabId,
         leafId,
         title: null,
         activate: opts.activate !== false,
-        split: { splitFromLeafId: parsedPaneKey.leafId, direction, newLeafRatio: opts.ratio }
+        split: { splitFromLeafId: parsedPaneKey.leafId, direction, newLeafRatio }
       })
       // Why: persist the split into the workspace session so a later snapshot
       // rebuild keeps it instead of collapsing back to a single pane.
@@ -16799,7 +16805,7 @@ export class OrcaRuntimeService {
         ptyId: createdPty.ptyId,
         splitFromLeafId: parsedPaneKey.leafId,
         direction,
-        newLeafRatio: opts.ratio
+        newLeafRatio
       })
     }
 
