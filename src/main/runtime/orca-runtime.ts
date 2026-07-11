@@ -540,7 +540,7 @@ import {
   terminalLayoutContainsLeaf
 } from './headless-terminal-split-layout'
 import { RECENT_PTY_OUTPUT_LIMIT, RecentPtyOutputBuffer } from './recent-pty-output-buffer'
-import { computeTerminalLeafShare } from './terminal-layout-share'
+import { computeTerminalLeafShare, resolveNewPaneRatioFromSizePx } from './terminal-layout-share'
 import {
   buildHeadlessTabGroupMove,
   buildHeadlessTabGroupSplit
@@ -27505,6 +27505,12 @@ export class OrcaRuntimeService {
         revalidateSourceAuthority()
       }
       if (createdPty) {
+        // Why: headless/SSH splits have no DOM to measure a --size-px request against.
+        const sourceLeaf = this.leaves.get(this.getLeafKey(parentTabId, parsedPaneKey.leafId))
+        const splitAxisTotalPx =
+          direction === 'vertical' ? sourceLeaf?.widthPx : sourceLeaf?.heightPx
+        const newLeafRatio =
+          opts.ratio ?? resolveNewPaneRatioFromSizePx(opts.sizePx, splitAxisTotalPx)
         const persisted = this.persistHeadlessTerminalSplit({
           worktreeId: workspace.id,
           tabId: parentTabId,
@@ -27512,7 +27518,7 @@ export class OrcaRuntimeService {
           ptyId: createdPty.ptyId,
           splitFromLeafId: parsedPaneKey.leafId,
           direction,
-          newLeafRatio: opts.ratio
+          newLeafRatio
         })
         if (sourceAuthority.persisted && !persisted) {
           throw new Error('workspace_session_unavailable')
@@ -27522,7 +27528,7 @@ export class OrcaRuntimeService {
           leafId,
           title: null,
           activate: opts.activate !== false,
-          split: { splitFromLeafId: parsedPaneKey.leafId, direction, newLeafRatio: opts.ratio }
+          split: { splitFromLeafId: parsedPaneKey.leafId, direction, newLeafRatio }
         })
       }
     } catch (error) {

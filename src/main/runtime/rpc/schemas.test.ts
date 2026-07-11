@@ -202,4 +202,20 @@ describe('RPC optional pipe schemas', () => {
       linkedLinearIssueOrganizationUrlKey: 'acme'
     })
   })
+
+  it('rejects terminal.split when ratio and sizePx are both given', () => {
+    expectParses(methodParams(TERMINAL_METHODS, 'terminal.split'), {
+      terminal: 'terminal-1',
+      ratio: 0.3
+    })
+    expectParses(methodParams(TERMINAL_METHODS, 'terminal.split'), {
+      terminal: 'terminal-1',
+      sizePx: 400
+    })
+    expectRejects(methodParams(TERMINAL_METHODS, 'terminal.split'), {
+      terminal: 'terminal-1',
+      ratio: 0.3,
+      sizePx: 400
+    })
+  })
 })
