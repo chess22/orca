@@ -680,7 +680,14 @@ const TerminalSplit = TerminalHandle.extend({
     .optional(),
   command: OptionalString,
   env: z.record(z.string(), z.string()).optional(),
+  // Why: ratio is the NEW pane's share of the split axis (tmux-style);
+  // sizePx is the new pane's width (vertical split) or height (horizontal).
+  ratio: z.number().gt(0).lt(1).optional(),
+  sizePx: z.number().int().positive().optional(),
   telemetrySource: z.enum(TERMINAL_PANE_SPLIT_SOURCES).optional()
+}).refine((v) => !(v.ratio !== undefined && v.sizePx !== undefined), {
+  message: 'Pass either ratio or sizePx, not both',
+  path: ['sizePx']
 })
 
 const TerminalStop = z.object({
@@ -1055,6 +1062,8 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
         direction: params.direction,
         command: params.command,
         env: params.env,
+        ratio: params.ratio,
+        sizePx: params.sizePx,
         telemetrySource: params.telemetrySource
       })
     })

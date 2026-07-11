@@ -1603,9 +1603,17 @@ export function useTerminalPaneLifecycle({
       if (sourcePaneId < 0) {
         return
       }
+      // Why: detail.ratio describes the NEW pane (tmux-style); PaneManager's
+      // ratio option is the existing/first pane's share, so invert here.
+      const firstPaneRatio =
+        detail.ratio !== undefined && detail.ratio > 0 && detail.ratio < 1
+          ? 1 - detail.ratio
+          : undefined
       const splitOptions = {
         ...(detail.newLeafId ? { leafId: detail.newLeafId } : {}),
-        ...(detail.ptyId ? { ptyId: detail.ptyId } : {})
+        ...(detail.ptyId ? { ptyId: detail.ptyId } : {}),
+        ...(firstPaneRatio !== undefined ? { ratio: firstPaneRatio } : {}),
+        ...(detail.sizePx !== undefined ? { newPaneSizePx: detail.sizePx } : {})
       }
       if (detail.command) {
         const createdPane = splitPaneWithOneShotStartup(ptyDeps, { command: detail.command }, () =>

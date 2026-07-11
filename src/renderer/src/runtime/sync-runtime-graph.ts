@@ -589,6 +589,10 @@ async function syncRuntimeGraph(): Promise<void> {
         })
       }
       const paneTitles = state.runtimePaneTitlesByTabId[tabId] ?? {}
+      // Why: px geometry only exists in the renderer DOM; publish it with the
+      // graph so `terminal show` can report pane sizes. Zero means unmounted.
+      const widthPx = Math.round(pane.container.clientWidth)
+      const heightPx = Math.round(pane.container.clientHeight)
       graph.leaves.push({
         tabId,
         worktreeId: registeredTab.worktreeId,
@@ -600,7 +604,9 @@ async function syncRuntimeGraph(): Promise<void> {
           tab,
           generatedTitlesEnabled,
           state.runtimePaneTitlesByTabId[tabId]?.[pane.id] ?? tab.title
-        )
+        ),
+        ...(widthPx > 0 ? { widthPx } : {}),
+        ...(heightPx > 0 ? { heightPx } : {})
       })
     }
   }

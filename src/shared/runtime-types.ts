@@ -110,6 +110,9 @@ export type RuntimeSyncedLeaf = {
   ptyId: string | null
   paneTitle?: string | null
   title?: string | null
+  /** Renderer-measured pane size at sync time; absent for unmounted leaves. */
+  widthPx?: number
+  heightPx?: number
 }
 
 export type RuntimeSyncWindowGraph = {
@@ -395,6 +398,8 @@ export type RuntimeTerminalVisualPaneNode =
   | {
       type: 'pane-split'
       direction: Extract<TerminalPaneLayoutNode, { type: 'split' }>['direction']
+      /** First-child share (0–1); absent means an equal 0.5 split. */
+      ratio?: number
       first: RuntimeTerminalVisualPaneNode
       second: RuntimeTerminalVisualPaneNode
     }
@@ -435,10 +440,20 @@ export type RuntimeTerminalListResult = {
   truncated: boolean
 }
 
+/** Current pane geometry: renderer-measured pixels plus the leaf's share of
+ *  the tab's pane area derived from the synced layout tree ratios. */
+export type RuntimeTerminalPaneGeometry = {
+  widthPx: number | null
+  heightPx: number | null
+  widthRatio: number | null
+  heightRatio: number | null
+}
+
 export type RuntimeTerminalShow = RuntimeTerminalSummary & {
   paneRuntimeId: number
   ptyId: string | null
   rendererGraphEpoch: number
+  pane?: RuntimeTerminalPaneGeometry
 }
 
 export type RuntimeTerminalState = 'running' | 'exited' | 'unknown'

@@ -213,7 +213,7 @@ Common Commands:
   orca terminal wait [--terminal <handle>] --for exit|tui-idle [--timeout-ms <ms>] [--json]
   orca terminal stop --worktree <selector> [--json]
   orca terminal create [--worktree <selector>] [--title <name>] [--command <text>] [--focus] [--json]
-  orca terminal split [--terminal <handle>] [--direction horizontal|vertical] [--json]
+  orca terminal split [--terminal <handle>] [--direction horizontal|vertical] [--ratio <0-1>] [--size-px <px>] [--json]
   orca terminal switch [--terminal <handle>] [--json]
   orca terminal close [--terminal <handle>] [--json]
   orca project list [--json]

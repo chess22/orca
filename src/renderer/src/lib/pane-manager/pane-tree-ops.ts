@@ -398,7 +398,7 @@ export function wrapInSplit(
   newContainer: HTMLElement,
   isVertical: boolean,
   divider: HTMLElement,
-  opts?: { ratio?: number }
+  opts?: { ratio?: number; newPaneSizePx?: number }
 ): void {
   const parent = existingContainer.parentElement
   if (!parent) {
@@ -409,6 +409,11 @@ export function wrapInSplit(
   const existingFlex = existingContainer.style.flex || ''
   const existingMinW = existingContainer.style.minWidth || ''
   const existingMinH = existingContainer.style.minHeight || ''
+  // Why: a px request must be converted to a flex ratio against the area being
+  // split, and the source container must be measured before it is reparented.
+  const splitAxisTotalPx = isVertical
+    ? existingContainer.clientWidth
+    : existingContainer.clientHeight
 
   // Create split container
   const split = document.createElement('div')
@@ -429,8 +434,8 @@ export function wrapInSplit(
   applyPaneFlexStyle(existingContainer)
   applyPaneFlexStyle(newContainer)
 
-  // Apply custom ratio if provided
-  const ratio = opts?.ratio
+  // Apply custom ratio if provided; an explicit ratio wins over a px request.
+  const ratio = opts?.ratio ?? resolveRatioFromNewPaneSizePx(opts?.newPaneSizePx, splitAxisTotalPx)
   if (ratio !== undefined && ratio > 0 && ratio < 1) {
     existingContainer.style.flex = `${ratio} 1 0%`
     newContainer.style.flex = `${1 - ratio} 1 0%`
@@ -441,4 +446,19 @@ export function wrapInSplit(
   split.appendChild(existingContainer)
   split.appendChild(divider)
   split.appendChild(newContainer)
+}
+
+// Why: clamp px-derived ratios so an oversized request cannot collapse either
+// pane below a usable sliver; matches the divider-drag minimum feel.
+const MIN_PX_DERIVED_PANE_RATIO = 0.05
+
+export function resolveRatioFromNewPaneSizePx(
+  newPaneSizePx: number | undefined,
+  splitAxisTotalPx: number
+): number | undefined {
+  if (newPaneSizePx === undefined || newPaneSizePx <= 0 || splitAxisTotalPx <= 0) {
+    return undefined
+  }
+  const existingShare = 1 - newPaneSizePx / splitAxisTotalPx
+  return Math.min(1 - MIN_PX_DERIVED_PANE_RATIO, Math.max(MIN_PX_DERIVED_PANE_RATIO, existingShare))
 }

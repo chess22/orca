@@ -3247,6 +3247,8 @@ const api = {
         leafId?: string
         splitFromLeafId?: string
         splitDirection?: 'horizontal' | 'vertical'
+        splitRatio?: number
+        splitSizePx?: number
         splitTelemetrySource?: TerminalPaneSplitSource
       }) => void
     ): (() => void) => {
@@ -3269,6 +3271,8 @@ const api = {
           leafId?: string
           splitFromLeafId?: string
           splitDirection?: 'horizontal' | 'vertical'
+          splitRatio?: number
+          splitSizePx?: number
           splitTelemetrySource?: TerminalPaneSplitSource
         }
       ) => callback(data)
@@ -3299,6 +3303,8 @@ const api = {
         paneRuntimeId: number
         direction: 'horizontal' | 'vertical'
         command?: string
+        ratio?: number
+        sizePx?: number
         telemetrySource?: TerminalPaneSplitSource
       }) => void
     ): (() => void) => {
@@ -3309,6 +3315,8 @@ const api = {
           paneRuntimeId: number
           direction: 'horizontal' | 'vertical'
           command?: string
+          ratio?: number
+          sizePx?: number
           telemetrySource?: TerminalPaneSplitSource
         }
       ) => callback(data)

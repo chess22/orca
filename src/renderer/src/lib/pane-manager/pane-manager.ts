@@ -109,7 +109,13 @@ export class PaneManager {
   splitPane(
     paneId: number,
     direction: 'vertical' | 'horizontal',
-    opts?: { ratio?: number; cwd?: string; leafId?: string; ptyId?: string }
+    opts?: {
+      ratio?: number
+      newPaneSizePx?: number
+      cwd?: string
+      leafId?: string
+      ptyId?: string
+    }
   ): ManagedPane | null {
     return splitManagedPane({
       paneId,

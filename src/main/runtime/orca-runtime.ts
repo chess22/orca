@@ -271,6 +271,7 @@ import type {
   RuntimeWorktreeStatus,
   RuntimeSpeechModelSummary,
   RuntimeSpeechSetupState,
+  RuntimeTerminalPaneGeometry,
   RuntimeTerminalShow,
   RuntimeTerminalSummary,
   RuntimeTerminalVisualGroupNode,
@@ -304,6 +305,7 @@ import type {
 import type { AutomationService } from '../automations/service'
 import { RuntimeBrowserCommands } from './orca-runtime-browser'
 import { buildHeadlessTerminalSplitLayout } from './headless-terminal-split-layout'
+import { computeTerminalLeafShare, resolveNewPaneRatioFromSizePx } from './terminal-layout-share'
 import {
   buildHeadlessTabGroupMove,
   buildHeadlessTabGroupSplit
@@ -1239,6 +1241,8 @@ type RuntimeNotifier = {
       leafId?: string
       splitFromLeafId?: string
       splitDirection?: 'horizontal' | 'vertical'
+      splitRatio?: number
+      splitSizePx?: number
       splitTelemetrySource?: TerminalPaneSplitSource
     }
   ):
@@ -1251,6 +1255,11 @@ type RuntimeNotifier = {
     opts: {
       direction: 'horizontal' | 'vertical'
       command?: string
+      // Why: wire ratio is the NEW pane's share (tmux-style); the renderer
+      // layout tree stores the first/existing child's share, so the renderer
+      // converts at the split-application site.
+      ratio?: number
+      sizePx?: number
       telemetrySource?: TerminalPaneSplitSource
     }
   ): void
@@ -3383,7 +3392,11 @@ export class OrcaRuntimeService {
       activate: boolean
       selectIfNoActiveTab?: boolean
       startupCwd?: string
-      split?: { splitFromLeafId: string; direction: 'horizontal' | 'vertical' }
+      split?: {
+        splitFromLeafId: string
+        direction: 'horizontal' | 'vertical'
+        newLeafRatio?: number
+      }
     }
   ): void {
     const existing = this.mobileSessionTabsByWorktree.get(worktreeId)
@@ -3804,7 +3817,7 @@ export class OrcaRuntimeService {
     leafId: string,
     ptyId: string,
     existingLayout: TerminalLayoutSnapshot | undefined,
-    split?: { splitFromLeafId: string; direction: 'horizontal' | 'vertical' }
+    split?: { splitFromLeafId: string; direction: 'horizontal' | 'vertical'; newLeafRatio?: number }
   ): TerminalLayoutSnapshot {
     if (!existingLayout) {
       return {
@@ -3823,7 +3836,8 @@ export class OrcaRuntimeService {
         leafId,
         ptyId,
         splitFromLeafId: split.splitFromLeafId,
-        direction: split.direction
+        direction: split.direction,
+        newLeafRatio: split.newLeafRatio
       })
     }
     return {
@@ -4118,6 +4132,7 @@ export class OrcaRuntimeService {
     ptyId: string
     splitFromLeafId: string
     direction: 'horizontal' | 'vertical'
+    newLeafRatio?: number
   }): void {
     const session = this.store?.getWorkspaceSession?.()
     if (!session || !this.store?.setWorkspaceSession) {
@@ -8534,7 +8549,13 @@ export class OrcaRuntimeService {
       summariesByLeafKey
     )
     if (first && second) {
-      return { type: 'pane-split', direction: node.direction, first, second }
+      return {
+        type: 'pane-split',
+        direction: node.direction,
+        ...(node.ratio !== undefined ? { ratio: node.ratio } : {}),
+        first,
+        second
+      }
     }
     return first ?? second
   }
@@ -8653,11 +8674,29 @@ export class OrcaRuntimeService {
     this.assertStableReadyGraph(graphEpoch)
     const { leaf } = this.getLiveLeafForHandle(handle)
     const summary = this.buildTerminalSummary(leaf, worktreesById)
+    const pane = this.buildTerminalPaneGeometry(leaf)
     return {
       ...summary,
       paneRuntimeId: leaf.paneRuntimeId,
       ptyId: leaf.ptyId,
-      rendererGraphEpoch: this.rendererGraphEpoch
+      rendererGraphEpoch: this.rendererGraphEpoch,
+      ...(pane ? { pane } : {})
+    }
+  }
+
+  private buildTerminalPaneGeometry(leaf: RuntimeLeafRecord): RuntimeTerminalPaneGeometry | null {
+    const share = computeTerminalLeafShare(this.tabs.get(leaf.tabId)?.layout, leaf.leafId)
+    if (!share && leaf.widthPx === undefined && leaf.heightPx === undefined) {
+      return null
+    }
+    // Why: match the layout serializer's 3-decimal ratio precision so show
+    // output and persisted snapshots agree.
+    const round = (ratio: number): number => Math.round(ratio * 1000) / 1000
+    return {
+      widthPx: leaf.widthPx ?? null,
+      heightPx: leaf.heightPx ?? null,
+      widthRatio: share ? round(share.widthRatio) : null,
+      heightRatio: share ? round(share.heightRatio) : null
     }
   }
 
@@ -16644,6 +16683,8 @@ export class OrcaRuntimeService {
       env?: Record<string, string>
       envToDelete?: string[]
       activate?: boolean
+      ratio?: number
+      sizePx?: number
       telemetrySource?: TerminalPaneSplitSource
     } = {}
   ): Promise<RuntimeTerminalSplit> {
@@ -16667,6 +16708,8 @@ export class OrcaRuntimeService {
     this.notifier?.splitTerminal(leaf.tabId, leaf.paneRuntimeId, {
       direction,
       command: opts.command,
+      ratio: opts.ratio,
+      sizePx: opts.sizePx,
       telemetrySource: opts.telemetrySource
     })
 
@@ -16682,6 +16725,8 @@ export class OrcaRuntimeService {
       env?: Record<string, string>
       envToDelete?: string[]
       activate?: boolean
+      ratio?: number
+      sizePx?: number
       telemetrySource?: TerminalPaneSplitSource
     } = {}
   ): Promise<RuntimeTerminalSplit> {
@@ -16730,6 +16775,8 @@ export class OrcaRuntimeService {
         leafId,
         splitFromLeafId: parsedPaneKey.leafId,
         splitDirection: direction,
+        splitRatio: opts.ratio,
+        splitSizePx: opts.sizePx,
         splitTelemetrySource: opts.telemetrySource
       })
     } catch (error) {
@@ -16737,12 +16784,18 @@ export class OrcaRuntimeService {
       throw error
     }
     if (createdPty) {
+      // Why: headless/SSH splits have no DOM to measure a --size-px request
+      // against, so fall back to the source leaf's last graph-synced size.
+      const sourceLeaf = this.leaves.get(this.getLeafKey(parentTabId, parsedPaneKey.leafId))
+      const splitAxisTotalPx = direction === 'vertical' ? sourceLeaf?.widthPx : sourceLeaf?.heightPx
+      const newLeafRatio =
+        opts.ratio ?? resolveNewPaneRatioFromSizePx(opts.sizePx, splitAxisTotalPx)
       this.publishPtyBackedMobileSessionTerminal(workspace.id, createdPty, {
         tabId: parentTabId,
         leafId,
         title: null,
         activate: opts.activate !== false,
-        split: { splitFromLeafId: parsedPaneKey.leafId, direction }
+        split: { splitFromLeafId: parsedPaneKey.leafId, direction, newLeafRatio }
       })
       // Why: persist the split into the workspace session so a later snapshot
       // rebuild keeps it instead of collapsing back to a single pane.
@@ -16751,7 +16804,8 @@ export class OrcaRuntimeService {
         leafId,
         ptyId: createdPty.ptyId,
         splitFromLeafId: parsedPaneKey.leafId,
-        direction
+        direction,
+        newLeafRatio
       })
     }
 
