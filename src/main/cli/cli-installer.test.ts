@@ -19,7 +19,8 @@ vi.mock('electron', () => ({
   app: {
     isPackaged: false,
     getPath: () => tmpdir(),
-    getAppPath: () => tmpdir()
+    getAppPath: () => tmpdir(),
+    getName: () => 'Orca'
   }
 }))
 
@@ -157,6 +158,40 @@ describe('CliInstaller', () => {
       await expect(
         readFile(join(fixture.userDataPath, 'cli', 'bin', 'orca'), 'utf8')
       ).resolves.toBe(await readFile(installed.launcherPath as string, 'utf8'))
+    }
+  )
+
+  // Why: a packaged Orca Dev build's Contents/MacOS binary is named "Orca Dev",
+  // which the shared darwin launcher script does not account for. Registering
+  // any shell command — production `orca` or a renamed alias — would either
+  // fail at runtime or reclaim the production `orca` symlink out from under
+  // the real Orca.app, so CLI registration must be fully disabled instead.
+  it.skipIf(process.platform === 'win32')(
+    'disables CLI registration for a packaged Orca Dev build',
+    async () => {
+      const fixture = await makeFixture()
+      const resourcesPath = await createPackagedMacLauncher(fixture.root)
+      const commandDir = join(fixture.root, 'bin')
+      const installer = new CliInstaller({
+        platform: 'darwin',
+        isPackaged: true,
+        isDevIdentityBuild: true,
+        resourcesPath,
+        userDataPath: fixture.userDataPath,
+        appPath: fixture.appPath,
+        processPathEnv: commandDir,
+        defaultMacCommandPath: join(commandDir, 'orca')
+      })
+
+      const status = await installer.getStatus()
+      expect(status.supported).toBe(false)
+      expect(status.state).toBe('unsupported')
+      expect(status.unsupportedReason).toBe('dev_identity_build')
+      expect(status.commandPath).toBeNull()
+      expect(status.launcherPath).toBeNull()
+
+      await expect(installer.install()).rejects.toThrow(/disabled/i)
+      await expect(installer.remove()).resolves.toMatchObject({ supported: false })
     }
   )
 

@@ -15,8 +15,16 @@ const MAX_LABEL_LENGTH = 80
 // matches on the packaged Orca Dev build and it keeps polling the production
 // release feed.
 const DEV_PACKAGED_APP_NAME = 'orca-dev-app'
-const DEV_IDENTITY_APP_NAME = 'Orca Dev'
+export const DEV_IDENTITY_APP_NAME = 'Orca Dev'
 const DEV_IDENTITY_APP_USER_MODEL_ID = 'com.stablyai.orca.dev'
+
+// Why: shared by updater.ts and cli-installer.ts — both must recognize the
+// packaged Orca Dev variant (app.getName() === 'Orca Dev' after the
+// whenReady() rename) so neither the update feed nor the public `orca`
+// shell command is ever claimed by a parallel dev build.
+export function isDevIdentityAppName(appName: string): boolean {
+  return appName === DEV_IDENTITY_APP_NAME
+}
 
 export type DevInstanceIdentity = AppIdentity & {
   appUserModelId: string
