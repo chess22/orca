@@ -70,14 +70,26 @@ export function getDefaultUserDataPath(
   resourcesPath: string | undefined = (process as NodeJS.Process & { resourcesPath?: string })
     .resourcesPath
 ): string {
-  // Why: in dev mode (and for parallel Orca instances), the Electron app writes
-  // runtime metadata to a separate userData directory (e.g. `orca-dev`) to avoid
-  // clobbering the production app's metadata. The CLI needs to find the same
-  // metadata file, so this env var lets the CLI target a specific instance.
-  if (process.env.ORCA_USER_DATA_PATH) {
+  const packagedAppName = readPackagedAppName(resourcesPath)
+  // Why: ORCA_USER_DATA_PATH is the CLI's only way to find the right instance
+  // when it CANNOT self-identify — interactive `pnpm dev` (config/scripts/
+  // orca-dev.mjs, run-electron-vite-dev.mjs) and SSH relay (src/relay/
+  // remote-cli-env.ts) both invoke the CLI with plain node, so there is no
+  // app.asar to read and packagedAppName is always null there; the env var is
+  // load-bearing for those paths. But a *packaged* CLI (production Orca or a
+  // parallel build like Orca Dev) can always read its own bundled identity, so
+  // for packaged runs that self-identification must win over an ambient
+  // ORCA_USER_DATA_PATH the CLI's own terminal happened to inherit from a
+  // *different* running Orca instance (see main/startup/configure-process.ts's
+  // configureOrcaUserDataPathEnv, which every packaged instance — prod or dev —
+  // stamps into its own process.env and therefore into every PTY it spawns).
+  // Otherwise a Dev-bundled CLI invoked from inside a production-owned
+  // terminal would silently reconnect to production's runtime instead of its
+  // own, exactly the bug this function exists to prevent.
+  if (!packagedAppName && process.env.ORCA_USER_DATA_PATH) {
     return process.env.ORCA_USER_DATA_PATH
   }
-  const appName = readPackagedAppName(resourcesPath) ?? DEFAULT_PACKAGED_APP_NAME
+  const appName = packagedAppName ?? DEFAULT_PACKAGED_APP_NAME
   if (platform === 'darwin') {
     return join(homeDir, 'Library', 'Application Support', appName)
   }
