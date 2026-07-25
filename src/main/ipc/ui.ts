@@ -32,15 +32,16 @@ export function getTrustedUIRendererWebContents(
   excludedWebContentsId?: number
 ): WebContents | null {
   // Why: exact targeting avoids waking retained browser/utility windows that cannot consume app UI events.
-  const rendererId = trustedUIRendererWebContentsId
-  if (rendererId == null || rendererId === excludedWebContentsId) {
-    return null
+  for (const rendererId of trustedUIRendererWebContentsIds) {
+    if (rendererId === excludedWebContentsId) {
+      continue
+    }
+    const renderer = webContents.fromId(rendererId)
+    if (renderer && !renderer.isDestroyed()) {
+      return renderer
+    }
   }
-  const renderer = webContents.fromId(rendererId)
-  if (!renderer || renderer.isDestroyed()) {
-    return null
-  }
-  return renderer
+  return null
 }
 
 export function getTrustedUIRendererWindow(): BrowserWindow | null {

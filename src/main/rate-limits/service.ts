@@ -157,7 +157,6 @@ export class RateLimitService {
   private pollInterval: number = DEFAULT_POLL_MS
   private timer: ReturnType<typeof setInterval> | null = null
   private deferredStartupRefreshTimer: ReturnType<typeof setTimeout> | null = null
-  private lastFetchAt = 0
   // Why: multi-window — quota updates fan out to every attached window, and
   // background polling stays active while any of them is focused.
   private attachedWindows = new Map<BrowserWindow, () => void>()

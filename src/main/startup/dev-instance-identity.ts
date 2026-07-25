@@ -77,6 +77,7 @@ export function getDevInstanceIdentity(
     if (packagedAppName === DEV_PACKAGED_APP_NAME) {
       return {
         name: DEV_IDENTITY_APP_NAME,
+        appName: DEV_IDENTITY_APP_NAME,
         isDev: false,
         devLabel: null,
         devBranch: null,

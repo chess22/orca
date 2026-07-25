@@ -1494,7 +1494,7 @@ let readPtyRendererDeliveryDebugSnapshot = (): PtyRendererDeliveryDebugSnapshot 
 })
 let resetPtyRendererDeliveryDebugSnapshot = (): void => {}
 // Bridged into the registerPtyHandlers closure so the module-scope lifecycle-reset handler can zero closure-owned delivery accounting on renderer reload/crash.
-let resetRendererDeliveryAccountingForLifecycleReset = (): void => {}
+let resetRendererDeliveryAccountingForLifecycleReset = (_webContentsId: number): void => {}
 // Bridged so a re-registration can cancel the prior closure's dispatcher-ready watchdog before wiring its own.
 let clearRendererDispatcherReadyWatchdog = (): void => {}
 
@@ -1532,7 +1532,7 @@ function markRendererPtysHiddenForRendererLifecycleReset(webContentsId: number):
     }
   }
   // Why: the dead page never ACKs its in-flight bytes, so leaked accounting would delivery-gate surviving PTYs forever after a reload/crash.
-  resetRendererDeliveryAccountingForLifecycleReset()
+  resetRendererDeliveryAccountingForLifecycleReset(webContentsId)
 }
 
 function registerRendererLifecycleResetHandlers(webContents: WebContents): void {
@@ -1797,8 +1797,22 @@ export function registerPtyHandlers(
   let lastLifecycleResetClearedChars = 0
   // Why: count of watchdog gate force-opens (no handshake arrived); nonzero flags a dropped-handshake self-heal.
   let rendererDispatcherReadyForcedCount = 0
-  // Why: gate sends until the page's pty:data listener exists; else webContents.send drops bytes but still counts them in-flight, permanently pinning the gate.
-  let rendererPtyDispatcherReady = false
+  // Why: gate sends until some window's pty:data listener exists; else webContents.send drops bytes but still counts them in-flight, permanently pinning the gate.
+  // Why per-window Set (multi-window): a sibling window registering/reloading
+  // must not un-ready a window whose renderer already handshaked — holding
+  // ALL windows' sends hostage to whichever window most recently
+  // (re-)registered would freeze live terminals across the whole app.
+  const readyPtyDispatcherWindowIds = new Set<number>()
+  const isRendererPtyDispatcherReady = (): boolean => readyPtyDispatcherWindowIds.size > 0
+  // Why: an owned PTY only flushes once its own window's renderer has
+  // handshaked; an unowned PTY (CLI/daemon spawn) falls back to "any window
+  // ready", matching the existing broadcast-permissive ownerless behavior.
+  const isPtyOwnerDispatchReady = (id: string): boolean => {
+    const owner = ptyRendererOwnerWebContentsIds.get(id)
+    return owner === undefined
+      ? isRendererPtyDispatcherReady()
+      : readyPtyDispatcherWindowIds.has(owner)
+  }
   let dispatcherReadyWatchdogTimer: ReturnType<typeof setTimeout> | null = null
 
   // Why: watermark producer pause/resume keyed on per-PTY pendingData (in-flight is already ACK-bounded); providers without pauseProducer no-op, memory still bounded by the pending cap.
@@ -1907,7 +1921,7 @@ export function registerPtyHandlers(
       diagnostics: buildMainDeliveryDiagnostics(),
       rendererLifecycleResetCount,
       lastLifecycleResetClearedChars,
-      rendererPtyDispatcherReady,
+      rendererPtyDispatcherReady: isRendererPtyDispatcherReady(),
       rendererDispatcherReadyForcedCount
     }
   }
@@ -2018,20 +2032,37 @@ export function registerPtyHandlers(
     resetHiddenRendererPtyDeliveryDebugCounters()
     recordPtyRendererDeliveryPressure()
   }
-  resetRendererDeliveryAccountingForLifecycleReset = () => {
-    // Why lossless: pendingData bytes were bound for the dead page; the replacement repaints from main's authoritative sources, which superset it.
-    lastLifecycleResetClearedChars = rendererInFlightTotalChars
+  resetRendererDeliveryAccountingForLifecycleReset = (webContentsId: number) => {
+    // Why: multi-window — only the resetting window's own (or unowned) PTYs lose
+    // their in-flight accounting; a sibling window's still-live, already-acked
+    // PTYs must keep flowing through this shared pipeline undisturbed.
+    const ownsOrUnowned = (ptyId: string): boolean => {
+      const owner = ptyRendererOwnerWebContentsIds.get(ptyId)
+      return owner === undefined || owner === webContentsId
+    }
+    let clearedChars = 0
+    for (const [ptyId, accounting] of rendererDeliveryAccountingByPty) {
+      if (!ownsOrUnowned(ptyId)) {
+        continue
+      }
+      clearedChars += Math.max(0, accounting.sentChars - accounting.ackedChars)
+      // Why lossless: pendingData bytes were bound for the dead page; the replacement repaints from main's authoritative sources, which superset it.
+      rendererDeliveryAccountingByPty.delete(ptyId)
+      pendingData.delete(ptyId)
+      pendingOverflowMarkedPtys.delete(ptyId)
+      // Why release before clearing: pending bytes and credits belonged to the dead page; releasing producer pauses first keeps no shell wedged.
+      producerFlowControl.release(ptyId)
+    }
+    lastLifecycleResetClearedChars = clearedChars
     rendererLifecycleResetCount += 1
-    // Why release before clearing: pending bytes and credits belonged to the dead page; releasing producer pauses first keeps no shell wedged.
-    producerFlowControl.releaseAll()
+    rendererInFlightTotalChars = Math.max(0, rendererInFlightTotalChars - clearedChars)
     clearDeliveryResyncProbe()
     deliveryResyncUnansweredWarnLogged = false
-    rendererDeliveryAccountingByPty.clear()
-    rendererInFlightTotalChars = 0
-    pendingData.clear()
-    pendingOverflowMarkedPtys.clear()
-    // Why hold sends: the reloading page's pty:data listener is gone until it re-registers/handshakes, so bytes would drop into a listener-less page and re-pin the gate.
-    rendererPtyDispatcherReady = false
+    // Why hold sends: the reloading page's pty:data listener is gone until it
+    // re-registers/handshakes. A sibling window that already handshaked keeps
+    // the gate open for its own PTYs; the resetting window's own hold re-pins
+    // until its renderer re-handshakes.
+    readyPtyDispatcherWindowIds.delete(webContentsId)
     // Why: arm the self-heal watchdog so a never-arriving handshake can't hold the gate forever; the real handshake cancels it.
     armDispatcherReadyWatchdog()
     recordPtyRendererDeliveryPressure()
@@ -2397,10 +2428,16 @@ export function registerPtyHandlers(
     // Why: one-shot self-heal — force the gate open if the reloaded page never signals ready, so a dropped handshake can't hold it forever. Unref'd so it can't keep the process alive.
     dispatcherReadyWatchdogTimer = setTimeout(() => {
       dispatcherReadyWatchdogTimer = null
-      if (rendererPtyDispatcherReady || mainWindow.isDestroyed()) {
+      const watchdogWebContentsId =
+        typeof mainWindow.webContents.id === 'number' ? mainWindow.webContents.id : null
+      if (
+        watchdogWebContentsId === null ||
+        readyPtyDispatcherWindowIds.has(watchdogWebContentsId) ||
+        mainWindow.isDestroyed()
+      ) {
         return
       }
-      rendererPtyDispatcherReady = true
+      readyPtyDispatcherWindowIds.add(watchdogWebContentsId)
       rendererDispatcherReadyForcedCount += 1
       schedulePendingDataFlush(0)
     }, PTY_DISPATCHER_READY_WATCHDOG_MS)
@@ -2417,12 +2454,13 @@ export function registerPtyHandlers(
       pendingOverflowMarkedPtys.clear()
       rendererDeliveryAccountingByPty.clear()
       rendererInFlightTotalChars = 0
+      readyPtyDispatcherWindowIds.clear()
       clearDispatcherReadyWatchdog()
       recordPtyRendererDeliveryPressure()
       return
     }
-    // Why hold: the page's pty:data listener isn't registered yet; bytes accrue in pendingData (rebuilt losslessly) and the ready handshake reschedules this flush.
-    if (!rendererPtyDispatcherReady) {
+    // Why hold: no window's pty:data listener is registered yet; bytes accrue in pendingData (rebuilt losslessly) and the ready handshake reschedules this flush.
+    if (!isRendererPtyDispatcherReady()) {
       return
     }
     const settings = getSettings?.()
@@ -2430,6 +2468,11 @@ export function registerPtyHandlers(
     for (const [id, pending] of getPendingPtyFlushEntries()) {
       if (writes >= PTY_BATCH_FLUSH_MAX_WRITES) {
         break
+      }
+      // Why: multi-window — a PTY owned by a window that hasn't (re-)handshaked
+      // yet stays held, even while other windows' PTYs are flushing normally.
+      if (!isPtyOwnerDispatchReady(id)) {
+        continue
       }
       // Why drop, never re-queue: the model already ingested hidden-gated bytes; reveal restores from the snapshot+seq machinery.
       if (shouldDropHiddenRendererPtyData(id, settings)) {
@@ -2654,6 +2697,7 @@ export function registerPtyHandlers(
         pendingOverflowMarkedPtys.clear()
         rendererDeliveryAccountingByPty.clear()
         rendererInFlightTotalChars = 0
+        readyPtyDispatcherWindowIds.clear()
         clearDispatcherReadyWatchdog()
         recordPtyRendererDeliveryPressure()
         return
@@ -2694,7 +2738,7 @@ export function registerPtyHandlers(
         performance.now()
       )
       // Why gate the fast path on the handshake too: else boot-window keystroke echo is sent into a listener-less page and pins the gate.
-      if (isInteractiveOutput && rendererPtyDispatcherReady) {
+      if (isInteractiveOutput && isPtyOwnerDispatchReady(payload.id)) {
         // Why the reserve: keep input echo from being pinned behind unrelated bulk output; it's bounded and the per-PTY cap still prevents an active TUI runaway.
         if (!canSendPtyDataToRenderer(payload.id, { interactive: true })) {
           requestDeliveryResyncForGatedPty()
@@ -4922,9 +4966,15 @@ export function registerPtyHandlers(
   // broadcast-permissive behavior, as does a recorded owner whose window has
   // since closed.
   const isPtyCallerAuthorizedForId = (
-    event: IpcMainEvent | IpcMainInvokeEvent,
+    event: IpcMainEvent | IpcMainInvokeEvent | null | undefined,
     id: string
   ): boolean => {
+    // Why: a real Electron IPC dispatch always carries an event with a sender;
+    // a missing event can only come from a trusted internal/runtime caller
+    // invoking the handler directly (never from the untrusted renderer surface).
+    if (!event) {
+      return true
+    }
     if (!isPtyWriteEventFromMainWindow(event)) {
       return false
     }
@@ -5196,13 +5246,14 @@ export function registerPtyHandlers(
     if (!isPtyWriteEventFromMainWindow(event)) {
       return
     }
-    // Why: a handshake while the gate is already open means a page load whose lifecycle reset was missed; clear the dead page's stale accounting so it can't permanently gate survivors.
-    if (rendererPtyDispatcherReady) {
-      resetRendererDeliveryAccountingForLifecycleReset()
+    const senderWebContentsId = event.sender.id
+    // Why: a repeat handshake from a window already marked ready means its page reloaded without the lifecycle reset firing first; clear that window's own stale accounting so it can't permanently gate its survivors.
+    if (readyPtyDispatcherWindowIds.has(senderWebContentsId)) {
+      resetRendererDeliveryAccountingForLifecycleReset(senderWebContentsId)
     }
     // Why: real handshake landed — cancel the self-heal watchdog so it can't later force-open the gate.
     clearDispatcherReadyWatchdog()
-    rendererPtyDispatcherReady = true
+    readyPtyDispatcherWindowIds.add(senderWebContentsId)
     schedulePendingDataFlush(0)
   })
 

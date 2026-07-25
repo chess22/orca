@@ -9293,7 +9293,8 @@ describe('registerPtyHandlers', () => {
           on: vi.fn(),
           send: vi.fn(),
           removeListener: vi.fn(),
-          isDestroyed: () => false
+          isDestroyed: () => false,
+          isLoadingMainFrame: vi.fn(() => true)
         }
       }
       registerPtyHandlers(secondWindow as never)
@@ -10975,11 +10976,20 @@ describe('registerPtyHandlers', () => {
     spawnMock.mockReturnValue(mockProc.proc)
     let destroyed = false
     const destroyableWindow = {
+      id: nextTestWebContentsId++,
+      on: vi.fn(),
       isDestroyed: () => destroyed,
       isFocused: () => true,
       isVisible: () => true,
       isMinimized: () => false,
-      webContents: { on: vi.fn(), send: vi.fn(), removeListener: vi.fn() }
+      webContents: {
+        id: nextTestWebContentsId++,
+        on: vi.fn(),
+        send: vi.fn(),
+        removeListener: vi.fn(),
+        isDestroyed: () => destroyed,
+        isLoadingMainFrame: vi.fn(() => true)
+      }
     }
 
     try {

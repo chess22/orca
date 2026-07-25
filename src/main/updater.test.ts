@@ -209,9 +209,16 @@ describe('updater', () => {
   it('does not load or configure electron-updater for the parallel dev app identity', async () => {
     appMock.getName.mockReturnValue('Orca Dev')
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never)
     checkForUpdatesFromMenu()
@@ -1392,9 +1399,16 @@ describe('updater', () => {
       .mockRejectedValueOnce(new Error('signature check blocked'))
       .mockImplementationOnce(() => new Promise(() => {}))
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
 
     const { setupAutoUpdater, checkForUpdatesFromMenu, downloadUpdate } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -1549,8 +1563,15 @@ describe('updater', () => {
     })
 
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
     const { setupAutoUpdater, quitAndInstall, isQuittingForUpdate } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never)
     quitAndInstall()
@@ -1572,7 +1593,12 @@ describe('updater', () => {
 
   it('does not recover quit-for-update state from late errors after install commit', async () => {
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
     fetchNewerReleaseTagsMock.mockResolvedValue({ tags: ['v1.0.61'], state: 'ready' })
     autoUpdaterMock.checkForUpdates.mockImplementation(() => {
       autoUpdaterMock.emit('checking-for-update')
@@ -1584,6 +1610,8 @@ describe('updater', () => {
 
     const { setupAutoUpdater, checkForUpdatesFromMenu, quitAndInstall, isQuittingForUpdate } =
       await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()
@@ -1632,7 +1660,12 @@ describe('updater', () => {
 
   it('arms the forced-exit watchdog once the install commits', async () => {
     const sendMock = vi.fn()
-    const mainWindow = { webContents: { send: sendMock } }
+    const mainWindow = {
+      id: 1,
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { id: 1, send: sendMock, isDestroyed: () => false }
+    }
     fetchNewerReleaseTagsMock.mockResolvedValue({ tags: ['v1.0.61'], state: 'ready' })
     autoUpdaterMock.checkForUpdates.mockImplementation(() => {
       autoUpdaterMock.emit('checking-for-update')
@@ -1643,6 +1676,8 @@ describe('updater', () => {
     })
 
     const { setupAutoUpdater, checkForUpdatesFromMenu, quitAndInstall } = await import('./updater')
+    const { registerOrcaWindow } = await import('./window/orca-window-registry')
+    registerOrcaWindow(mainWindow as never)
 
     setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
     checkForUpdatesFromMenu()

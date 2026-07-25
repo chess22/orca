@@ -3629,6 +3629,10 @@ export class OrcaRuntimeService {
       facade.revealTerminalSession = (worktreeId, opts) =>
         this.notifierForWorktree(worktreeId)?.revealTerminalSession?.(worktreeId, opts)
     }
+    if (anyHas('resumeSleepingAgents')) {
+      facade.resumeSleepingAgents = (worktreeId) =>
+        this.notifierForWorktree(worktreeId)?.resumeSleepingAgents?.(worktreeId)
+    }
     if (anyHas('focusEditorTab')) {
       facade.focusEditorTab = (tabId, worktreeId) =>
         this.notifierForWorktree(worktreeId)?.focusEditorTab?.(tabId, worktreeId)
@@ -3681,6 +3685,15 @@ export class OrcaRuntimeService {
     if (anyHas('browserDriverChanged')) {
       facade.browserDriverChanged = (browserPageId, driver) =>
         this.forEachNotifier((n) => n.browserDriverChanged?.(browserPageId, driver))
+    }
+    if (anyHas('closeTerminalTab')) {
+      facade.closeTerminalTab = (tabId) => {
+        const notifier = this.notifierForTab(tabId)
+        if (!notifier?.closeTerminalTab) {
+          return Promise.reject(new Error('method_not_supported'))
+        }
+        return notifier.closeTerminalTab(tabId)
+      }
     }
     return facade
   }
@@ -3890,11 +3903,21 @@ export class OrcaRuntimeService {
   }
 
   attachWindow(windowId: number): void {
+    // Why: register up front — both branches below can return before reaching
+    // a common tail, and markGraphUnavailable/markRendererReloading require
+    // every attached window to already have a tracked status.
+    if (!this.windowGraphStatuses.has(windowId)) {
+      this.windowGraphStatuses.set(windowId, 'unavailable')
+    }
     if (this.authoritativeWindowId === HEADLESS_RUNTIME_WINDOW_ID) {
       // Why: promotion is a renderer reload of the same graph owner, not a new
       // runtime; stale handles must transition before the real window publishes.
       this.persistWindowlessPtyBindingsForDesktopAttach()
       this.markRendererReloading(HEADLESS_RUNTIME_WINDOW_ID)
+      // Why: the headless slot is being replaced, not merely reloading — drop
+      // its tracked status so it can't keep windowGraphStatuses non-empty
+      // forever and block the "last real window closed" fail-closed path.
+      this.windowGraphStatuses.delete(HEADLESS_RUNTIME_WINDOW_ID)
       this.authoritativeWindowId = windowId
       return
     }
@@ -3969,9 +3992,6 @@ export class OrcaRuntimeService {
         },
         hostId
       )
-    }
-    if (!this.windowGraphStatuses.has(windowId)) {
-      this.windowGraphStatuses.set(windowId, 'unavailable')
     }
   }
 
