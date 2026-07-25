@@ -13,7 +13,10 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const execFileMock = vi.hoisted(() => vi.fn())
+const { appGetNameMock, execFileMock } = vi.hoisted(() => ({
+  appGetNameMock: vi.fn(() => 'Orca'),
+  execFileMock: vi.fn()
+}))
 
 vi.mock('electron', () => ({
   app: {
@@ -65,6 +68,8 @@ async function createPackagedMacLauncher(root: string): Promise<string> {
 
 describe('CliInstaller', () => {
   beforeEach(() => {
+    appGetNameMock.mockReset()
+    appGetNameMock.mockReturnValue('Orca')
     execFileMock.mockReset()
   })
 

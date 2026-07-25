@@ -10,6 +10,7 @@ import type {
   RuntimeTerminalVisualTab,
   RuntimeTerminalRead,
   RuntimeTerminalRename,
+  RuntimeTerminalResize,
   RuntimeTerminalSend,
   RuntimeTerminalShow,
   RuntimeTerminalSplit,
@@ -183,6 +184,13 @@ export function formatTerminalCreate(result: { terminal: RuntimeTerminalCreate }
 
 export function formatTerminalSplit(result: { split: RuntimeTerminalSplit }): string {
   return `Split pane ${result.split.handle} in tab ${result.split.tabId}`
+}
+
+export function formatTerminalResize(result: { resize: RuntimeTerminalResize }): string {
+  return [
+    `Resized terminal ${result.resize.handle} in tab ${result.resize.tabId}`,
+    `pane: ${formatTerminalPaneGeometry(result.resize.pane)}`
+  ].join('\n')
 }
 
 export function formatTerminalFocus(result: { focus: RuntimeTerminalFocus }): string {

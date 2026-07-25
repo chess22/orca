@@ -12,11 +12,19 @@ import { runWorktreeDelete } from '@/components/sidebar/delete-worktree-flow'
 import { runSleepWorktree } from '@/components/sidebar/sleep-worktree-flow'
 import { createBackgroundSleepingAgentWakeDispatcher } from '@/lib/wake-sleeping-agents-in-background'
 import { OPEN_WORKSPACE_BOARD_EVENT } from '@/components/sidebar/useWorkspaceBoardPanel'
-import { SPLIT_TERMINAL_PANE_EVENT, CLOSE_TERMINAL_PANE_EVENT } from '@/constants/terminal'
+import {
+  SPLIT_TERMINAL_PANE_EVENT,
+  RESIZE_TERMINAL_PANE_EVENT,
+  CLOSE_TERMINAL_PANE_EVENT
+} from '@/constants/terminal'
 import { requestBackgroundTerminalWorktreeMount } from '@/components/terminal/background-terminal-worktree-mount'
 import { planMobileTerminalTabMount } from '@/lib/mobile-terminal-tab-mount'
 import { hasRegisteredRuntimeTerminalTab } from '@/runtime/sync-runtime-graph'
-import type { SplitTerminalPaneDetail, CloseTerminalPaneDetail } from '@/constants/terminal'
+import type {
+  SplitTerminalPaneDetail,
+  ResizeTerminalPaneDetail,
+  CloseTerminalPaneDetail
+} from '@/constants/terminal'
 import { getVisibleWorktreeIds } from '@/components/sidebar/visible-worktrees'
 import { activateTabNumberShortcut } from '@/lib/tab-number-shortcuts'
 import { nextEditorFontZoomLevel, computeEditorFontSize } from '@/lib/editor-font-zoom'
@@ -1861,6 +1869,12 @@ export function useIpcEvents(): void {
           window.dispatchEvent(new CustomEvent(SPLIT_TERMINAL_PANE_EVENT, { detail }))
         }
       )
+    )
+
+    unsubs.push(
+      window.api.ui.onResizeTerminalPane((detail: ResizeTerminalPaneDetail) => {
+        window.dispatchEvent(new CustomEvent(RESIZE_TERMINAL_PANE_EVENT, { detail }))
+      })
     )
 
     unsubs.push(

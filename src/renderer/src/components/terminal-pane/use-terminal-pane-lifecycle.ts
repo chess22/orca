@@ -122,9 +122,11 @@ import {
 } from '@/lib/primary-selection'
 import {
   SPLIT_TERMINAL_PANE_EVENT,
+  RESIZE_TERMINAL_PANE_EVENT,
   CLOSE_TERMINAL_PANE_EVENT,
   WAKE_HIBERNATED_AGENTS_WORKTREE_EVENT,
   type SplitTerminalPaneDetail,
+  type ResizeTerminalPaneDetail,
   type CloseTerminalPaneDetail,
   type WakeHibernatedAgentsWorktreeDetail
 } from '@/constants/terminal'
@@ -1569,7 +1571,22 @@ export function useTerminalPaneLifecycle({
     }
     window.addEventListener(SPLIT_TERMINAL_PANE_EVENT, onCliSplitPane)
 
-    // Why: CLI-driven pane close goes via CustomEvent so PaneManager promotes a sibling; the last pane falls back to closing the tab.
+    function onCliResizePane(event: Event): void {
+      const detail = (event as CustomEvent<ResizeTerminalPaneDetail>).detail
+      if (!detail?.tabId || detail.tabId !== tabId) {
+        return
+      }
+      const mgr = managerRef.current
+      const paneId = mgr?.getNumericIdForLeaf(detail.leafId) ?? null
+      if (paneId !== null) {
+        mgr?.resizePane(paneId, detail.targetRatio)
+      }
+    }
+    window.addEventListener(RESIZE_TERMINAL_PANE_EVENT, onCliResizePane)
+
+    // Why: CLI-driven pane close dispatches a CustomEvent so PaneManager handles
+    // sibling promotion in split layouts. Falls back to closing the whole tab
+    // when the target pane is the only one remaining.
     function onCliClosePane(event: Event): void {
       const detail = (event as CustomEvent<CloseTerminalPaneDetail>).detail
       if (!detail?.tabId || detail.tabId !== tabId) {
@@ -1594,6 +1611,7 @@ export function useTerminalPaneLifecycle({
 
     return () => {
       window.removeEventListener(SPLIT_TERMINAL_PANE_EVENT, onCliSplitPane)
+      window.removeEventListener(RESIZE_TERMINAL_PANE_EVENT, onCliResizePane)
       window.removeEventListener(CLOSE_TERMINAL_PANE_EVENT, onCliClosePane)
       const currentWorktreeTabs = useAppStore.getState().tabsByWorktree[worktreeId]
       const tabStillExists = Boolean(

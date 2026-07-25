@@ -290,5 +290,14 @@ export const CORE_COMMAND_SPECS: CommandSpec[] = [
       'orca terminal split --terminal term_abc123 --command "codex"',
       'orca terminal split --terminal term_abc123 --direction vertical --ratio 0.3'
     ]
+  },
+  {
+    path: ['terminal', 'resize'],
+    summary: 'Change an existing terminal pane’s split ratio',
+    usage: 'orca terminal resize --terminal <handle> (--ratio <0-1> | --size-px <px>) [--json]',
+    allowedFlags: [...GLOBAL_FLAGS, 'terminal', 'ratio', 'size-px'],
+    notes: [
+      '--ratio sets the target pane’s share of the space divided with its sibling; --size-px sets its width for vertical splits or height for horizontal splits.'
+    ]
   }
 ]

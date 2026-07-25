@@ -382,6 +382,7 @@ import type {
   RuntimeSpeechModelSummary,
   RuntimeSpeechSetupState,
   RuntimeTerminalPaneGeometry,
+  RuntimeTerminalResize,
   RuntimeTerminalShow,
   RuntimeTerminalSummary,
   RuntimeTerminalVisualGroupNode,
@@ -416,7 +417,12 @@ import type {
 } from '../../shared/runtime-types'
 import type { AutomationService } from '../automations/service'
 import { RuntimeBrowserCommands } from './orca-runtime-browser'
-import { computeTerminalLeafShare, resolveNewPaneRatioFromSizePx } from './terminal-layout-share'
+import {
+  computeTerminalLeafShare,
+  resizeTerminalLeaf,
+  resolveNewPaneRatioFromSizePx,
+  resolveTargetPaneRatioFromSizePx
+} from './terminal-layout-share'
 import { RemoteRuntimeTerminalCreateIdempotency } from './remote-runtime-terminal-create-idempotency'
 import { deriveRemoteRuntimeTerminalCreateHandle } from './remote-runtime-terminal-create-identity'
 import {
@@ -1600,6 +1606,7 @@ type RuntimeNotifier = {
       telemetrySource?: TerminalPaneSplitSource
     }
   ): void
+  resizeTerminalPane?(tabId: string, leafId: string, targetRatio: number): void
   renameTerminal(tabId: string, title: string | null): void
   focusTerminal(tabId: string, worktreeId: string, leafId?: string | null): void
   focusEditorTab?(tabId: string, worktreeId: string): void
@@ -4067,6 +4074,10 @@ export class OrcaRuntimeService {
 
       nextLeaves.set(leafKey, {
         ...leaf,
+        // Why: hidden/unmounted tabs report no DOM size. Keep the last nonzero
+        // renderer measurement so headless --size-px operations still resolve.
+        widthPx: leaf.widthPx ?? existing?.widthPx,
+        heightPx: leaf.heightPx ?? existing?.heightPx,
         ptyId,
         ptyGeneration,
         connected: ptyId !== null,
@@ -6065,6 +6076,31 @@ export class OrcaRuntimeService {
       terminalLayoutsByTabId: {
         ...session.terminalLayoutsByTabId,
         [args.tabId]: nextLayout
+      }
+    })
+  }
+
+  private persistTerminalPaneResize(
+    tabId: string,
+    fallbackLayout: TerminalLayoutSnapshot | undefined,
+    root: TerminalPaneLayoutNode
+  ): void {
+    const session = this.store?.getWorkspaceSession?.()
+    if (!session || !this.store?.setWorkspaceSession) {
+      return
+    }
+    const existing = session.terminalLayoutsByTabId?.[tabId] ?? fallbackLayout
+    if (!existing) {
+      return
+    }
+    this.store.setWorkspaceSession({
+      ...session,
+      terminalLayoutsByTabId: {
+        ...session.terminalLayoutsByTabId,
+        [tabId]: {
+          ...this.cloneTerminalLayoutSnapshot(existing),
+          root
+        }
       }
     })
   }
@@ -22759,6 +22795,104 @@ export class OrcaRuntimeService {
     await this.closeMobileSessionTab(`id:${leaf.worktreeId}`, leaf.tabId, { reason: 'user' })
     this.claudeAgentTeams.removeTeamForLeaderHandle(handle)
     return { handle, tabId: leaf.tabId, closeMode: 'tab', ptyKilled: false }
+  }
+
+  async resizeTerminalPane(
+    handle: string,
+    opts: { ratio?: number; sizePx?: number }
+  ): Promise<RuntimeTerminalResize> {
+    const livePty = this.getLivePtyForHandle(handle)
+    let tabId: string
+    let leafId: string
+    let worktreeId: string
+    let leaf: RuntimeLeafRecord | undefined
+    if (livePty) {
+      const parsedPaneKey = parsePaneKey(livePty.pty.paneKey ?? '')
+      tabId = livePty.pty.tabId?.trim() ?? ''
+      if (!tabId || !parsedPaneKey) {
+        throw new Error('terminal_handle_stale')
+      }
+      leafId = parsedPaneKey.leafId
+      worktreeId = livePty.pty.worktreeId
+      leaf = this.leaves.get(this.getLeafKey(tabId, leafId))
+    } else {
+      this.assertGraphReady()
+      const resolved = this.getLiveLeafForHandle(handle)
+      tabId = resolved.leaf.tabId
+      leafId = resolved.leaf.leafId
+      worktreeId = resolved.leaf.worktreeId
+      leaf = resolved.leaf
+    }
+
+    const sessionLayout = this.store?.getWorkspaceSession?.()?.terminalLayoutsByTabId?.[tabId]
+    const mobileLayout = this.mobileSessionTabsByWorktree
+      .get(worktreeId)
+      ?.tabs.find(
+        (tab): tab is RuntimeMobileSessionTerminalTab =>
+          tab.type === 'terminal' && tab.parentTabId === tabId && tab.parentLayout !== undefined
+      )?.parentLayout
+    const fallbackLayout = sessionLayout ?? mobileLayout
+    const root = this.tabs.get(tabId)?.layout ?? fallbackLayout?.root
+    if (!root) {
+      throw new Error(
+        'The terminal pane is the only pane in its tab; there is no sibling to resize'
+      )
+    }
+
+    const current = resizeTerminalLeaf(root, leafId, 0.5)
+    if (!current) {
+      throw new Error(
+        'The terminal pane is the only pane in its tab; there is no sibling to resize'
+      )
+    }
+    const currentPaneSizePx = current.direction === 'vertical' ? leaf?.widthPx : leaf?.heightPx
+    const requestedTargetRatio =
+      opts.ratio ??
+      resolveTargetPaneRatioFromSizePx(opts.sizePx, currentPaneSizePx, current.previousTargetRatio)
+    if (requestedTargetRatio === undefined) {
+      throw new Error(
+        'Cannot apply --size-px because the target pane has no last-synced pixel geometry'
+      )
+    }
+    const targetRatio = Math.round(requestedTargetRatio * 1000) / 1000
+    const resized = resizeTerminalLeaf(root, leafId, targetRatio)
+    if (!resized) {
+      throw new Error(
+        'The terminal pane is the only pane in its tab; there is no sibling to resize'
+      )
+    }
+
+    const syncedTab = this.tabs.get(tabId)
+    if (syncedTab) {
+      this.tabs.set(tabId, { ...syncedTab, layout: resized.root })
+    }
+    this.persistTerminalPaneResize(tabId, fallbackLayout, resized.root)
+    if (fallbackLayout) {
+      this.applyHeadlessTerminalPaneLayoutToSnapshot(worktreeId, {
+        tabId,
+        root: resized.root,
+        expandedLeafId: fallbackLayout.expandedLeafId,
+        ...(fallbackLayout.titlesByLeafId ? { titlesByLeafId: fallbackLayout.titlesByLeafId } : {})
+      })
+    }
+    this.notifier?.resizeTerminalPane?.(tabId, leafId, targetRatio)
+
+    const share = computeTerminalLeafShare(resized.root, leafId)
+    const nextAxisPx =
+      currentPaneSizePx === undefined
+        ? null
+        : Math.round((currentPaneSizePx * targetRatio) / current.previousTargetRatio)
+    return {
+      handle,
+      tabId,
+      leafId,
+      pane: {
+        widthPx: resized.direction === 'vertical' ? nextAxisPx : (leaf?.widthPx ?? null),
+        heightPx: resized.direction === 'horizontal' ? nextAxisPx : (leaf?.heightPx ?? null),
+        widthRatio: share ? Math.round(share.widthRatio * 1000) / 1000 : null,
+        heightRatio: share ? Math.round(share.heightRatio * 1000) / 1000 : null
+      }
+    }
   }
 
   async splitTerminal(

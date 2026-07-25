@@ -223,6 +223,7 @@ Common Commands:
   orca terminal stop --worktree <selector> [--json]
   orca terminal create [--worktree <selector>] [--title <name>] [--command <text>] [--focus] [--json]
   orca terminal split [--terminal <handle>] [--direction horizontal|vertical] [--ratio <0-1>] [--size-px <px>] [--json]
+  orca terminal resize --terminal <handle> (--ratio <0-1> | --size-px <px>) [--json]
   orca terminal switch [--terminal <handle>] [--json]
   orca terminal close [--terminal <handle>] [--tab] [--json]
   orca project list [--json]
@@ -571,6 +572,8 @@ export function formatFlagHelp(flag: string): string {
     index: '--index <n>            Tab index to switch to',
     page: '--page <id>            Stable browser page id from `orca tab list --json`',
     profile: '--profile <id>        Browser profile id',
+    ratio: '--ratio <0-1>         Pane share of its split axis',
+    'size-px': '--size-px <px>       Pane size in pixels along its split axis',
     'show-profile': '--show-profile        Include tab profile in text output',
     format: '--format <png|jpeg>    Screenshot image format'
   }
