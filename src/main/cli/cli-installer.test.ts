@@ -20,7 +20,7 @@ vi.mock('electron', () => ({
     isPackaged: false,
     getPath: () => tmpdir(),
     getAppPath: () => tmpdir(),
-    getName: () => 'Orca'
+    getName: appGetNameMock
   }
 }))
 
@@ -169,21 +169,16 @@ describe('CliInstaller', () => {
     }
   )
 
-  // Why: a packaged Orca Dev build's Contents/MacOS binary is named "Orca Dev",
-  // which the shared darwin launcher script does not account for. Registering
-  // any shell command — production `orca` or a renamed alias — would either
-  // fail at runtime or reclaim the production `orca` symlink out from under
-  // the real Orca.app, so CLI registration must be fully disabled instead.
-  it.skipIf(process.platform === 'win32')(
-    'disables CLI registration for a packaged Orca Dev build',
-    async () => {
+  it.each(['Orca Dev', 'Orca Test'])(
+    'disables public CLI registration for packaged %s',
+    async (appName) => {
+      appGetNameMock.mockReturnValue(appName)
       const fixture = await makeFixture()
       const resourcesPath = await createPackagedMacLauncher(fixture.root)
       const commandDir = join(fixture.root, 'bin')
       const installer = new CliInstaller({
         platform: 'darwin',
         isPackaged: true,
-        isDevIdentityBuild: true,
         resourcesPath,
         userDataPath: fixture.userDataPath,
         appPath: fixture.appPath,
@@ -192,11 +187,13 @@ describe('CliInstaller', () => {
       })
 
       const status = await installer.getStatus()
-      expect(status.supported).toBe(false)
-      expect(status.state).toBe('unsupported')
-      expect(status.unsupportedReason).toBe('dev_identity_build')
-      expect(status.commandPath).toBeNull()
-      expect(status.launcherPath).toBeNull()
+      expect(status).toMatchObject({
+        supported: false,
+        state: 'unsupported',
+        unsupportedReason: 'parallel_identity_build',
+        commandPath: null,
+        launcherPath: null
+      })
 
       await expect(installer.install()).rejects.toThrow(/disabled/i)
       await expect(installer.remove()).resolves.toMatchObject({ supported: false })

@@ -69,6 +69,16 @@ describe('getDefaultUserDataPath', () => {
     )
   })
 
+  it('resolves the Orca Test userData directory on darwin', () => {
+    const root = mkdtempSync(join(tmpdir(), 'orca-metadata-'))
+    const resourcesPath = join(root, 'Resources')
+    writePackagedAppAsar(resourcesPath, 'orca-test-app')
+
+    expect(getDefaultUserDataPath('darwin', root, resourcesPath)).toBe(
+      join(root, 'Library', 'Application Support', 'orca-test-app')
+    )
+  })
+
   it('resolves the userData directory from the bundled app.asar package name on win32', () => {
     process.env.APPDATA = 'C:\\Users\\test\\AppData\\Roaming'
     const root = mkdtempSync(join(tmpdir(), 'orca-metadata-'))
@@ -80,6 +90,17 @@ describe('getDefaultUserDataPath', () => {
     )
   })
 
+  it('resolves the Orca Test userData directory on win32', () => {
+    process.env.APPDATA = 'C:\\Users\\test\\AppData\\Roaming'
+    const root = mkdtempSync(join(tmpdir(), 'orca-metadata-'))
+    const resourcesPath = join(root, 'Resources')
+    writePackagedAppAsar(resourcesPath, 'orca-test-app')
+
+    expect(getDefaultUserDataPath('win32', root, resourcesPath)).toBe(
+      join('C:\\Users\\test\\AppData\\Roaming', 'orca-test-app')
+    )
+  })
+
   it('resolves the userData directory from the bundled app.asar package name on linux', () => {
     const root = mkdtempSync(join(tmpdir(), 'orca-metadata-'))
     const resourcesPath = join(root, 'Resources')
@@ -87,6 +108,16 @@ describe('getDefaultUserDataPath', () => {
 
     expect(getDefaultUserDataPath('linux', root, resourcesPath)).toBe(
       join(root, '.config', 'orca-dev-app')
+    )
+  })
+
+  it('resolves the Orca Test userData directory on linux', () => {
+    const root = mkdtempSync(join(tmpdir(), 'orca-metadata-'))
+    const resourcesPath = join(root, 'Resources')
+    writePackagedAppAsar(resourcesPath, 'orca-test-app')
+
+    expect(getDefaultUserDataPath('linux', root, resourcesPath)).toBe(
+      join(root, '.config', 'orca-test-app')
     )
   })
 

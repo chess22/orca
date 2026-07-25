@@ -6,24 +6,29 @@ const BASE_APP_NAME = 'Orca'
 const BASE_APP_USER_MODEL_ID = 'com.stablyai.orca'
 const MAX_LABEL_LENGTH = 80
 
-// Why: must match extraMetadata.name in config/electron-builder.config.cjs —
-// that's the bundled app.asar package.json "name" Electron reports via
-// app.getName() before this module's caller renames the app, and it's the
-// only runtime signal that a *packaged* build is the parallel Orca Dev
-// variant rather than production Orca (is.dev only distinguishes unpackaged
-// `pnpm dev` runs). Without this, updater.ts's dev-identity check never
-// matches on the packaged Orca Dev build and it keeps polling the production
-// release feed.
-const DEV_PACKAGED_APP_NAME = 'orca-dev-app'
-export const DEV_IDENTITY_APP_NAME = 'Orca Dev'
-const DEV_IDENTITY_APP_USER_MODEL_ID = 'com.stablyai.orca.dev'
+type PackagedParallelIdentity = {
+  packagedAppName: string
+  name: string
+  appUserModelId: string
+}
 
-// Why: shared by updater.ts and cli-installer.ts — both must recognize the
-// packaged Orca Dev variant (app.getName() === 'Orca Dev' after the
-// whenReady() rename) so neither the update feed nor the public `orca`
-// shell command is ever claimed by a parallel dev build.
-export function isDevIdentityAppName(appName: string): boolean {
-  return appName === DEV_IDENTITY_APP_NAME
+// Why: these names must match electron-builder extraMetadata and are the only
+// packaged-runtime signal available before app.setName() runs.
+const PACKAGED_PARALLEL_IDENTITIES: PackagedParallelIdentity[] = [
+  {
+    packagedAppName: 'orca-dev-app',
+    name: 'Orca Dev',
+    appUserModelId: 'com.stablyai.orca.dev'
+  },
+  {
+    packagedAppName: 'orca-test-app',
+    name: 'Orca Test',
+    appUserModelId: 'com.stablyai.orca.test'
+  }
+]
+
+export function isParallelIdentityAppName(appName: string): boolean {
+  return PACKAGED_PARALLEL_IDENTITIES.some((identity) => identity.name === appName)
 }
 
 export type DevInstanceIdentity = AppIdentity & {
@@ -74,17 +79,20 @@ export function getDevInstanceIdentity(
   packagedAppName?: string
 ): DevInstanceIdentity {
   if (!isDev) {
-    if (packagedAppName === DEV_PACKAGED_APP_NAME) {
+    const packagedIdentity = PACKAGED_PARALLEL_IDENTITIES.find(
+      (identity) => identity.packagedAppName === packagedAppName
+    )
+    if (packagedIdentity) {
       return {
-        name: DEV_IDENTITY_APP_NAME,
-        appName: DEV_IDENTITY_APP_NAME,
+        name: packagedIdentity.name,
+        appName: packagedIdentity.name,
         isDev: false,
         devLabel: null,
         devBranch: null,
         devWorktreeName: null,
         devRepoRoot: null,
         dockBadgeLabel: null,
-        appUserModelId: DEV_IDENTITY_APP_USER_MODEL_ID
+        appUserModelId: packagedIdentity.appUserModelId
       }
     }
     return {

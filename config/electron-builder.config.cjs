@@ -15,6 +15,18 @@ const { verifyLinuxGlibcFloor } = require('./scripts/verify-linux-glibc-floor.cj
 
 const isMacRelease = process.env.ORCA_MAC_RELEASE === '1'
 const isLinuxArm64Release = process.env.ORCA_LINUX_ARM64_RELEASE === '1'
+const isTestBuild = process.env.ORCA_TEST_BUILD === '1'
+const packagedAppIdentity = isTestBuild
+  ? {
+      appId: 'com.stablyai.orca.test',
+      productName: 'Orca Test',
+      packageName: 'orca-test-app'
+    }
+  : {
+      appId: 'com.stablyai.orca.dev',
+      productName: 'Orca Dev',
+      packageName: 'orca-dev-app'
+    }
 const featureWallResources = {
   from: 'resources/onboarding/feature-wall',
   to: 'onboarding/feature-wall'
@@ -52,8 +64,8 @@ const winSpeechNativeResource = {
 
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
-  appId: 'com.stablyai.orca.dev',
-  productName: 'Orca Dev',
+  appId: packagedAppIdentity.appId,
+  productName: packagedAppIdentity.productName,
   // Why: Electron's default userData dir comes from the bundled app.asar's
   // package.json "name" field, not from productName/appId above — the root
   // package.json stays "orca" for the pnpm workspace, so without this override
@@ -64,7 +76,7 @@ module.exports = {
   // ("orca-dev", see configure-process.ts) so the packaged app never shares
   // state with a developer's unlocked `pnpm dev` session either.
   extraMetadata: {
-    name: 'orca-dev-app'
+    name: packagedAppIdentity.packageName
   },
   directories: {
     buildResources: 'resources/build'

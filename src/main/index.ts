@@ -468,11 +468,8 @@ function maybeAutoRenameBranchOnFirstWorkFromHook(event: {
   )
 }
 
-// Why: app.getName() here still reflects the bundled app.asar package.json
-// "name" (set via extraMetadata for the Orca Dev variant) — the only signal
-// that distinguishes a packaged Orca Dev build from production Orca, since
-// is.dev only covers unpackaged `pnpm dev` runs. Must run before the
-// whenReady() app.setName() call below overwrites it.
+// Why: before app.setName(), the bundled package name is the only signal that
+// distinguishes packaged Orca, Orca Dev, and Orca Test identities.
 const devInstanceIdentity = getDevInstanceIdentity(is.dev, process.env, app.getName())
 const devAgentHookEndpointNamespace = devInstanceIdentity.isDev
   ? devInstanceIdentity.appUserModelId

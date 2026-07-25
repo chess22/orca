@@ -13,7 +13,7 @@ import { broadcastToOrcaWindows } from './window/orca-window-registry'
 import { withUpdaterSpan } from './observability/instrumentation'
 import { loadElectronAutoUpdater, type ElectronAutoUpdater } from './electron-updater-loader'
 import { writeMainThreadDiagnosticMarker } from './diagnostics/main-thread-churn-probe'
-import { isDevIdentityAppName } from './startup/dev-instance-identity'
+import { isParallelIdentityAppName } from './startup/dev-instance-identity'
 import {
   beginMacUpdateDownload,
   deferMacQuitUntilInstallerReady,
@@ -130,10 +130,10 @@ let downloadInFlight = false
 let quittingForUpdate = false
 let autoUpdater: ElectronAutoUpdater | null = null
 
-function isDevIdentityBuild(): boolean {
+function isParallelIdentityBuild(): boolean {
   // Why: hand-built parallel installs must never consume the production Orca
   // release feed, even when they are packaged and outside Electron dev mode.
-  return isDevIdentityAppName(app.getName())
+  return isParallelIdentityAppName(app.getName())
 }
 
 function getAutoUpdater(): ElectronAutoUpdater {
@@ -1187,7 +1187,7 @@ function runBackgroundUpdateCheck(
     sendStatus({ state: 'not-available' })
     return
   }
-  if (isDevIdentityBuild()) {
+  if (isParallelIdentityBuild()) {
     sendStatus({ state: 'not-available' })
     return
   }
@@ -1250,7 +1250,7 @@ export function checkForUpdatesFromMenu(options?: UpdateCheckOptions): void {
     sendStatus({ state: 'not-available', userInitiated: true })
     return
   }
-  if (isDevIdentityBuild()) {
+  if (isParallelIdentityBuild()) {
     sendStatus({ state: 'not-available', userInitiated: true })
     return
   }
@@ -1455,7 +1455,7 @@ export function setupAutoUpdater(
   if (is.dev) {
     return
   }
-  if (isDevIdentityBuild()) {
+  if (isParallelIdentityBuild()) {
     return
   }
 

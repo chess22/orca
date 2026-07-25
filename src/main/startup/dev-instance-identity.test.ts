@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getDevInstanceIdentity } from './dev-instance-identity'
+import { getDevInstanceIdentity, isParallelIdentityAppName } from './dev-instance-identity'
 
 describe('dev-instance-identity', () => {
   it('keeps packaged identity stable', () => {
@@ -21,6 +21,23 @@ describe('dev-instance-identity', () => {
       dockBadgeLabel: null,
       appUserModelId: 'com.stablyai.orca.dev'
     })
+  })
+
+  it('recognizes the packaged Orca Test parallel-build variant', () => {
+    expect(getDevInstanceIdentity(false, {}, 'orca-test-app')).toMatchObject({
+      name: 'Orca Test',
+      appName: 'Orca Test',
+      isDev: false,
+      devLabel: null,
+      dockBadgeLabel: null,
+      appUserModelId: 'com.stablyai.orca.test'
+    })
+  })
+
+  it('classifies only packaged parallel display names', () => {
+    expect(isParallelIdentityAppName('Orca Dev')).toBe(true)
+    expect(isParallelIdentityAppName('Orca Test')).toBe(true)
+    expect(isParallelIdentityAppName('Orca')).toBe(false)
   })
 
   it('pins a stable dev appName across branches so the safeStorage key does not churn', () => {

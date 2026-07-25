@@ -17,7 +17,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { CliInstallMethod, CliInstallStatus } from '../../shared/cli-install-types'
-import { isDevIdentityAppName } from '../startup/dev-instance-identity'
+import { isParallelIdentityAppName } from '../startup/dev-instance-identity'
 import { buildAppImageCliWrapper } from './appimage-cli-wrapper'
 import {
   invalidateWindowsUserPathRegistryCache,
@@ -55,8 +55,8 @@ type CliInstallerOptions = {
   windowsEnvironment?: NodeJS.ProcessEnv
   /** Why: AppImage reports a stable outer file path via $APPIMAGE while bundled resources live in an ephemeral FUSE mount. */
   appImagePath?: string | null
-  /** Test seam for the packaged Orca Dev identity check; defaults from app.getName(). */
-  isDevIdentityBuild?: boolean
+  /** Test seam for packaged parallel identity detection; defaults from app.getName(). */
+  isParallelIdentityBuild?: boolean
 }
 
 type InstallSpec = {
@@ -83,10 +83,10 @@ export class CliInstaller {
   private readonly userPathCacheInvalidator: () => void
   private readonly windowsEnvironment: NodeJS.ProcessEnv
   private readonly appImagePath: string | null
-  private readonly isDevIdentityBuild: boolean
+  private readonly isParallelIdentityBuild: boolean
 
   private get commandName(): string {
-    if ((!this.isPackaged || this.isDevIdentityBuild) && !this.commandPathOverride) {
+    if ((!this.isPackaged || this.isParallelIdentityBuild) && !this.commandPathOverride) {
       // Why: development builds — and packaged parallel Orca Dev builds — must
       // not claim the production shell command.
       return DEV_COMMAND_NAME
@@ -127,11 +127,12 @@ export class CliInstaller {
       this.platform === 'linux' && this.isPackaged
         ? (options.appImagePath ?? process.env.APPIMAGE ?? null)
         : null
-    this.isDevIdentityBuild = options.isDevIdentityBuild ?? isDevIdentityAppName(app.getName())
+    this.isParallelIdentityBuild =
+      options.isParallelIdentityBuild ?? isParallelIdentityAppName(app.getName())
   }
 
   async getStatus(): Promise<CliInstallStatus> {
-    if (this.isPackaged && this.isDevIdentityBuild && !this.commandPathOverride) {
+    if (this.isPackaged && this.isParallelIdentityBuild && !this.commandPathOverride) {
       // Why: the packaged Orca Dev bundle's Contents/MacOS binary is named
       // "Orca Dev", which resources/darwin/bin/orca's launcher script does not
       // account for (it hardcodes Contents/MacOS/Orca). Registering any shell
@@ -149,9 +150,9 @@ export class CliInstaller {
         supported: false,
         state: 'unsupported',
         currentTarget: null,
-        unsupportedReason: 'dev_identity_build',
+        unsupportedReason: 'parallel_identity_build',
         detail:
-          'CLI shell command registration is disabled for this parallel Orca Dev build to avoid conflicting with the production `orca` command.'
+          'CLI shell command registration is disabled for this parallel Orca build to avoid conflicting with the production `orca` command.'
       }
     }
 

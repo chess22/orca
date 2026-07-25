@@ -206,8 +206,10 @@ describe('updater', () => {
     expect(powerMonitorOnMock).not.toHaveBeenCalled()
   })
 
-  it('does not load or configure electron-updater for the parallel dev app identity', async () => {
-    appMock.getName.mockReturnValue('Orca Dev')
+  it.each(['Orca Dev', 'Orca Test'])(
+    'does not load or configure electron-updater for the parallel %s identity',
+    async (appName) => {
+      appMock.getName.mockReturnValue(appName)
     const sendMock = vi.fn()
     const mainWindow = {
       id: 1,
@@ -226,11 +228,12 @@ describe('updater', () => {
     expect(autoUpdaterMock.setFeedURL).not.toHaveBeenCalled()
     expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
     expect(powerMonitorOnMock).not.toHaveBeenCalled()
-    expect(sendMock).toHaveBeenCalledWith('updater:status', {
-      state: 'not-available',
-      userInitiated: true
-    })
-  })
+      expect(sendMock).toHaveBeenCalledWith('updater:status', {
+        state: 'not-available',
+        userInitiated: true
+      })
+    }
+  )
 
   it('deduplicates identical check errors from the event and rejected promise', async () => {
     autoUpdaterMock.checkForUpdates.mockImplementation(() => {
