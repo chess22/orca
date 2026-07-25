@@ -11125,6 +11125,71 @@ describe('OrcaRuntimeService', () => {
     expect(writes).toEqual(['still writable'])
   })
 
+  it('reattaches a discovered daemon session before restored CLI read and send', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    const ptyId = `${TEST_WORKTREE_ID}@@surviving-daemon-pty`
+    const handle = 'term_surviving'
+    let streamAttached = false
+    let pendingInput = ''
+    const reattach = vi.fn(async () => {
+      streamAttached = true
+      return { snapshot: 'BEFORE_RESTART\n' }
+    })
+
+    runtime.setPtyController({
+      reattach,
+      write: (writtenPtyId, data) => {
+        if (!streamAttached || writtenPtyId !== ptyId) {
+          return false
+        }
+        if (data === '\r') {
+          runtime.onPtyData(
+            ptyId,
+            `${pendingInput}\n${pendingInput === 'echo PING' ? 'PING\n' : ''}`,
+            Date.now()
+          )
+          pendingInput = ''
+        } else {
+          pendingInput += data
+        }
+        return true
+      },
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => [
+        {
+          id: ptyId,
+          cwd: TEST_WORKTREE_PATH,
+          title: 'shell',
+          terminalHandle: handle
+        }
+      ]
+    })
+
+    const listed = await runtime.listTerminals()
+    expect(reattach).toHaveBeenCalledOnce()
+    expect(listed.terminals[0]).toMatchObject({
+      handle,
+      connected: true,
+      writable: true
+    })
+    const restored = await runtime.readTerminal(handle, { cursor: 0 })
+    expect(restored).toMatchObject({
+      status: 'running',
+      tail: ['BEFORE_RESTART']
+    })
+
+    const sent = await runtime.sendTerminal(handle, { text: 'echo PING', enter: true })
+    expect(sent.accepted).toBe(true)
+    const afterSend = await runtime.readTerminal(handle, {
+      cursor: Number(restored.nextCursor)
+    })
+    expect(afterSend.tail).toEqual(['echo PING', 'PING'])
+
+    await runtime.listTerminals()
+    expect(reattach).toHaveBeenCalledOnce()
+  })
+
   it('does not adopt a discovered terminal handle already bound to another live PTY', async () => {
     const runtime = new OrcaRuntimeService(store)
     const writesByPty = new Map<string, string[]>()

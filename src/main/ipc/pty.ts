@@ -2558,6 +2558,7 @@ export function registerPtyHandlers(
       ])
       return providerSessions.flat()
     },
+    reattach: (ptyId) => getProviderForPty(ptyId).attach(ptyId),
     serializeBuffer: (ptyId, opts) => {
       // Why: mobile xterm must start from the desktop xterm's exact screen
       // state and dimensions before live TUI chunks can render correctly.

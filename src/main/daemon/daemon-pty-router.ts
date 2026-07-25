@@ -56,8 +56,8 @@ export class DaemonPtyRouter implements IPtyProvider {
     return result
   }
 
-  async attach(id: string): Promise<void> {
-    await this.adapterFor(id).attach(id)
+  async attach(id: string) {
+    return this.adapterFor(id).attach(id)
   }
 
   hasPty(id: string): boolean {

@@ -105,6 +105,11 @@ export type PtySpawnResult = {
   }
 }
 
+export type PtyAttachResult = Pick<
+  PtySpawnResult,
+  'snapshot' | 'snapshotCols' | 'snapshotRows' | 'isAlternateScreen' | 'replay' | 'coldRestore'
+>
+
 export type PtyProcessInfo = {
   id: string
   cwd: string
@@ -115,7 +120,7 @@ export type PtyProcessInfo = {
 
 export type IPtyProvider = {
   spawn(opts: PtySpawnOptions): Promise<PtySpawnResult>
-  attach(id: string): Promise<void>
+  attach(id: string): Promise<PtyAttachResult | void>
   hasPty?: (id: string) => boolean
   write(id: string, data: string): void
   resize(id: string, cols: number, rows: number): void

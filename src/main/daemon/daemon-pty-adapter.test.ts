@@ -380,7 +380,9 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
       const dataPayloads: { id: string; data: string }[] = []
       adapter2.onData((payload) => dataPayloads.push(payload))
 
-      await adapter2.attach(id)
+      lastSubprocess._simulateData('before-restart\r\n')
+      const attached = await adapter2.attach(id)
+      expect(attached.snapshot).toContain('before-restart')
 
       lastSubprocess._simulateData('after-reattach')
       await waitFor(() => dataPayloads.length > 0)

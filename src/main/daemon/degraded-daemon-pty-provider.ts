@@ -73,8 +73,8 @@ export class DegradedDaemonPtyProvider implements IPtyProvider {
     return result
   }
 
-  async attach(id: string): Promise<void> {
-    await this.providerFor(id).attach(id)
+  async attach(id: string) {
+    return this.providerFor(id).attach(id)
   }
 
   hasPty(id: string): boolean {

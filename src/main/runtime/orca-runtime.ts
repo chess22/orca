@@ -671,7 +671,12 @@ import { closeLocalWatcherForWorktreePath } from '../ipc/filesystem-watcher'
 import { HeadlessEmulator, type HeadlessEmulatorOptions } from '../daemon/headless-emulator'
 import { killAllProcessesForWorktree } from './worktree-teardown'
 import { MOBILE_SUBSCRIBE_SCROLLBACK_ROWS } from './scrollback-limits'
-import type { IFilesystemProvider, IPtyProvider, PtyProcessInfo } from '../providers/types'
+import type {
+  IFilesystemProvider,
+  IPtyProvider,
+  PtyAttachResult,
+  PtyProcessInfo
+} from '../providers/types'
 import { getSshFilesystemProvider } from '../providers/ssh-filesystem-dispatch'
 import {
   assertFolderWorkspacePathUsable,
@@ -1127,6 +1132,7 @@ type RuntimePtyController = {
   clearBuffer?(ptyId: string): Promise<void>
   resize?(ptyId: string, cols: number, rows: number): boolean
   listProcesses?(): Promise<PtyProcessInfo[]>
+  reattach?(ptyId: string): Promise<PtyAttachResult | void>
   serializeBuffer?(
     ptyId: string,
     opts?: { scrollbackRows?: number; altScreenForcesZeroRows?: boolean }
@@ -2023,6 +2029,8 @@ export class OrcaRuntimeService {
   private graphSyncCallbacks: (() => void)[] = []
   private waitersByHandle = new Map<string, Set<TerminalWaiter>>()
   private ptyController: RuntimePtyController | null = null
+  private controllerAttachedPtyIds = new Set<string>()
+  private controllerAttachPromises = new Map<string, Promise<boolean>>()
   private notifier: RuntimeNotifier | null = null
   private clientEventListeners = new Set<(event: RuntimeClientEvent) => void>()
   private forkBackfillStarted = false
@@ -2740,6 +2748,8 @@ export class OrcaRuntimeService {
     // instead of tunneling back through renderer IPC, or live handles could
     // drift from the process they are supposed to control during reloads.
     this.ptyController = controller
+    this.controllerAttachedPtyIds.clear()
+    this.controllerAttachPromises.clear()
   }
 
   setNotifier(notifier: RuntimeNotifier | null): void {
@@ -5222,6 +5232,8 @@ export class OrcaRuntimeService {
    * updating terminal tail buffers, and triggering foreground agent refreshes.
    */
   onPtyData(ptyId: string, data: string, at: number): number {
+    // Receiving bytes proves this runtime owns the daemon/relay stream client.
+    this.controllerAttachedPtyIds.add(ptyId)
     const outputSequence = (this.ptyOutputSequenceById.get(ptyId) ?? 0) + data.length
     this.ptyOutputSequenceById.set(ptyId, outputSequence)
     const osc7Metadata = this.recordOsc7MetadataForPty(ptyId, data)
@@ -7063,6 +7075,8 @@ export class OrcaRuntimeService {
       this.notifier?.terminalDriverChanged(ptyId, { kind: 'idle' })
     }
     this.disposeHeadlessTerminal(ptyId)
+    this.controllerAttachedPtyIds.delete(ptyId)
+    this.controllerAttachPromises.delete(ptyId)
     this.agentDetector?.onExit(ptyId)
     const pty = this.ptysById.get(ptyId)
     if (pty) {
@@ -18189,9 +18203,10 @@ export class OrcaRuntimeService {
       if (targetWorktreeId && worktreeId !== targetWorktreeId) {
         continue
       }
+      const attached = await this.ensureControllerPtyAttached(session.id)
       if (worktreeId) {
         this.recordPtyWorktree(session.id, worktreeId, {
-          connected: true
+          connected: attached
         })
       }
       // Why: fire-and-forget so this listing hot path (listTerminals/getWorktreePs)
@@ -18207,6 +18222,34 @@ export class OrcaRuntimeService {
     }
     this.pruneDisconnectedPtyRecords()
     return livePtyIds
+  }
+
+  private async ensureControllerPtyAttached(ptyId: string): Promise<boolean> {
+    if (this.controllerAttachedPtyIds.has(ptyId) || !this.ptyController?.reattach) {
+      return true
+    }
+    const existing = this.controllerAttachPromises.get(ptyId)
+    if (existing) {
+      return existing
+    }
+    const pending = this.ptyController
+      .reattach(ptyId)
+      .then((restored) => {
+        this.controllerAttachedPtyIds.add(ptyId)
+        const restoredOutput =
+          restored?.snapshot ?? restored?.replay ?? restored?.coldRestore?.scrollback
+        if (restoredOutput) {
+          // Why: background/CLI terminals have no mounted renderer to seed the
+          // new runtime, so their daemon snapshot must also restore terminal.read.
+          this.onPtyData(ptyId, restoredOutput, Date.now())
+        }
+        return true
+      })
+      // A live child without a stream attachment is not usable by read/send.
+      .catch(() => false)
+      .finally(() => this.controllerAttachPromises.delete(ptyId))
+    this.controllerAttachPromises.set(ptyId, pending)
+    return pending
   }
 
   private pruneDisconnectedPtyTranscript(pty: RuntimePtyWorktreeRecord): void {
