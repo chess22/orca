@@ -124,6 +124,7 @@ import {
   installDevParentDisconnectQuit,
   installDevParentSignalQuit,
   installDevParentWatchdog,
+  installPackagedSighupGuard,
   isDevParentShutdownRequested,
   patchPackagedProcessPath,
   shouldInstallManagedHooks
@@ -640,8 +641,8 @@ const devInstanceIdentity = getDevInstanceIdentity(is.dev)
 const devAgentHookEndpointNamespace = devInstanceIdentity.isDev
   ? devInstanceIdentity.appUserModelId
   : undefined
-
 installUncaughtPipeErrorGuard()
+installPackagedSighupGuard()
 // Why (issue #9441): without this, one rejected background promise during startup restore kills main silently (exit 1, no crash report).
 installUnhandledRejectionLogging()
 // Why: expose the app version via process.env so main and the forked daemon can set TERM_PROGRAM_VERSION without importing electron.

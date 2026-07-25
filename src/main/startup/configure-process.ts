@@ -104,6 +104,18 @@ export function resetDevParentShutdownRequestForTests(): void {
   devParentShutdownRequested = false
 }
 
+export function installPackagedSighupGuard(): void {
+  if (!app.isPackaged || process.platform === 'win32') {
+    return
+  }
+
+  // Why: the packaged GUI must survive its launching terminal closing; the
+  // detached daemon already survives independently.
+  process.on('SIGHUP', () => {
+    process.stderr.write('[main] Received SIGHUP (launching terminal closed), ignoring\n')
+  })
+}
+
 export function patchPackagedProcessPath(): void {
   if (!app.isPackaged) {
     return
