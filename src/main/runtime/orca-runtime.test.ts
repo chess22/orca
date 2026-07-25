@@ -11125,7 +11125,7 @@ describe('OrcaRuntimeService', () => {
     expect(writes).toEqual(['still writable'])
   })
 
-  it('reattaches a discovered daemon session before restored CLI read and send', async () => {
+  it('reattaches a restored daemon session when CLI read is the first request', async () => {
     const runtime = new OrcaRuntimeService(store)
     const ptyId = `${TEST_WORKTREE_ID}@@surviving-daemon-pty`
     const handle = 'term_surviving'
@@ -11166,14 +11166,8 @@ describe('OrcaRuntimeService', () => {
       ]
     })
 
-    const listed = await runtime.listTerminals()
-    expect(reattach).toHaveBeenCalledOnce()
-    expect(listed.terminals[0]).toMatchObject({
-      handle,
-      connected: true,
-      writable: true
-    })
     const restored = await runtime.readTerminal(handle, { cursor: 0 })
+    expect(reattach).toHaveBeenCalledOnce()
     expect(restored).toMatchObject({
       status: 'running',
       tail: ['BEFORE_RESTART']
@@ -11186,7 +11180,8 @@ describe('OrcaRuntimeService', () => {
     })
     expect(afterSend.tail).toEqual(['echo PING', 'PING'])
 
-    await runtime.listTerminals()
+    const listed = await runtime.listTerminals()
+    expect(listed.terminals[0]).toMatchObject({ connected: true, writable: true })
     expect(reattach).toHaveBeenCalledOnce()
   })
 

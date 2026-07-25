@@ -8679,13 +8679,29 @@ export class OrcaRuntimeService {
     handle: string,
     opts: { cursor?: number; limit?: number } = {}
   ): Promise<RuntimeTerminalRead> {
-    const pty = this.getLivePtyForHandle(handle)
+    let pty = this.getLivePtyForHandle(handle)
+    if (!pty && !this.handles.has(handle)) {
+      // Why: a runtime restart loses its handle map; plain read must recover
+      // daemon-owned handles without requiring callers to list terminals first.
+      await this.refreshPtyWorktreeRecordsFromController([
+        ...(await this.getResolvedWorktreeMap()).values()
+      ])
+      pty = this.getLivePtyForHandle(handle)
+    }
     if (pty) {
+      if (pty.pty.connected) {
+        pty.pty.connected = await this.ensureControllerPtyAttached(pty.pty.ptyId)
+      }
       const read = this.readPtyTerminal(handle, pty.pty, opts)
       return this.withVisibleSnapshotFallback(pty.pty.ptyId, read, opts)
     }
 
     const { leaf } = this.getLiveLeafForHandle(handle)
+    if (leaf.ptyId && leaf.writable) {
+      // Why: CLI callers can read a restored pane before terminal.list or a
+      // mounted renderer has had a chance to reattach its daemon stream.
+      await this.ensureControllerPtyAttached(leaf.ptyId)
+    }
     const read = readTerminalTail({
       handle,
       status: getTerminalState(leaf),
@@ -8711,9 +8727,17 @@ export class OrcaRuntimeService {
       suffixFailureError?: string
     } = {}
   ): Promise<RuntimeTerminalSend> {
-    const pty = this.getLivePtyForHandle(handle)
+    let pty = this.getLivePtyForHandle(handle)
+    if (!pty && !this.handles.has(handle)) {
+      // Why: send may be the first post-restart operation for a restored CLI
+      // terminal, so it must recover the daemon-owned handle just like read.
+      await this.refreshPtyWorktreeRecordsFromController([
+        ...(await this.getResolvedWorktreeMap()).values()
+      ])
+      pty = this.getLivePtyForHandle(handle)
+    }
     if (pty) {
-      if (!pty.pty.connected) {
+      if (!pty.pty.connected || !(await this.ensureControllerPtyAttached(pty.pty.ptyId))) {
         throw new Error('terminal_not_writable')
       }
       const payload = buildSendPayload(action)
@@ -8731,6 +8755,9 @@ export class OrcaRuntimeService {
 
     const { leaf } = this.getLiveLeafForHandle(handle)
     if (!leaf.writable || !leaf.ptyId) {
+      throw new Error('terminal_not_writable')
+    }
+    if (!(await this.ensureControllerPtyAttached(leaf.ptyId))) {
       throw new Error('terminal_not_writable')
     }
     const payload = buildSendPayload(action)
