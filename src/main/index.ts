@@ -82,6 +82,7 @@ import {
   installDevParentDisconnectQuit,
   installDevParentSignalQuit,
   installDevParentWatchdog,
+  installPackagedSighupGuard,
   installUncaughtPipeErrorGuard,
   isDevParentShutdownRequested,
   patchPackagedProcessPath,
@@ -474,8 +475,8 @@ const devInstanceIdentity = getDevInstanceIdentity(is.dev, process.env, app.getN
 const devAgentHookEndpointNamespace = devInstanceIdentity.isDev
   ? devInstanceIdentity.appUserModelId
   : undefined
-
 installUncaughtPipeErrorGuard()
+installPackagedSighupGuard()
 // Why: expose the app version via process.env so main and the forked daemon can set TERM_PROGRAM_VERSION without importing electron.
 process.env.ORCA_APP_VERSION = app.getVersion()
 configureRemoteServerUpdater({
