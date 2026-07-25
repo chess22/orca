@@ -17,6 +17,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { CliInstallMethod, CliInstallStatus } from '../../shared/cli-install-types'
+import { isParallelIdentityAppName } from '../startup/dev-instance-identity'
 import { buildAppImageCliWrapper } from './appimage-cli-wrapper'
 
 const execFileAsync = promisify(execFile)
@@ -45,6 +46,8 @@ type CliInstallerOptions = {
   userPathWriter?: (value: string) => Promise<void>
   /** Why: AppImage reports a stable outer file path via $APPIMAGE while bundled resources live in an ephemeral FUSE mount. */
   appImagePath?: string | null
+  /** Test seam for packaged parallel identity detection; defaults from app.getName(). */
+  isParallelIdentityBuild?: boolean
 }
 
 type InstallSpec = {
@@ -68,10 +71,12 @@ export class CliInstaller {
   private readonly userPathReader: () => Promise<string | null>
   private readonly userPathWriter: (value: string) => Promise<void>
   private readonly appImagePath: string | null
+  private readonly isParallelIdentityBuild: boolean
 
   private get commandName(): string {
-    if (!this.isPackaged && !this.commandPathOverride) {
-      // Why: development builds must not claim the production shell command.
+    if ((!this.isPackaged || this.isParallelIdentityBuild) && !this.commandPathOverride) {
+      // Why: development and packaged parallel builds must not claim the
+      // production shell command.
       return DEV_COMMAND_NAME
     }
     // Why: packaged Linux uses `orca-ide` to avoid shadowing GNOME Orca's /usr/bin/orca.
@@ -111,9 +116,31 @@ export class CliInstaller {
       this.platform === 'linux' && this.isPackaged
         ? (options.appImagePath ?? process.env.APPIMAGE ?? null)
         : null
+    this.isParallelIdentityBuild =
+      options.isParallelIdentityBuild ?? isParallelIdentityAppName(app.getName())
   }
 
   async getStatus(): Promise<CliInstallStatus> {
+    if (this.isPackaged && this.isParallelIdentityBuild && !this.commandPathOverride) {
+      // Why: parallel bundles have a different executable name, while the
+      // public launcher targets Orca and could steal production's command.
+      return {
+        platform: this.platform,
+        commandName: this.commandName,
+        commandPath: null,
+        pathDirectory: null,
+        pathConfigured: false,
+        launcherPath: null,
+        installMethod: null,
+        supported: false,
+        state: 'unsupported',
+        currentTarget: null,
+        unsupportedReason: 'parallel_identity_build',
+        detail:
+          'CLI shell command registration is disabled for this parallel Orca build to avoid conflicting with the production `orca` command.'
+      }
+    }
+
     const defaultSpec = this.resolveInstallSpec()
     if (!defaultSpec) {
       return {

@@ -19,6 +19,36 @@ const {
 } = require('../packaged-runtime-node-modules.cjs')
 
 describe('electron-builder config', () => {
+  it('keeps the production identity by default', () => {
+    expect(electronBuilderConfig).toMatchObject({
+      appId: 'com.stablyai.orca',
+      productName: 'Orca'
+    })
+    expect(electronBuilderConfig.extraMetadata).toBeUndefined()
+  })
+
+  it('uses an isolated identity for ORCA_TEST_BUILD', () => {
+    const configPath = require.resolve('../electron-builder.config.cjs')
+    const original = process.env.ORCA_TEST_BUILD
+    try {
+      delete require.cache[configPath]
+      process.env.ORCA_TEST_BUILD = '1'
+      expect(require('../electron-builder.config.cjs')).toMatchObject({
+        appId: 'com.stablyai.orca.test',
+        productName: 'Orca Test',
+        extraMetadata: { name: 'orca-test-app' }
+      })
+    } finally {
+      if (original === undefined) {
+        delete process.env.ORCA_TEST_BUILD
+      } else {
+        process.env.ORCA_TEST_BUILD = original
+      }
+      delete require.cache[configPath]
+      require('../electron-builder.config.cjs')
+    }
+  })
+
   it('excludes repo-only source trees from app.asar', () => {
     expect(electronBuilderConfig.files).toEqual(
       expect.arrayContaining([

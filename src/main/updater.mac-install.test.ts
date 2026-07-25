@@ -63,6 +63,7 @@ const {
   return {
     appMock: {
       isPackaged: true,
+      getName: vi.fn(() => 'Orca'),
       getVersion: vi.fn(() => '1.0.51'),
       on: appOn,
       emit: appEmit,
@@ -125,6 +126,8 @@ describe('updater mac install handoff', () => {
     browserWindowMock.getAllWindows.mockReset()
     browserWindowMock.getAllWindows.mockReturnValue([])
     shellMock.openExternal.mockReset()
+    appMock.getName.mockReset()
+    appMock.getName.mockReturnValue('Orca')
     appMock.getVersion.mockReset()
     appMock.getVersion.mockReturnValue('1.0.51')
     appMock.quit.mockReset()

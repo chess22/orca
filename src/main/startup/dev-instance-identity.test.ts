@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getDevInstanceIdentity } from './dev-instance-identity'
+import { getDevInstanceIdentity, isParallelIdentityAppName } from './dev-instance-identity'
 
 describe('dev-instance-identity', () => {
   it('keeps packaged identity stable', () => {
@@ -10,6 +10,32 @@ describe('dev-instance-identity', () => {
       dockBadgeLabel: null,
       appUserModelId: 'com.stablyai.orca'
     })
+  })
+
+  it('recognizes the packaged Orca Dev parallel identity', () => {
+    expect(getDevInstanceIdentity(false, {}, 'orca-dev-app')).toMatchObject({
+      name: 'Orca Dev',
+      isDev: false,
+      devLabel: null,
+      dockBadgeLabel: null,
+      appUserModelId: 'com.stablyai.orca.dev'
+    })
+  })
+
+  it('recognizes the packaged Orca Test identity without falling back to Dev or production', () => {
+    expect(getDevInstanceIdentity(false, {}, 'orca-test-app')).toMatchObject({
+      name: 'Orca Test',
+      isDev: false,
+      devLabel: null,
+      dockBadgeLabel: null,
+      appUserModelId: 'com.stablyai.orca.test'
+    })
+  })
+
+  it('classifies only packaged parallel display names', () => {
+    expect(isParallelIdentityAppName('Orca Dev')).toBe(true)
+    expect(isParallelIdentityAppName('Orca Test')).toBe(true)
+    expect(isParallelIdentityAppName('Orca')).toBe(false)
   })
 
   it('derives a readable dev label from worktree and branch env', () => {

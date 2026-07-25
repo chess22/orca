@@ -6,6 +6,33 @@ const BASE_APP_NAME = 'Orca'
 const BASE_APP_USER_MODEL_ID = 'com.stablyai.orca'
 const MAX_LABEL_LENGTH = 80
 
+type PackagedParallelIdentity = {
+  packagedAppName: string
+  name: string
+  appUserModelId: string
+}
+
+// Why: these package names must match electron-builder extraMetadata. They are
+// the only packaged-runtime signal available before app.setName() runs.
+const PACKAGED_PARALLEL_IDENTITIES: PackagedParallelIdentity[] = [
+  {
+    packagedAppName: 'orca-dev-app',
+    name: 'Orca Dev',
+    appUserModelId: 'com.stablyai.orca.dev'
+  },
+  {
+    packagedAppName: 'orca-test-app',
+    name: 'Orca Test',
+    appUserModelId: 'com.stablyai.orca.test'
+  }
+]
+
+// Why: updater and CLI registration must reject every packaged parallel
+// identity after startup has replaced the package name with the display name.
+export function isParallelIdentityAppName(appName: string): boolean {
+  return PACKAGED_PARALLEL_IDENTITIES.some((identity) => identity.name === appName)
+}
+
 export type DevInstanceIdentity = AppIdentity & {
   appUserModelId: string
 }
@@ -45,9 +72,25 @@ function createDevAppUserModelId(identityKey: string | null): string {
 
 export function getDevInstanceIdentity(
   isDev: boolean,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  packagedAppName?: string
 ): DevInstanceIdentity {
   if (!isDev) {
+    const packagedIdentity = PACKAGED_PARALLEL_IDENTITIES.find(
+      (identity) => identity.packagedAppName === packagedAppName
+    )
+    if (packagedIdentity) {
+      return {
+        name: packagedIdentity.name,
+        isDev: false,
+        devLabel: null,
+        devBranch: null,
+        devWorktreeName: null,
+        devRepoRoot: null,
+        dockBadgeLabel: null,
+        appUserModelId: packagedIdentity.appUserModelId
+      }
+    }
     return {
       name: BASE_APP_NAME,
       isDev: false,

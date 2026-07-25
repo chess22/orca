@@ -13,13 +13,17 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const execFileMock = vi.hoisted(() => vi.fn())
+const { appGetNameMock, execFileMock } = vi.hoisted(() => ({
+  appGetNameMock: vi.fn(() => 'Orca'),
+  execFileMock: vi.fn()
+}))
 
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,
     getPath: () => tmpdir(),
-    getAppPath: () => tmpdir()
+    getAppPath: () => tmpdir(),
+    getName: appGetNameMock
   }
 }))
 
@@ -56,6 +60,8 @@ async function createPackagedMacLauncher(root: string): Promise<string> {
 
 describe('CliInstaller', () => {
   beforeEach(() => {
+    appGetNameMock.mockReset()
+    appGetNameMock.mockReturnValue('Orca')
     execFileMock.mockReset()
   })
 
@@ -157,6 +163,36 @@ describe('CliInstaller', () => {
       await expect(
         readFile(join(fixture.userDataPath, 'cli', 'bin', 'orca'), 'utf8')
       ).resolves.toBe(await readFile(installed.launcherPath as string, 'utf8'))
+    }
+  )
+
+  it.each(['Orca Dev', 'Orca Test'])(
+    'disables public CLI registration for packaged %s',
+    async (appName) => {
+      appGetNameMock.mockReturnValue(appName)
+      const fixture = await makeFixture()
+      const resourcesPath = await createPackagedMacLauncher(fixture.root)
+      const commandDir = join(fixture.root, 'bin')
+      const installer = new CliInstaller({
+        platform: 'darwin',
+        isPackaged: true,
+        resourcesPath,
+        userDataPath: fixture.userDataPath,
+        appPath: fixture.appPath,
+        processPathEnv: commandDir,
+        defaultMacCommandPath: join(commandDir, 'orca')
+      })
+
+      const status = await installer.getStatus()
+      expect(status).toMatchObject({
+        supported: false,
+        state: 'unsupported',
+        unsupportedReason: 'parallel_identity_build',
+        commandPath: null,
+        launcherPath: null
+      })
+      await expect(installer.install()).rejects.toThrow(/disabled/i)
+      await expect(installer.remove()).resolves.toMatchObject({ supported: false })
     }
   )
 

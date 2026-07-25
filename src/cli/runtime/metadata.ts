@@ -39,19 +39,40 @@ export function tryReadMetadata(userDataPath: string): RuntimeMetadata | null {
   }
 }
 
+const DEFAULT_PACKAGED_APP_NAME = 'orca'
+
+// Why: packaged CLIs run with ELECTRON_RUN_AS_NODE and cannot ask Electron for
+// userData, so they must mirror the bundled package identity themselves.
+function readPackagedAppName(resourcesPath: string | undefined): string | null {
+  if (!resourcesPath) {
+    return null
+  }
+  try {
+    const pkg = JSON.parse(
+      readFileSync(join(resourcesPath, 'app.asar', 'package.json'), 'utf8')
+    ) as { name?: unknown }
+    return typeof pkg.name === 'string' && pkg.name.length > 0 ? pkg.name : null
+  } catch {
+    return null
+  }
+}
+
 export function getDefaultUserDataPath(
   platform: NodeJS.Platform = process.platform,
-  homeDir = homedir()
+  homeDir = homedir(),
+  resourcesPath: string | undefined = (process as NodeJS.Process & { resourcesPath?: string })
+    .resourcesPath
 ): string {
-  // Why: in dev mode (and for parallel Orca instances), the Electron app writes
-  // runtime metadata to a separate userData directory (e.g. `orca-dev`) to avoid
-  // clobbering the production app's metadata. The CLI needs to find the same
-  // metadata file, so this env var lets the CLI target a specific instance.
-  if (process.env.ORCA_USER_DATA_PATH) {
+  const packagedAppName = readPackagedAppName(resourcesPath)
+  // Why: unpackaged and SSH CLIs need the explicit override, but a bundled CLI
+  // must prefer its own identity over an ambient path inherited from another
+  // Orca instance.
+  if (!packagedAppName && process.env.ORCA_USER_DATA_PATH) {
     return process.env.ORCA_USER_DATA_PATH
   }
+  const appName = packagedAppName ?? DEFAULT_PACKAGED_APP_NAME
   if (platform === 'darwin') {
-    return join(homeDir, 'Library', 'Application Support', 'orca')
+    return join(homeDir, 'Library', 'Application Support', appName)
   }
   if (platform === 'win32') {
     const appData = process.env.APPDATA
@@ -61,10 +82,10 @@ export function getDefaultUserDataPath(
         'APPDATA is not set, so the Orca runtime metadata path cannot be resolved.'
       )
     }
-    return join(appData, 'orca')
+    return join(appData, appName)
   }
   // Why: the CLI must find the same metadata file Electron writes in packaged
   // runs, so this mirrors Electron's default userData base instead of inventing
   // a CLI-specific config path.
-  return join(process.env.XDG_CONFIG_HOME || join(homeDir, '.config'), 'orca')
+  return join(process.env.XDG_CONFIG_HOME || join(homeDir, '.config'), appName)
 }
