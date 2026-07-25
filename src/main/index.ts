@@ -57,6 +57,7 @@ import {
   installDevParentDisconnectQuit,
   installDevParentSignalQuit,
   installDevParentWatchdog,
+  installPackagedSighupGuard,
   installUncaughtPipeErrorGuard,
   isDevParentShutdownRequested,
   patchPackagedProcessPath,
@@ -391,8 +392,8 @@ const devInstanceIdentity = getDevInstanceIdentity(is.dev)
 const devAgentHookEndpointNamespace = devInstanceIdentity.isDev
   ? devInstanceIdentity.appUserModelId
   : undefined
-
 installUncaughtPipeErrorGuard()
+installPackagedSighupGuard()
 // Why: propagate the Orca app version into `process.env` so PTY-env
 // construction in both main (local-pty-provider) and the forked daemon
 // (pty-subprocess) can set `TERM_PROGRAM_VERSION` without re-importing
@@ -416,7 +417,6 @@ if (app.isPackaged && process.platform !== 'win32') {
 }
 configureDevUserDataPath(is.dev)
 configureOrcaUserDataPathEnv()
-
 // Why: just past createMainWindow's win32 10s ready-to-show reveal fallback,
 // so a window revealed on that path still gets its tray icon.
 const TRAY_CREATE_FALLBACK_MS = 12_000
