@@ -163,6 +163,7 @@ orca terminal create --title "Worker" --json
 orca terminal create --worktree active --command "codex" --json
 orca terminal split --terminal <handle> --direction vertical --json
 orca terminal split --terminal <handle> --direction horizontal --command "npm test" --json
+orca terminal resize --terminal <handle> (--ratio <0-1> | --size-px <px>) --json
 orca terminal rename --terminal <handle> --title "New Name" --json
 orca terminal switch --terminal <handle> --json
 orca terminal close --terminal <handle> --json
@@ -178,7 +179,7 @@ Terminal rules:
 - Use `terminal wait --for tui-idle` for agent CLIs such as Claude Code, Gemini, and Codex; always pass `--timeout-ms`.
 - Terminal handles are runtime-scoped. If Orca restarts or returns `terminal_handle_stale`, reacquire with `terminal list`.
 - For long output, use cursor reads. After a limited tail preview, page from `oldestCursor`; after a cursor read, continue with `nextCursor` while `limited` is true and `nextCursor !== latestCursor`.
-- `--direction horizontal` splits left/right. `--direction vertical` splits top/bottom.
+- `--direction vertical` splits left/right. `--direction horizontal` splits top/bottom.
 
 ## Automations
 

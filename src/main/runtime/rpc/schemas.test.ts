@@ -100,4 +100,27 @@ describe('RPC optional pipe schemas', () => {
       sizePx: 400
     })
   })
+
+  it('requires exactly one terminal.resizePane sizing option', () => {
+    expectParses(methodParams(TERMINAL_METHODS, 'terminal.resizePane'), {
+      terminal: 'terminal-1',
+      ratio: 0.3
+    })
+    expectParses(methodParams(TERMINAL_METHODS, 'terminal.resizePane'), {
+      terminal: 'terminal-1',
+      sizePx: 400
+    })
+    expectRejects(methodParams(TERMINAL_METHODS, 'terminal.resizePane'), {
+      terminal: 'terminal-1'
+    })
+    expectRejects(methodParams(TERMINAL_METHODS, 'terminal.resizePane'), {
+      terminal: 'terminal-1',
+      ratio: 0.3,
+      sizePx: 400
+    })
+    expectRejects(methodParams(TERMINAL_METHODS, 'terminal.resizePane'), {
+      terminal: 'terminal-1',
+      ratio: 1
+    })
+  })
 })

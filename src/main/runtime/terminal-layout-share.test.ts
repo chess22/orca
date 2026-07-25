@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { computeTerminalLeafShare, resolveNewPaneRatioFromSizePx } from './terminal-layout-share'
+import {
+  computeTerminalLeafShare,
+  resizeTerminalLeaf,
+  resolveNewPaneRatioFromSizePx,
+  resolveTargetPaneRatioFromSizePx
+} from './terminal-layout-share'
 import type { TerminalPaneLayoutNode } from '../../shared/types'
 
 const leaf = (leafId: string): TerminalPaneLayoutNode => ({ type: 'leaf', leafId })
@@ -104,5 +109,48 @@ describe('resolveNewPaneRatioFromSizePx', () => {
   it('clamps out-of-range requests to the minimum usable sliver', () => {
     expect(resolveNewPaneRatioFromSizePx(390, 400)).toBeCloseTo(0.95)
     expect(resolveNewPaneRatioFromSizePx(10, 400)).toBeCloseTo(0.05)
+  })
+})
+
+describe('resizeTerminalLeaf', () => {
+  const root: TerminalPaneLayoutNode = {
+    type: 'split',
+    direction: 'vertical',
+    ratio: 0.6,
+    first: { type: 'leaf', leafId: 'left' },
+    second: {
+      type: 'split',
+      direction: 'horizontal',
+      ratio: 0.25,
+      first: { type: 'leaf', leafId: 'top' },
+      second: { type: 'leaf', leafId: 'bottom' }
+    }
+  }
+
+  it('stores the target share in the immediate split coordinate system', () => {
+    expect(resizeTerminalLeaf(root, 'bottom', 0.4)).toEqual({
+      root: {
+        ...root,
+        second: { ...root.second, ratio: 0.6 }
+      },
+      direction: 'horizontal',
+      previousTargetRatio: 0.75
+    })
+  })
+
+  it('returns null when the leaf has no sibling split', () => {
+    expect(resizeTerminalLeaf(leaf('only'), 'only', 0.4)).toBeNull()
+    expect(resizeTerminalLeaf(root, 'missing', 0.4)).toBeNull()
+  })
+})
+
+describe('resolveTargetPaneRatioFromSizePx', () => {
+  it('converts px against the target pane parent split', () => {
+    expect(resolveTargetPaneRatioFromSizePx(300, 400, 0.4)).toBeCloseTo(0.3)
+  })
+
+  it('requires usable last-synced pane geometry', () => {
+    expect(resolveTargetPaneRatioFromSizePx(300, undefined, 0.4)).toBeUndefined()
+    expect(resolveTargetPaneRatioFromSizePx(300, 400, 1)).toBeUndefined()
   })
 })

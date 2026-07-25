@@ -3323,6 +3323,16 @@ const api = {
       ipcRenderer.on('ui:splitTerminal', listener)
       return () => ipcRenderer.removeListener('ui:splitTerminal', listener)
     },
+    onResizeTerminalPane: (
+      callback: (data: { tabId: string; leafId: string; targetRatio: number }) => void
+    ): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        data: { tabId: string; leafId: string; targetRatio: number }
+      ) => callback(data)
+      ipcRenderer.on('ui:resizeTerminalPane', listener)
+      return () => ipcRenderer.removeListener('ui:resizeTerminalPane', listener)
+    },
     onRenameTerminal: (
       callback: (data: { tabId: string; title: string | null }) => void
     ): (() => void) => {

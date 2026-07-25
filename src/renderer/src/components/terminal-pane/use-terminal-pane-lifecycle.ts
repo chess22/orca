@@ -112,8 +112,10 @@ import {
 } from '@/lib/primary-selection'
 import {
   SPLIT_TERMINAL_PANE_EVENT,
+  RESIZE_TERMINAL_PANE_EVENT,
   CLOSE_TERMINAL_PANE_EVENT,
   type SplitTerminalPaneDetail,
+  type ResizeTerminalPaneDetail,
   type CloseTerminalPaneDetail
 } from '@/constants/terminal'
 import { acquireWebviewsDragPassthrough } from '../browser-pane/webview-registry'
@@ -881,11 +883,12 @@ export function useTerminalPaneLifecycle({
         imeNativeTextForwarderDisposablesRef.current.set(pane.id, imeNativeTextForwarder)
         pane.terminal.attachCustomKeyEventHandler((e) => {
           const now = Date.now()
-          const pendingCandidateReleaseGuardActive = shouldApplyTerminalImePendingCandidateKeyRelease(
-            e,
-            pendingTerminalImeCandidateKeyReleases,
-            now
-          )
+          const pendingCandidateReleaseGuardActive =
+            shouldApplyTerminalImePendingCandidateKeyRelease(
+              e,
+              pendingTerminalImeCandidateKeyReleases,
+              now
+            )
           const imeKeyboardOptions = {
             compositionActive: imeCompositionTracker.isActive(),
             candidateKeyGuardActive:
@@ -1637,6 +1640,19 @@ export function useTerminalPaneLifecycle({
     }
     window.addEventListener(SPLIT_TERMINAL_PANE_EVENT, onCliSplitPane)
 
+    function onCliResizePane(event: Event): void {
+      const detail = (event as CustomEvent<ResizeTerminalPaneDetail>).detail
+      if (!detail?.tabId || detail.tabId !== tabId) {
+        return
+      }
+      const mgr = managerRef.current
+      const paneId = mgr?.getNumericIdForLeaf(detail.leafId) ?? null
+      if (paneId !== null) {
+        mgr?.resizePane(paneId, detail.targetRatio)
+      }
+    }
+    window.addEventListener(RESIZE_TERMINAL_PANE_EVENT, onCliResizePane)
+
     // Why: CLI-driven pane close dispatches a CustomEvent so PaneManager handles
     // sibling promotion in split layouts. Falls back to closing the whole tab
     // when the target pane is the only one remaining.
@@ -1666,6 +1682,7 @@ export function useTerminalPaneLifecycle({
 
     return () => {
       window.removeEventListener(SPLIT_TERMINAL_PANE_EVENT, onCliSplitPane)
+      window.removeEventListener(RESIZE_TERMINAL_PANE_EVENT, onCliResizePane)
       window.removeEventListener(CLOSE_TERMINAL_PANE_EVENT, onCliClosePane)
       const currentWorktreeTabs = useAppStore.getState().tabsByWorktree[worktreeId]
       const tabStillExists = Boolean(

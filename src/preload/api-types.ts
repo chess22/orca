@@ -2635,6 +2635,9 @@ export type PreloadApi = {
         telemetrySource?: TerminalPaneSplitSource
       }) => void
     ) => () => void
+    onResizeTerminalPane: (
+      callback: (data: { tabId: string; leafId: string; targetRatio: number }) => void
+    ) => () => void
     onRenameTerminal: (
       callback: (data: { tabId: string; title: string | null }) => void
     ) => () => void

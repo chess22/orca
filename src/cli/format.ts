@@ -37,6 +37,7 @@ export {
   formatTerminalList,
   formatTerminalRead,
   formatTerminalRename,
+  formatTerminalResize,
   formatTerminalSend,
   formatTerminalShow,
   formatTerminalSplit,

@@ -3376,6 +3376,67 @@ describe('orca cli worktree awareness', () => {
     })
   })
 
+  it('passes terminal resize ratio requests to the runtime', async () => {
+    process.env.ORCA_TERMINAL_HANDLE = 'term_target'
+    queueFixtures(
+      callMock,
+      okFixture('req_terminal_resize', {
+        resize: {
+          handle: 'term_target',
+          tabId: 'tab-1',
+          leafId: 'left',
+          pane: {
+            widthPx: 300,
+            heightPx: 500,
+            widthRatio: 0.3,
+            heightRatio: 1
+          }
+        }
+      })
+    )
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await main(
+      ['terminal', 'resize', '--terminal', 'term_target', '--ratio', '0.3', '--json'],
+      '/tmp/repo'
+    )
+
+    expect(callMock).toHaveBeenCalledWith('terminal.resizePane', {
+      terminal: 'term_target',
+      ratio: 0.3,
+      sizePx: undefined
+    })
+  })
+
+  it.each([
+    {
+      args: ['--ratio', '0.3', '--size-px', '400'],
+      message: 'Pass either --ratio or --size-px, not both'
+    },
+    {
+      args: ['--ratio', '1'],
+      message: '--ratio must be between 0 and 1 (exclusive)'
+    },
+    {
+      args: [] as string[],
+      message: 'Pass either --ratio or --size-px'
+    }
+  ])('rejects invalid terminal resize sizing flags: $message', async ({ args, message }) => {
+    process.env.ORCA_TERMINAL_HANDLE = 'term_target'
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const priorExitCode = process.exitCode
+
+    await main(['terminal', 'resize', ...args, '--json'], '/tmp/repo')
+
+    expect(callMock).not.toHaveBeenCalled()
+    expect(JSON.parse(String(logSpy.mock.calls[0]?.[0]))).toMatchObject({
+      ok: false,
+      error: { code: 'invalid_argument', message: expect.stringContaining(message) }
+    })
+    expect(process.exitCode).toBe(1)
+    process.exitCode = priorExitCode
+  })
+
   it('rejects implicit remote terminal create instead of resolving from client cwd', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})

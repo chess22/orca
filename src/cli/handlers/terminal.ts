@@ -5,6 +5,7 @@ import type {
   RuntimeTerminalListResult,
   RuntimeTerminalRead,
   RuntimeTerminalRename,
+  RuntimeTerminalResize,
   RuntimeTerminalSend,
   RuntimeTerminalShow,
   RuntimeTerminalSplit,
@@ -19,6 +20,7 @@ import {
   formatTerminalList,
   formatTerminalRead,
   formatTerminalRename,
+  formatTerminalResize,
   formatTerminalSend,
   formatTerminalShow,
   formatTerminalSplit,
@@ -186,5 +188,27 @@ export const TERMINAL_HANDLERS: Record<string, CommandHandler> = {
       sizePx
     })
     printResult(result, json, formatTerminalSplit)
+  },
+  'terminal resize': async ({ flags, client, cwd, json }) => {
+    const ratio = getOptionalNumberFlag(flags, 'ratio')
+    if (ratio !== undefined && (ratio <= 0 || ratio >= 1)) {
+      throw new RuntimeClientError(
+        'invalid_argument',
+        '--ratio must be between 0 and 1 (exclusive); it is the target pane’s share'
+      )
+    }
+    const sizePx = getOptionalPositiveIntegerFlag(flags, 'size-px')
+    if (ratio !== undefined && sizePx !== undefined) {
+      throw new RuntimeClientError('invalid_argument', 'Pass either --ratio or --size-px, not both')
+    }
+    if (ratio === undefined && sizePx === undefined) {
+      throw new RuntimeClientError('invalid_argument', 'Pass either --ratio or --size-px')
+    }
+    const result = await client.call<{ resize: RuntimeTerminalResize }>('terminal.resizePane', {
+      terminal: await getTerminalHandle(flags, cwd, client),
+      ratio,
+      sizePx
+    })
+    printResult(result, json, formatTerminalResize)
   }
 }

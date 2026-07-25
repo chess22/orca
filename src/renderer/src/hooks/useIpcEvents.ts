@@ -13,9 +13,14 @@ import { OPEN_WORKSPACE_BOARD_EVENT } from '@/components/sidebar/useWorkspaceBoa
 import {
   BACKGROUND_MOUNT_TERMINAL_WORKTREE_EVENT,
   SPLIT_TERMINAL_PANE_EVENT,
+  RESIZE_TERMINAL_PANE_EVENT,
   CLOSE_TERMINAL_PANE_EVENT
 } from '@/constants/terminal'
-import type { SplitTerminalPaneDetail, CloseTerminalPaneDetail } from '@/constants/terminal'
+import type {
+  SplitTerminalPaneDetail,
+  ResizeTerminalPaneDetail,
+  CloseTerminalPaneDetail
+} from '@/constants/terminal'
 import { getVisibleWorktreeIds } from '@/components/sidebar/visible-worktrees'
 import { activateTabNumberShortcut } from '@/lib/tab-number-shortcuts'
 import { nextEditorFontZoomLevel, computeEditorFontSize } from '@/lib/editor-font-zoom'
@@ -1722,6 +1727,12 @@ export function useIpcEvents(): void {
           window.dispatchEvent(new CustomEvent(SPLIT_TERMINAL_PANE_EVENT, { detail }))
         }
       )
+    )
+
+    unsubs.push(
+      window.api.ui.onResizeTerminalPane((detail: ResizeTerminalPaneDetail) => {
+        window.dispatchEvent(new CustomEvent(RESIZE_TERMINAL_PANE_EVENT, { detail }))
+      })
     )
 
     unsubs.push(

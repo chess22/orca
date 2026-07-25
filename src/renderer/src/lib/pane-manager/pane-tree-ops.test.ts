@@ -1,17 +1,26 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { equalizePaneSplitSizes, resolveRatioFromNewPaneSizePx, safeFit } from './pane-tree-ops'
+import {
+  equalizePaneSplitSizes,
+  resizePaneAtParent,
+  resolveRatioFromNewPaneSizePx,
+  safeFit
+} from './pane-tree-ops'
 import type { ManagedPaneInternal, ScrollState } from './pane-manager-types'
 import { setFitOverride, hydrateOverrides } from './mobile-fit-overrides'
 
 class MockHTMLElement {
   classList: { contains: (cls: string) => boolean }
   children: MockHTMLElement[]
+  parentElement: MockHTMLElement | null = null
   style: Record<string, string>
 
   constructor(classes: string[], children: MockHTMLElement[] = [], flex = '') {
     this.classList = { contains: (cls: string) => classes.includes(cls) }
     this.children = children
     this.style = { flex }
+    for (const child of children) {
+      child.parentElement = this
+    }
   }
 }
 
@@ -393,5 +402,30 @@ describe('equalizePaneSplitSizes', () => {
   it('returns false when there is no split tree to change', () => {
     expect(equalizePaneSplitSizes(pane() as unknown as HTMLElement)).toBe(false)
     expect(equalizePaneSplitSizes(null)).toBe(false)
+  })
+})
+
+describe('resizePaneAtParent', () => {
+  const pane = (): MockHTMLElement => new MockHTMLElement(['pane'])
+
+  it('writes the target pane share in either child position', () => {
+    const first = pane()
+    const second = pane()
+    new MockHTMLElement(['pane-split'], [first, second])
+
+    expect(resizePaneAtParent(first as unknown as HTMLElement, 0.3)).toBe(true)
+    expect(first.style.flex).toBe('0.3 1 0%')
+    expect(second.style.flex).toBe('0.7 1 0%')
+
+    expect(resizePaneAtParent(second as unknown as HTMLElement, 0.4)).toBe(true)
+    expect(first.style.flex).toBe('0.6 1 0%')
+    expect(second.style.flex).toBe('0.4 1 0%')
+  })
+
+  it('rejects an only pane and out-of-range ratios', () => {
+    const only = pane()
+    expect(resizePaneAtParent(only as unknown as HTMLElement, 0.3)).toBe(false)
+    new MockHTMLElement(['pane-split'], [only, pane()])
+    expect(resizePaneAtParent(only as unknown as HTMLElement, 1)).toBe(false)
   })
 })

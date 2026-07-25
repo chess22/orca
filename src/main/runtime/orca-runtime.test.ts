@@ -1505,6 +1505,195 @@ describe('OrcaRuntimeService', () => {
     expect(shown.ptyId).toBe('pty-1')
   })
 
+  it('resizes a pane using the target share and persists the first-child ratio', async () => {
+    const layout: TerminalLayoutSnapshot = {
+      root: {
+        type: 'split',
+        direction: 'vertical',
+        ratio: 0.6,
+        first: { type: 'leaf', leafId: 'left' },
+        second: { type: 'leaf', leafId: 'right' }
+      },
+      activeLeafId: 'left',
+      expandedLeafId: null,
+      ptyIdsByLeafId: { left: 'pty-left', right: 'pty-right' }
+    }
+    const { runtimeStore, getSession } = makeRuntimeStoreWithWorkspaceSession(
+      makeWorkspaceSessionWithHeadlessTerminal({
+        terminalLayoutsByTabId: { 'tab-1': layout }
+      })
+    )
+    const resizeTerminalPane = vi.fn()
+    const runtime = new OrcaRuntimeService(runtimeStore as never)
+    runtime.setNotifier({
+      worktreesChanged: vi.fn(),
+      reposChanged: vi.fn(),
+      activateWorktree: vi.fn(),
+      createTerminal: vi.fn(),
+      splitTerminal: vi.fn(),
+      resizeTerminalPane,
+      renameTerminal: vi.fn(),
+      focusTerminal: vi.fn(),
+      closeTerminal: vi.fn(),
+      sleepWorktree: vi.fn(),
+      terminalFitOverrideChanged: vi.fn(),
+      terminalDriverChanged: vi.fn()
+    })
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-1',
+          worktreeId: TEST_WORKTREE_ID,
+          title: 'Split',
+          activeLeafId: 'left',
+          layout: layout.root
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-1',
+          worktreeId: TEST_WORKTREE_ID,
+          leafId: 'left',
+          paneRuntimeId: 1,
+          ptyId: 'pty-left',
+          widthPx: 600,
+          heightPx: 500
+        },
+        {
+          tabId: 'tab-1',
+          worktreeId: TEST_WORKTREE_ID,
+          leafId: 'right',
+          paneRuntimeId: 2,
+          ptyId: 'pty-right',
+          widthPx: 400,
+          heightPx: 500
+        }
+      ]
+    })
+    const left = (await runtime.listTerminals()).terminals.find(
+      (terminal) => terminal.leafId === 'left'
+    )
+
+    await expect(runtime.resizeTerminalPane(left!.handle, { ratio: 0.3 })).resolves.toMatchObject({
+      handle: left!.handle,
+      tabId: 'tab-1',
+      leafId: 'left',
+      pane: {
+        widthPx: 300,
+        heightPx: 500,
+        widthRatio: 0.3,
+        heightRatio: 1
+      }
+    })
+    expect(getSession().terminalLayoutsByTabId['tab-1']?.root).toMatchObject({ ratio: 0.3 })
+    expect(resizeTerminalPane).toHaveBeenCalledWith('tab-1', 'left', 0.3)
+  })
+
+  it('converts pane pixels against its parent split and persists while not visible', async () => {
+    const layout: TerminalLayoutSnapshot = {
+      root: {
+        type: 'split',
+        direction: 'horizontal',
+        ratio: 0.75,
+        first: { type: 'leaf', leafId: 'top' },
+        second: { type: 'leaf', leafId: 'bottom' }
+      },
+      activeLeafId: 'top',
+      expandedLeafId: null,
+      ptyIdsByLeafId: { top: 'pty-top', bottom: 'pty-bottom' }
+    }
+    const { runtimeStore, getSession } = makeRuntimeStoreWithWorkspaceSession(
+      makeWorkspaceSessionWithHeadlessTerminal({
+        terminalLayoutsByTabId: { 'tab-1': layout }
+      })
+    )
+    const runtime = new OrcaRuntimeService(runtimeStore as never)
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-1',
+          worktreeId: TEST_WORKTREE_ID,
+          title: 'Hidden split',
+          activeLeafId: 'top',
+          layout: layout.root
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-1',
+          worktreeId: TEST_WORKTREE_ID,
+          leafId: 'bottom',
+          paneRuntimeId: 2,
+          ptyId: 'pty-bottom',
+          widthPx: 800,
+          heightPx: 200
+        }
+      ]
+    })
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-1',
+          worktreeId: TEST_WORKTREE_ID,
+          title: 'Hidden split',
+          activeLeafId: 'top',
+          layout: layout.root
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-1',
+          worktreeId: TEST_WORKTREE_ID,
+          leafId: 'bottom',
+          paneRuntimeId: 2,
+          ptyId: 'pty-bottom'
+        }
+      ]
+    })
+    const [bottom] = (await runtime.listTerminals()).terminals
+
+    await expect(runtime.resizeTerminalPane(bottom.handle, { sizePx: 320 })).resolves.toMatchObject(
+      {
+        pane: { widthPx: 800, heightPx: 320, widthRatio: 1, heightRatio: 0.4 }
+      }
+    )
+    expect(getSession().terminalLayoutsByTabId['tab-1']?.root).toMatchObject({ ratio: 0.6 })
+  })
+
+  it('rejects resizing the only pane in a tab', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-1',
+          worktreeId: TEST_WORKTREE_ID,
+          title: 'Only',
+          activeLeafId: 'only',
+          layout: { type: 'leaf', leafId: 'only' }
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-1',
+          worktreeId: TEST_WORKTREE_ID,
+          leafId: 'only',
+          paneRuntimeId: 1,
+          ptyId: 'pty-only',
+          widthPx: 800,
+          heightPx: 500
+        }
+      ]
+    })
+    const [only] = (await runtime.listTerminals()).terminals
+
+    await expect(runtime.resizeTerminalPane(only.handle, { ratio: 0.4 })).rejects.toThrow(
+      'The terminal pane is the only pane in its tab; there is no sibling to resize'
+    )
+  })
+
   it('surfaces stale terminal handles for stranded panes and recovers after same-pane wake', async () => {
     const runtime = new OrcaRuntimeService(store)
     const tabId = 'tab-1'
