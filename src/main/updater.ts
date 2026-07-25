@@ -7,6 +7,7 @@ import { killAllPty } from './ipc/pty'
 import { withUpdaterSpan } from './observability/instrumentation'
 import { loadElectronAutoUpdater, type ElectronAutoUpdater } from './electron-updater-loader'
 import { writeMainThreadDiagnosticMarker } from './diagnostics/main-thread-churn-probe'
+import { isParallelIdentityAppName } from './startup/dev-instance-identity'
 import {
   beginMacUpdateDownload,
   deferMacQuitUntilInstallerReady,
@@ -111,6 +112,12 @@ let downloadInFlight = false
  *  while Squirrel's ShipIt is replacing the .app bundle. */
 let quittingForUpdate = false
 let autoUpdater: ElectronAutoUpdater | null = null
+
+function isParallelIdentityBuild(): boolean {
+  // Why: disposable and development identities must never consume the
+  // production Orca release feed, even though they are packaged.
+  return isParallelIdentityAppName(app.getName())
+}
 
 function getAutoUpdater(): ElectronAutoUpdater {
   if (!autoUpdater) {
@@ -978,6 +985,10 @@ function runBackgroundUpdateCheck(
     sendStatus({ state: 'not-available' })
     return
   }
+  if (isParallelIdentityBuild()) {
+    sendStatus({ state: 'not-available' })
+    return
+  }
   // Why: scope the nudge marker to the updater cycle being launched right now.
   // Setting it here, before any updater events or rejected promises can arrive,
   // prevents later ordinary checks from inheriting an older campaign id. Use
@@ -1056,6 +1067,10 @@ function enableIncludePrerelease(): void {
 /** Menu-triggered check — delegates feedback to renderer toasts via userInitiated flag */
 export function checkForUpdatesFromMenu(options?: UpdateCheckOptions): void {
   if (!app.isPackaged || is.dev) {
+    sendStatus({ state: 'not-available', userInitiated: true })
+    return
+  }
+  if (isParallelIdentityBuild()) {
     sendStatus({ state: 'not-available', userInitiated: true })
     return
   }
@@ -1249,6 +1264,9 @@ export function setupAutoUpdater(
     return
   }
   if (is.dev) {
+    return
+  }
+  if (isParallelIdentityBuild()) {
     return
   }
 

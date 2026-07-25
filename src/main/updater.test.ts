@@ -70,6 +70,7 @@ const {
   return {
     appMock: {
       isPackaged: true,
+      getName: vi.fn(() => 'Orca'),
       getVersion: vi.fn(() => '1.0.51'),
       on: appOn,
       emit: appEmit,
@@ -154,6 +155,8 @@ describe('updater', () => {
     browserWindowMock.getAllWindows.mockReturnValue([])
     appMock.getVersion.mockReset()
     appMock.getVersion.mockReturnValue('1.0.51')
+    appMock.getName.mockReset()
+    appMock.getName.mockReturnValue('Orca')
     appMock.quit.mockReset()
     appMock.isPackaged = true
     isMock.dev = false
@@ -182,6 +185,28 @@ describe('updater', () => {
     expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
     expect(powerMonitorOnMock).not.toHaveBeenCalled()
   })
+
+  it.each(['Orca Dev', 'Orca Test'])(
+    'does not load or configure electron-updater for packaged %s',
+    async (appName) => {
+      appMock.getName.mockReturnValue(appName)
+      const sendMock = vi.fn()
+      const mainWindow = { webContents: { send: sendMock } }
+
+      const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+
+      setupAutoUpdater(mainWindow as never)
+      checkForUpdatesFromMenu()
+
+      expect(autoUpdaterMock.setFeedURL).not.toHaveBeenCalled()
+      expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
+      expect(powerMonitorOnMock).not.toHaveBeenCalled()
+      expect(sendMock).toHaveBeenCalledWith('updater:status', {
+        state: 'not-available',
+        userInitiated: true
+      })
+    }
+  )
 
   it('deduplicates identical check errors from the event and rejected promise', async () => {
     autoUpdaterMock.checkForUpdates.mockImplementation(() => {

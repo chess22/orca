@@ -387,7 +387,9 @@ function maybeAutoRenameBranchOnFirstWorkFromHook(event: {
   )
 }
 
-const devInstanceIdentity = getDevInstanceIdentity(is.dev)
+// Why: before app.setName(), the bundled package name is the only signal that
+// distinguishes packaged Orca, Orca Dev, and Orca Test identities.
+const devInstanceIdentity = getDevInstanceIdentity(is.dev, process.env, app.getName())
 const devAgentHookEndpointNamespace = devInstanceIdentity.isDev
   ? devInstanceIdentity.appUserModelId
   : undefined

@@ -10,6 +10,18 @@ const {
 
 const isMacRelease = process.env.ORCA_MAC_RELEASE === '1'
 const isLinuxArm64Release = process.env.ORCA_LINUX_ARM64_RELEASE === '1'
+const isTestBuild = process.env.ORCA_TEST_BUILD === '1'
+const packagedAppIdentity = isTestBuild
+  ? {
+      appId: 'com.stablyai.orca.test',
+      productName: 'Orca Test',
+      packageName: 'orca-test-app'
+    }
+  : {
+      appId: 'com.stablyai.orca',
+      productName: 'Orca',
+      packageName: null
+    }
 const featureWallResources = {
   from: 'resources/onboarding/feature-wall',
   to: 'onboarding/feature-wall'
@@ -43,8 +55,13 @@ const winSpeechNativeResource = {
 
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
-  appId: 'com.stablyai.orca',
-  productName: 'Orca',
+  appId: packagedAppIdentity.appId,
+  productName: packagedAppIdentity.productName,
+  // Why: Electron derives userData from the bundled package name. The test
+  // identity needs a third profile, separate from "orca" and "orca-dev-app".
+  ...(packagedAppIdentity.packageName
+    ? { extraMetadata: { name: packagedAppIdentity.packageName } }
+    : {}),
   directories: {
     buildResources: 'resources/build'
   },
