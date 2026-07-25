@@ -3708,6 +3708,10 @@ export class OrcaRuntimeService {
         return notifier.closeTerminalTab(tabId)
       }
     }
+    if (anyHas('resizeTerminalPane')) {
+      facade.resizeTerminalPane = (tabId, leafId, targetRatio) =>
+        this.notifierForTab(tabId)?.resizeTerminalPane?.(tabId, leafId, targetRatio)
+    }
     return facade
   }
 

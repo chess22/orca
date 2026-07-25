@@ -36659,7 +36659,10 @@ describe('OrcaRuntimeService', () => {
     })
 
     it('does not start Git removal when physical PTY stop cannot be proven', async () => {
-      const localProvider = createProviderStub(async () => [])
+      const localProvider = createProviderStub(async () => [
+        { id: 'pty-1', cwd: TEST_WORKTREE_PATH, title: 'shell' }
+      ])
+      localProvider.shutdown.mockRejectedValue(new Error('stop failed'))
       const runtime = new OrcaRuntimeService(store, undefined, {
         getLocalProvider: () => localProvider as never
       })
