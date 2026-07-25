@@ -5,6 +5,7 @@ describe('dev-instance-identity', () => {
   it('keeps packaged identity stable', () => {
     expect(getDevInstanceIdentity(false, {})).toMatchObject({
       name: 'Orca',
+      appName: 'Orca',
       isDev: false,
       devLabel: null,
       dockBadgeLabel: null,
@@ -20,6 +21,18 @@ describe('dev-instance-identity', () => {
       dockBadgeLabel: null,
       appUserModelId: 'com.stablyai.orca.dev'
     })
+  })
+
+  it('pins a stable dev appName across branches so the safeStorage key does not churn', () => {
+    const a = getDevInstanceIdentity(true, { ORCA_DEV_BRANCH: 'feature/a' })
+    const b = getDevInstanceIdentity(true, { ORCA_DEV_BRANCH: 'feature/b' })
+
+    // Per-branch label differs (window title / app menu)...
+    expect(a.name).not.toBe(b.name)
+    // ...but the Keychain-driving appName is identical and distinct from prod.
+    expect(a.appName).toBe('Orca Dev')
+    expect(b.appName).toBe('Orca Dev')
+    expect(a.appName).not.toBe('Orca')
   })
 
   it('derives a readable dev label from worktree and branch env', () => {

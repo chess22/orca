@@ -180,6 +180,39 @@ describe('createBrowserSlice annotations', () => {
     expect(store.getState().browserAnnotationsByPageId[pageId]).toBeUndefined()
   })
 
+  it('keeps certificate challenges transient across navigation, success, and close', () => {
+    const store = createTestStore()
+    const tab = store.getState().createBrowserTab('wt-1', 'https://localhost:3443/')
+    const pageId = tab.activePageId
+    if (!pageId) {
+      throw new Error('Expected a new browser page')
+    }
+    const failure = {
+      challengeId: 'challenge-1',
+      browserPageId: pageId,
+      errorCode: -202,
+      error: 'ERR_CERT_AUTHORITY_INVALID',
+      origin: 'https://localhost:3443',
+      displayHost: 'localhost:3443',
+      canProceed: true,
+      observedAt: 123
+    }
+
+    store.getState().setBrowserPageCertificateFailure(pageId, failure)
+    expect(store.getState().browserCertificateFailuresByPageId[pageId]).toEqual(failure)
+
+    store.getState().setBrowserPageUrl(pageId, 'https://localhost:3443/next')
+    expect(store.getState().browserCertificateFailuresByPageId[pageId]).toBeUndefined()
+
+    store.getState().setBrowserPageCertificateFailure(pageId, failure)
+    store.getState().updateBrowserPageState(pageId, { loadError: null })
+    expect(store.getState().browserCertificateFailuresByPageId[pageId]).toBeUndefined()
+
+    store.getState().setBrowserPageCertificateFailure(pageId, failure)
+    store.getState().closeBrowserTab(tab.id)
+    expect(store.getState().browserCertificateFailuresByPageId[pageId]).toBeUndefined()
+  })
+
   it('creates inactive browser unified tabs without stealing the visible tab', () => {
     const store = createTestStore()
 
@@ -721,7 +754,17 @@ describe('createBrowserSlice runtime guard', () => {
     createWebRuntimeSessionBrowserTabMock.mockResolvedValueOnce(false)
     store.setState({
       activeWorktreeId: 'wt-remote',
-      settings: { activeRuntimeEnvironmentId: 'env-1' } as AppState['settings']
+      settings: { activeRuntimeEnvironmentId: 'env-1' } as AppState['settings'],
+      worktreesByRepo: {
+        'repo-1': [
+          {
+            id: 'wt-remote',
+            repoId: 'repo-1',
+            hostId: 'local',
+            runtimeOwnerEnvironmentId: 'env-1'
+          } as never
+        ]
+      }
     })
 
     await store.getState().openNewBrowserTabInActiveWorkspace('group-1')
@@ -745,7 +788,17 @@ describe('createBrowserSlice runtime guard', () => {
     createWebRuntimeSessionBrowserTabMock.mockRejectedValueOnce(new Error('remote down'))
     store.setState({
       activeWorktreeId: 'wt-remote',
-      settings: { activeRuntimeEnvironmentId: 'env-1' } as AppState['settings']
+      settings: { activeRuntimeEnvironmentId: 'env-1' } as AppState['settings'],
+      worktreesByRepo: {
+        'repo-1': [
+          {
+            id: 'wt-remote',
+            repoId: 'repo-1',
+            hostId: 'local',
+            runtimeOwnerEnvironmentId: 'env-1'
+          } as never
+        ]
+      }
     })
 
     await store.getState().openNewBrowserTabInActiveWorkspace('group-1')

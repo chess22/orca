@@ -1,16 +1,20 @@
 import type { Worktree, Repo, TerminalTab, WorktreeLineage } from '../../../../shared/types'
 import { buildWorktreeComparator, sortWorktreesSmart } from './smart-sort'
-import { isInactiveWorkspace } from '@/lib/worktree-activity-state'
+import { getWorktreeIdsWithLiveAgent, isInactiveWorkspace } from '@/lib/worktree-activity-state'
 import { useAppStore } from '@/store'
 import { getAllWorktreesFromState, getRepoMapFromState } from '@/store/selectors'
 import { DEFAULT_SHOW_SLEEPING_WORKSPACES } from '../../../../shared/constants'
 import {
   ALL_EXECUTION_HOSTS_SCOPE,
-  getRepoExecutionHostId,
   getSettingsFocusedExecutionHostId,
+  getWorktreeExecutionHostId,
   type ExecutionHostId,
   type ExecutionHostScope
 } from '../../../../shared/execution-host'
+import {
+  getCyclicProjectedWorktreeLineageIds,
+  getLineageRenderInfo
+} from './worktree-lineage-projection'
 
 /**
  * Whether a worktree represents the repo's default-branch row that the
@@ -110,6 +114,9 @@ export function computeVisibleWorktreeIds(
     tabsByWorktree: Record<string, Pick<TerminalTab, 'id'>[]> | null
     ptyIdsByTabId: Record<string, string[]> | null
     browserTabsByWorktree?: Record<string, { id: string }[]> | null
+    // Why required: every filter caller must preserve running agents through
+    // temporary PTY gaps instead of silently reverting #7197.
+    worktreeIdsWithLiveAgent: ReadonlySet<string>
     // Why required: every caller (WorktreeList, getVisibleWorktreeIds
     // fallback, tests) reads the flag from the UI store. Making the field
     // required prevents a future caller from silently dropping the filter by
@@ -121,6 +128,8 @@ export function computeVisibleWorktreeIds(
     visibleWorkspaceHostIds?: readonly ExecutionHostId[] | null
     defaultHostId: ExecutionHostId
     worktreeLineageById: Record<string, WorktreeLineage>
+    injectLineageAncestors?: boolean
+    forcedVisibleWorktreeIds?: readonly string[]
   }
 ): string[] {
   let all: Worktree[] = getAllWorktreesFromState({ worktreesByRepo })
@@ -150,10 +159,7 @@ export function computeVisibleWorktreeIds(
       if (!repo) {
         return false
       }
-      const hostId =
-        repo.connectionId || repo.executionHostId
-          ? getRepoExecutionHostId(repo)
-          : opts.defaultHostId
+      const hostId = getWorktreeExecutionHostId(w, repo, opts.defaultHostId)
       return visibleHostIdSet.has(hostId)
     })
   }
@@ -171,9 +177,21 @@ export function computeVisibleWorktreeIds(
           w.id,
           opts.tabsByWorktree,
           opts.ptyIdsByTabId,
-          opts.browserTabsByWorktree
+          opts.browserTabsByWorktree,
+          opts.worktreeIdsWithLiveAgent
         )
     )
+  }
+
+  if (opts.forcedVisibleWorktreeIds && opts.forcedVisibleWorktreeIds.length > 0) {
+    const includedIds = new Set(all.map((worktree) => worktree.id))
+    for (const worktreeId of opts.forcedVisibleWorktreeIds) {
+      const worktree = lineageAncestorById.get(worktreeId)
+      if (worktree && !includedIds.has(worktreeId)) {
+        includedIds.add(worktreeId)
+        all.push(worktree)
+      }
+    }
   }
 
   // Apply cached sort order. Items not yet in the cache (e.g. brand-new
@@ -185,11 +203,10 @@ export function computeVisibleWorktreeIds(
     return ai - bi
   })
 
-  return addVisibleLineageAncestors(
-    all.map((w) => w.id),
-    lineageAncestorById,
-    opts.worktreeLineageById
-  )
+  const visibleIds = all.map((w) => w.id)
+  return opts.injectLineageAncestors === false
+    ? visibleIds
+    : addVisibleLineageAncestors(visibleIds, lineageAncestorById, opts.worktreeLineageById)
 }
 
 function addVisibleLineageAncestors(
@@ -200,6 +217,7 @@ function addVisibleLineageAncestors(
   const result: string[] = []
   const included = new Set<string>()
   const visiting = new Set<string>()
+  const cyclicLineageIds = getCyclicProjectedWorktreeLineageIds(lineageById, worktreeById)
 
   const addWithAncestors = (id: string): void => {
     if (included.has(id) || visiting.has(id)) {
@@ -210,16 +228,11 @@ function addVisibleLineageAncestors(
       return
     }
     visiting.add(id)
-    const lineage = lineageById[id]
-    const parent = lineage ? worktreeById.get(lineage.parentWorktreeId) : undefined
-    if (
-      parent &&
-      worktree.instanceId === lineage.worktreeInstanceId &&
-      parent.instanceId === lineage.parentWorktreeInstanceId
-    ) {
+    const lineage = getLineageRenderInfo(worktree, lineageById, worktreeById, cyclicLineageIds)
+    if (lineage.state === 'valid') {
       // Why: sidebar lineage is structural. If a filtered child is visible,
       // its valid parent must be rendered too so the hierarchy remains legible.
-      addWithAncestors(parent.id)
+      addWithAncestors(lineage.parent.id)
     }
     visiting.delete(id)
     if (!included.has(id)) {
@@ -305,6 +318,11 @@ export function getVisibleWorktreeIds(): string[] {
     tabsByWorktree: state.tabsByWorktree,
     ptyIdsByTabId: state.ptyIdsByTabId,
     browserTabsByWorktree: state.browserTabsByWorktree,
+    worktreeIdsWithLiveAgent: getWorktreeIdsWithLiveAgent(
+      state.agentStatusByPaneKey,
+      state.tabsByWorktree,
+      Date.now()
+    ),
     hideDefaultBranchWorkspace: state.hideDefaultBranchWorkspace,
     hideAutomationGeneratedWorkspaces: state.hideAutomationGeneratedWorkspaces,
     repoMap,

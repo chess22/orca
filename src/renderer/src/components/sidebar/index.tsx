@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 import { FolderPlus, Loader2 } from 'lucide-react'
 import { useSidebarProjectDrop } from './useSidebarProjectDrop'
 import { useWorkspaceBoardPanel } from './useWorkspaceBoardPanel'
+import { createSingleFlightCoalescer, type SingleFlightCoalescer } from './single-flight-coalescer'
 import { resolveLeftSidebarStyleVariables } from '@/lib/left-sidebar-appearance'
 import { useSystemPrefersDark } from '@/components/terminal-pane/use-system-prefers-dark'
 import { lazyWithRetry } from '@/lib/lazy-with-retry'
@@ -21,6 +22,7 @@ const WorktreeMetaDialog = lazyWithRetry(() => import('./WorktreeMetaDialog'))
 const RemoveFolderDialog = lazyWithRetry(() => import('./RemoveFolderDialog'))
 const WorktreeVisibilityDialog = lazyWithRetry(() => import('./WorktreeVisibilityDialog'))
 const OrcaYamlTrustDialog = lazyWithRetry(() => import('./OrcaYamlTrustDialog'))
+const ForgetSshWorkspaceDialog = lazyWithRetry(() => import('./ForgetSshWorkspaceDialog'))
 
 const MIN_WIDTH = 220
 const MAX_WIDTH = 500
@@ -99,6 +101,13 @@ function Sidebar({
     [runtimeStatusByEnvironmentId]
   )
   const previousOnlineRuntimeEnvKeyRef = React.useRef<string | null>(null)
+  // Coalesce staggered wake reconnects so K hosts can't fire K sidebar remounts and freeze (#8539).
+  const reconnectRefreshRef = React.useRef<SingleFlightCoalescer | null>(null)
+  if (reconnectRefreshRef.current === null) {
+    reconnectRefreshRef.current = createSingleFlightCoalescer(() =>
+      fetchAllWorktrees().then(() => fetchWorktreeLineage())
+    )
+  }
   useEffect(() => {
     // Skip the initial value — startup/repoCount effects already fetch. Only
     // refetch when the online-host set actually changes.
@@ -110,8 +119,8 @@ function Sidebar({
       return
     }
     previousOnlineRuntimeEnvKeyRef.current = onlineRuntimeEnvKey
-    void fetchAllWorktrees().then(() => fetchWorktreeLineage())
-  }, [onlineRuntimeEnvKey, fetchAllWorktrees, fetchWorktreeLineage])
+    reconnectRefreshRef.current?.request()
+  }, [onlineRuntimeEnvKey])
 
   useEffect(() => {
     if (!sidebarOpen && workspaceBoardRenderedOpen) {
@@ -207,6 +216,7 @@ function Sidebar({
         {activeModal === 'confirm-remove-folder' ? <RemoveFolderDialog /> : null}
         {activeModal === 'worktree-visibility' ? <WorktreeVisibilityDialog /> : null}
         {activeModal === 'confirm-orca-yaml-hooks' ? <OrcaYamlTrustDialog /> : null}
+        {activeModal === 'forget-ssh-workspace' ? <ForgetSshWorkspaceDialog /> : null}
       </React.Suspense>
       {sidebarOpen ? (
         <WorkspaceKanbanDrawer

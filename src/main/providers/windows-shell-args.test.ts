@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   encodePowerShellCommand,
   getPowerShellOsc133Bootstrap
@@ -17,6 +20,24 @@ function expectedWslArgs(linuxCwd: string, distro?: string): string[] {
 }
 
 describe('resolveWindowsShellLaunchArgs', () => {
+  let previousUserDataPath: string | undefined
+  let userDataPath: string
+
+  beforeEach(() => {
+    previousUserDataPath = process.env.ORCA_USER_DATA_PATH
+    userDataPath = mkdtempSync(join(tmpdir(), 'windows-shell-args-test-'))
+    process.env.ORCA_USER_DATA_PATH = userDataPath
+  })
+
+  afterEach(() => {
+    if (previousUserDataPath === undefined) {
+      delete process.env.ORCA_USER_DATA_PATH
+    } else {
+      process.env.ORCA_USER_DATA_PATH = previousUserDataPath
+    }
+    rmSync(userDataPath, { recursive: true, force: true })
+  })
+
   it('returns cmd.exe args with chcp 65001 for UTF-8 output', () => {
     const result = resolveWindowsShellLaunchArgs('cmd.exe', 'C:\\Users\\alice', 'C:\\Users\\alice')
     expect(result.shellArgs).toEqual(['/K', 'chcp 65001 > nul'])
@@ -35,6 +56,20 @@ describe('resolveWindowsShellLaunchArgs', () => {
     )
     expect(result.shellArgs).toEqual(['/K', 'chcp 65001 > nul & codex --no-alt-screen'])
     expect(result.startupCommandDeliveredInShellArgs).toBe(true)
+  })
+
+  it('keeps quoted cmd.exe startup commands on stdin delivery', () => {
+    // Why: direct queued cmd commands need normal quotes, which node-pty's
+    // C-runtime argv escaping corrupts when delivered through `/K`.
+    const result = resolveWindowsShellLaunchArgs(
+      'cmd.exe',
+      'C:\\Users\\alice\\repo',
+      'C:\\Users\\alice',
+      undefined,
+      'cd /d "C:\\Users\\alice\\repo" && claude "--resume" "session one"'
+    )
+    expect(result.shellArgs).toEqual(['/K', 'chcp 65001 > nul'])
+    expect(result.startupCommandDeliveredInShellArgs).toBeUndefined()
   })
 
   it('keeps large cmd.exe startup commands on stdin delivery', () => {
@@ -161,14 +196,27 @@ describe('resolveWindowsShellLaunchArgs', () => {
     ])
   })
 
-  it('starts Git Bash as an interactive login shell without changing cwd', () => {
+  it('starts Git Bash as an interactive login shell with UTF-8 console setup', () => {
     const result = resolveWindowsShellLaunchArgs(
       'C:\\Program Files\\Git\\bin\\bash.exe',
       'C:\\Users\\alice\\code',
       'C:\\Users\\alice'
     )
 
-    expect(result.shellArgs).toEqual(['--login', '-i'])
+    // Why: Git Bash inherits the ConPTY OEM code page (CP437), so a byte-writing
+    // UTF-8 TUI mojibakes unless the console is switched to UTF-8 before it runs.
+    // Assert the contract behaviorally: chcp.com 65001 must precede the exec'd
+    // interactive login shell (which preserves `--login -i` and the shell's
+    // foreground identity), rather than pinning the exact command string.
+    expect(result.shellArgs[0]).toBe('-c')
+    const bashCommand = result.shellArgs[1]
+    expect(bashCommand).toContain('chcp.com 65001')
+    expect(bashCommand).toMatch(/exec "\$BASH" --login -i$/)
+    // The UTF-8 switch must run before the login shell is exec'd.
+    expect(bashCommand.indexOf('chcp.com')).toBeLessThan(bashCommand.indexOf('exec'))
+    // Must stay fail-open: `;` (not `&&`) so a missing chcp.com can't abort the
+    // exec and kill the terminal on startup.
+    expect(bashCommand).not.toContain('&&')
     expect(result.effectiveCwd).toBe('C:\\Users\\alice\\code')
     expect(result.validationCwd).toBe('C:\\Users\\alice\\code')
   })
@@ -199,6 +247,27 @@ describe('resolveWindowsShellLaunchArgs', () => {
     // user's Windows home and we inject the Linux cd into the shellArgs above.
     expect(result.effectiveCwd).toBe('C:\\Users\\alice')
     expect(result.validationCwd).toBe('C:\\Users\\alice\\code')
+  })
+
+  it('materializes shell-ready wrappers before building WSL shell args', () => {
+    const result = resolveWindowsShellLaunchArgs(
+      'wsl.exe',
+      'C:\\Users\\alice\\code',
+      'C:\\Users\\alice'
+    )
+
+    expect(result.shellArgs).toEqual(expectedWslArgs('/mnt/c/Users/alice/code'))
+    expect(existsSync(join(userDataPath, 'shell-ready', 'bash', 'rcfile'))).toBe(true)
+    expect(existsSync(join(userDataPath, 'shell-ready', 'zsh', '.zshenv'))).toBe(true)
+
+    // Why: the point of materializing wrappers for WSL is that a typed `omp`
+    // picks up Orca's status extension; pin that shim end to end.
+    const bashRcfile = readFileSync(join(userDataPath, 'shell-ready', 'bash', 'rcfile'), 'utf8')
+    const zshLogin = readFileSync(join(userDataPath, 'shell-ready', 'zsh', '.zlogin'), 'utf8')
+    for (const wrapperFile of [bashRcfile, zshLogin]) {
+      expect(wrapperFile).toContain('command omp --extension "${ORCA_OMP_STATUS_EXTENSION}" "$@"')
+      expect(wrapperFile).toContain('omp() { __orca_omp "$@"; }')
+    }
   })
 
   it('translates MSYS drive cwd to /mnt/<drive>/... for wsl.exe', () => {

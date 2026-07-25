@@ -12,7 +12,12 @@ import type {
 import { registerRepoHandlers } from '../ipc/repos'
 import { registerWorktreeHandlers } from '../ipc/worktrees'
 import { registerWorkspaceCleanupHandlers } from '../ipc/workspace-cleanup'
-import { getLocalPtyProvider, registerPtyHandlers } from '../ipc/pty'
+import {
+  getLocalPtyProvider,
+  registerPtyHandlers,
+  type GetSelectedCodexHomePath,
+  type PrepareCodexSessionResume
+} from '../ipc/pty'
 import { registerDaemonManagementHandlers } from '../ipc/pty-management'
 import { registerSshHandlers } from '../ipc/ssh'
 import { registerRemoteWorkspaceHandlers } from '../ipc/remote-workspace'
@@ -25,7 +30,8 @@ import {
   getUpdateStatus,
   quitAndInstall,
   setupAutoUpdater,
-  dismissNudge
+  dismissNudge,
+  type UpdateInstallMode
 } from '../updater'
 import { scheduleHistoryGc } from '../terminal-history'
 import { hydrateLocalPtyRegistryAtBoot } from '../memory/hydrate-local-pty-registry'
@@ -38,7 +44,7 @@ import type {
 import type { RuntimeMobileSessionTabMove } from '../../shared/runtime-types'
 import { isNativeFileDropPayload, type NativeFileDropPayload } from '../../shared/native-file-drop'
 import { requestMobileMarkdownFromRenderer } from './mobile-markdown-request-relay'
-import type { CodexAccountSelectionTarget } from '../codex-accounts/runtime-selection'
+import { requestTerminalTabCloseFromRenderer } from './terminal-tab-close-request-relay'
 import type { ClaudeAccountSelectionTarget } from '../claude-accounts/runtime-selection'
 import { runWorktreeChangeInvalidators } from '../ipc/worktree-change-invalidators'
 import {
@@ -55,10 +61,7 @@ import { logStartupMilestone } from '../startup/startup-diagnostics'
 
 const UPDATER_SETUP_FALLBACK_MS = 15_000
 
-// Why: updater setup is deferred past first paint, but a manual check (app
-// menu or updater:check IPC) can arrive inside that window — it must run
-// against a configured updater (listeners, autoDownload=false, window ref),
-// so those entry points force the pending setup first.
+// Why: a manual check can arrive before deferred setup runs, so entry points force this pending setup to configure the updater first.
 let pendingAutoUpdaterSetup: (() => void) | null = null
 let updaterSetupDone = false
 
@@ -84,16 +87,19 @@ export function attachMainWindowServices(
   mainWindow: BrowserWindow,
   store: Store,
   runtime: OrcaRuntimeService,
-  getSelectedCodexHomePath?: (target?: CodexAccountSelectionTarget) => string | null,
+  getSelectedCodexHomePath?: GetSelectedCodexHomePath,
   prepareClaudeAuth?: (
     target?: ClaudeAccountSelectionTarget
   ) => Promise<ClaudeRuntimeAuthPreparation>,
   options?: {
+    prepareCodexSessionResume?: PrepareCodexSessionResume
     awaitLocalPtyStartup?: () => Promise<void>
+    awaitLocalPtyProviderStartup?: () => Promise<void>
     onBeforeRendererReload?: (args: { webContentsId: number; ignoreCache: boolean }) => void
     // Why: lets the PTY orphan sweep skip the one crash-recovery reload (#5787).
     isRecoveryReloadInFlight?: (webContentsId: number) => boolean
     onBeforeUpdateQuit?: () => void | Promise<void>
+    updateInstallMode?: UpdateInstallMode
   }
 ): void {
   const broadcastWindow = getBroadcastWindowFacade()
@@ -111,7 +117,9 @@ export function attachMainWindowServices(
     prepareClaudeAuth,
     store,
     {
+      prepareCodexSessionResume: options?.prepareCodexSessionResume,
       awaitLocalPtyStartup: options?.awaitLocalPtyStartup,
+      awaitLocalPtyProviderStartup: options?.awaitLocalPtyProviderStartup,
       isRecoveryReloadInFlight: options?.isRecoveryReloadInFlight
     }
   )
@@ -186,12 +194,7 @@ export function attachMainWindowServices(
       getPendingUpdateNudgeId: () => store.getUI().pendingUpdateNudgeId ?? null,
       getDismissedUpdateNudgeId: () => store.getUI().dismissedUpdateNudgeId ?? null,
       setPendingUpdateNudgeId: (id) => {
-        // Why: the nudge lifecycle is owned by the main process. When applying a
-        // new campaign, persist the pending id AND clear the version dismissal
-        // together so relaunches cannot resurrect the old hidden-card state
-        // between nudge apply and renderer sync. When clearing (id is null),
-        // only touch pendingUpdateNudgeId — clearing dismissedUpdateVersion here
-        // would silently un-dismiss an update if the flow ever changes.
+        // Why: only the apply branch also nulls dismissedUpdateVersion so relaunch can't resurrect the old hidden card; clearing must not, or it un-dismisses.
         if (id) {
           store.updateUI({ pendingUpdateNudgeId: id, dismissedUpdateVersion: null })
         } else {
@@ -200,7 +203,8 @@ export function attachMainWindowServices(
       },
       setDismissedUpdateNudgeId: (id) => {
         store.updateUI({ dismissedUpdateNudgeId: id })
-      }
+      },
+      installMode: options?.updateInstallMode
     })
     logStartupMilestone('updater-setup-done')
   }
@@ -269,8 +273,7 @@ function registerRuntimeWindowLifecycle(
   }
   const notifier = {
     worktreesChanged: (repoId, renamed) => {
-      // Why: clear detected-worktree scan caches before renderer listeners
-      // handle this event, preventing stale TTL reads after mutations.
+      // Why: clear scan caches before the renderer handles this event, so it can't read stale TTL entries after a mutation.
       runWorktreeChangeInvalidators(repoId)
       send('worktrees:changed', renamed ? { repoId, renamed } : { repoId })
     },
@@ -312,8 +315,7 @@ function registerRuntimeWindowLifecycle(
           event: Electron.IpcMainEvent,
           reply: { requestId: string; tabId?: string; title?: string; error?: string }
         ): void => {
-          // Why: requestId is renderer-supplied; only the targeted main window
-          // may satisfy the reveal and provide the tab handle.
+          // Why: requestId is renderer-supplied, so only the targeted main window may satisfy the reveal.
           if (event.sender !== mainWindow.webContents || reply.requestId !== requestId) {
             return
           }
@@ -335,11 +337,10 @@ function registerRuntimeWindowLifecycle(
           ...(opts.launchConfig ? { launchConfig: opts.launchConfig } : {}),
           ...(opts.launchToken ? { launchToken: opts.launchToken } : {}),
           ...(opts.launchAgent ? { launchAgent: opts.launchAgent } : {}),
+          ...(opts.viewMode ? { viewMode: opts.viewMode } : {}),
           activate: opts.activate !== false,
           ...(opts.presentation ? { presentation: opts.presentation } : {}),
-          // Why: pre-minted tabId from main keeps the renderer's tab id aligned
-          // with the paneKey baked into the PTY env at spawn time, so hook
-          // events route to the right slot.
+          // Why: pre-minted tabId aligns the renderer tab id with the paneKey baked into the PTY env, so hook events route right.
           ...(opts.tabId !== undefined ? { tabId: opts.tabId } : {}),
           ...(opts.leafId !== undefined ? { leafId: opts.leafId } : {}),
           ...(opts.splitFromLeafId !== undefined ? { splitFromLeafId: opts.splitFromLeafId } : {}),
@@ -399,7 +400,9 @@ function registerRuntimeWindowLifecycle(
         content
       }) as Promise<RuntimeMarkdownSaveTabResult>,
     closeTerminal: (tabId, paneRuntimeId) => send('ui:closeTerminal', { tabId, paneRuntimeId }),
+    closeTerminalTab: (tabId) => requestTerminalTabCloseFromRenderer(mainWindow, tabId),
     sleepWorktree: (worktreeId) => send('ui:sleepWorktree', { worktreeId }),
+    resumeSleepingAgents: (worktreeId) => send('ui:resumeSleepingAgents', { worktreeId }),
     terminalFitOverrideChanged: (ptyId, mode, cols, rows) =>
       send('runtime:terminalFitOverrideChanged', { ptyId, mode, cols, rows }),
     terminalDriverChanged: (ptyId, driver) =>

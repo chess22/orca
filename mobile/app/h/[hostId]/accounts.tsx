@@ -9,13 +9,14 @@ import {
   Alert
 } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
-import { useLocalSearchParams, useRouter } from 'expo-router'
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { ChevronLeft, Check, RefreshCw, User } from 'lucide-react-native'
 import { loadHosts } from '../../../src/transport/host-store'
 import { useHostClient } from '../../../src/transport/client-context'
 import type { RpcSuccess } from '../../../src/transport/types'
 import { colors, spacing } from '../../../src/theme/mobile-theme'
 import { styles } from './accounts-screen-styles'
+import { useNow } from '../../../src/hooks/use-now'
 import { ClaudeIcon, OpenAIIcon } from '../../../src/components/AgentIcons'
 import {
   type AccountsSnapshot,
@@ -23,6 +24,7 @@ import {
   getActiveProviderRateLimits,
   getInactiveProviderUsage,
   getUsageBarState,
+  getWindowResetLabel,
   hasActiveProviderUsage,
   UsageBar
 } from '../../../src/components/AccountUsage'
@@ -39,6 +41,16 @@ export default function AccountsScreen() {
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [busyAccountId, setBusyAccountId] = useState<string | null>(null)
+  const [clockEnabled, setClockEnabled] = useState(false)
+
+  useFocusEffect(
+    useCallback(() => {
+      setClockEnabled(true)
+      return () => setClockEnabled(false)
+    }, [])
+  )
+  // Why: snapshot pushes only arrive when the desktop's rate-limit poll completes.
+  const now = useNow(60_000, clockEnabled)
 
   useEffect(() => {
     if (!hostId) {
@@ -163,12 +175,14 @@ export default function AccountsScreen() {
                     usedPercent={activeSessionBar.usedPercent}
                     unavailable={activeSessionBar.unavailable}
                     loading={activeSessionBar.loading}
+                    resetText={getWindowResetLabel(activeUsage, 'session', now)}
                   />
                   <UsageBar
                     label="7d"
                     usedPercent={activeWeeklyBar.usedPercent}
                     unavailable={activeWeeklyBar.unavailable}
                     loading={activeWeeklyBar.loading}
+                    resetText={getWindowResetLabel(activeUsage, 'weekly', now)}
                   />
                 </View>
               ) : null}
@@ -211,12 +225,14 @@ export default function AccountsScreen() {
                         usedPercent={sessionBar.usedPercent}
                         unavailable={sessionBar.unavailable}
                         loading={sessionBar.loading}
+                        resetText={getWindowResetLabel(usage, 'session', now)}
                       />
                       <UsageBar
                         label="7d"
                         usedPercent={weeklyBar.usedPercent}
                         unavailable={weeklyBar.unavailable}
                         loading={weeklyBar.loading}
+                        resetText={getWindowResetLabel(usage, 'weekly', now)}
                       />
                     </View>
                     {usage?.error ? (

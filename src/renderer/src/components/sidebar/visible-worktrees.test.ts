@@ -79,6 +79,7 @@ function visibleOptions(overrides: Partial<VisibleOptions> = {}): VisibleOptions
     tabsByWorktree: {},
     ptyIdsByTabId: {},
     browserTabsByWorktree: {},
+    worktreeIdsWithLiveAgent: new Set(),
     hideDefaultBranchWorkspace: false,
     hideAutomationGeneratedWorkspaces: false,
     repoMap,
@@ -177,6 +178,24 @@ describe('computeVisibleWorktreeIds', () => {
     )
 
     expect(result).toEqual([])
+  })
+
+  it('keeps a running-agent worktree visible without a live pty when sleeping is hidden (#7197)', () => {
+    const wt = makeWorktree('wt-agent')
+
+    const result = computeVisibleWorktreeIds(
+      { repo1: [wt] },
+      [wt.id],
+      visibleOptions({
+        showSleepingWorkspaces: false,
+        // No live PTY for the tab, but the agent session is live.
+        tabsByWorktree: { [wt.id]: [makeTab('tab-agent', wt.id, null)] },
+        ptyIdsByTabId: { 'tab-agent': [] },
+        worktreeIdsWithLiveAgent: new Set([wt.id])
+      })
+    )
+
+    expect(result).toEqual([wt.id])
   })
 
   it('hides paired web host terminal mirrors while their stream handle is pending', () => {
@@ -310,6 +329,25 @@ describe('computeVisibleWorktreeIds', () => {
     expect(result).toEqual([local.id])
   })
 
+  it('uses explicit worktree ownership when it differs from the repo host', () => {
+    const runtime = makeWorktree('runtime', 'repo1')
+    runtime.hostId = 'runtime:env-1'
+
+    const runtimeResult = computeVisibleWorktreeIds(
+      { repo1: [runtime] },
+      [runtime.id],
+      visibleOptions({ workspaceHostScope: 'runtime:env-1' })
+    )
+    const localResult = computeVisibleWorktreeIds(
+      { repo1: [runtime] },
+      [runtime.id],
+      visibleOptions({ workspaceHostScope: 'local' })
+    )
+
+    expect(runtimeResult).toEqual([runtime.id])
+    expect(localResult).toEqual([])
+  })
+
   it('keeps every host visible when workspace host scope is all', () => {
     const local = makeWorktree('local', 'repo1')
     const remote = makeWorktree('remote', 'repo2')
@@ -440,6 +478,109 @@ describe('computeVisibleWorktreeIds', () => {
     expect(result).toEqual([parent.id, child.id])
   })
 
+  it('includes a filtered parent from resolved inline lineage when hydration has no side-map entry', () => {
+    const parent = makeWorktree('parent')
+    const child = makeWorktree('child')
+    const lineage = makeWorktreeLineage(child, parent)
+    const resolvedChild = { ...child, lineage }
+
+    const result = computeVisibleWorktreeIds(
+      { repo1: [parent, resolvedChild] },
+      [child.id, parent.id],
+      visibleOptions({
+        showSleepingWorkspaces: false,
+        tabsByWorktree: { [child.id]: [makeTab('t-child', child.id, 'p-child')] },
+        ptyIdsByTabId: { 't-child': ['p-child'] }
+      })
+    )
+
+    expect(result).toEqual([parent.id, child.id])
+  })
+
+  it('keeps inline parents out of non-nested board results across parent filters', () => {
+    const child = makeWorktree('child')
+    const run = (
+      parent: ReturnType<typeof makeWorktree>,
+      options: Partial<VisibleOptions>
+    ): string[] => {
+      const resolvedChild = { ...child, lineage: makeWorktreeLineage(child, parent) }
+      return computeVisibleWorktreeIds(
+        { repo1: [parent, resolvedChild] },
+        [parent.id, child.id],
+        visibleOptions({ ...options, injectLineageAncestors: false })
+      )
+    }
+
+    const sleepingParent = makeWorktree('sleeping-parent')
+    expect(
+      run(sleepingParent, {
+        showSleepingWorkspaces: false,
+        tabsByWorktree: { [child.id]: [makeTab('t-child', child.id, 'p-child')] },
+        ptyIdsByTabId: { 't-child': ['p-child'] }
+      })
+    ).toEqual([child.id])
+
+    const defaultBranchParent = makeWorktree('default-parent')
+    defaultBranchParent.isMainWorktree = true
+    expect(run(defaultBranchParent, { hideDefaultBranchWorkspace: true })).toEqual([child.id])
+
+    const automationParent = makeWorktree('automation-parent')
+    automationParent.automationProvenance = {
+      kind: 'created-by-automation',
+      automationId: 'automation-1',
+      automationNameSnapshot: 'Review',
+      automationRunId: 'run-1',
+      automationRunTitleSnapshot: 'Review run',
+      createdAt: 1,
+      executionTargetType: 'local',
+      executionTargetId: 'local',
+      projectId: 'repo1',
+      repoId: 'repo1',
+      hostId: 'local'
+    }
+    expect(run(automationParent, { hideAutomationGeneratedWorkspaces: true })).toEqual([child.id])
+  })
+
+  it('includes inline lineage ancestors when send-target mode forces a filtered child visible', () => {
+    const parent = makeWorktree('parent')
+    const child = makeWorktree('child')
+    const lineage = makeWorktreeLineage(child, parent)
+    const resolvedChild = { ...child, lineage }
+
+    const result = computeVisibleWorktreeIds(
+      { repo1: [parent, resolvedChild] },
+      [parent.id, child.id],
+      visibleOptions({
+        showSleepingWorkspaces: false,
+        forcedVisibleWorktreeIds: [child.id]
+      })
+    )
+
+    expect(result).toEqual([parent.id, child.id])
+  })
+
+  it('keeps the hydrated side-map authoritative over disagreeing inline lineage', () => {
+    const inlineParent = makeWorktree('inline-parent')
+    const hydratedParent = makeWorktree('hydrated-parent')
+    const child = makeWorktree('child')
+    const inlineLineage = makeWorktreeLineage(child, inlineParent)
+    const hydratedLineage = makeWorktreeLineage(child, hydratedParent)
+    const resolvedChild = { ...child, lineage: inlineLineage }
+
+    const result = computeVisibleWorktreeIds(
+      { repo1: [inlineParent, hydratedParent, resolvedChild] },
+      [child.id, inlineParent.id, hydratedParent.id],
+      visibleOptions({
+        showSleepingWorkspaces: false,
+        tabsByWorktree: { [child.id]: [makeTab('t-child', child.id, 'p-child')] },
+        ptyIdsByTabId: { 't-child': ['p-child'] },
+        worktreeLineageById: { [child.id]: hydratedLineage }
+      })
+    )
+
+    expect(result).toEqual([hydratedParent.id, child.id])
+  })
+
   it('does not resurrect stale lineage parents', () => {
     const parent = makeWorktree('parent')
     const child = makeWorktree('child')
@@ -499,7 +640,7 @@ describe('computeVisibleWorktreeIds', () => {
     expect(result).toEqual([parent.id, child.id])
   })
 
-  it('includes cross-repo parents when repo filtering leaves their valid child visible', () => {
+  it('does not include a cross-repo parent when repo filtering leaves the child visible', () => {
     const parent = makeWorktree('parent', 'repo1')
     const child = makeWorktree('child', 'repo2')
     const lineage = makeWorktreeLineage(child, parent)
@@ -513,7 +654,44 @@ describe('computeVisibleWorktreeIds', () => {
       })
     )
 
-    expect(result).toEqual([parent.id, child.id])
+    expect(result).toEqual([child.id])
+  })
+
+  it('does not include a known cross-host parent after host filtering', () => {
+    const parent = Object.assign(makeWorktree('parent'), { hostId: 'ssh:remote' as const })
+    const child = Object.assign(makeWorktree('child'), { hostId: 'local' as const })
+    const lineage = makeWorktreeLineage(child, parent)
+
+    const result = computeVisibleWorktreeIds(
+      { repo1: [parent, child] },
+      [child.id, parent.id],
+      visibleOptions({
+        visibleWorkspaceHostIds: ['local'],
+        worktreeLineageById: { [child.id]: lineage }
+      })
+    )
+
+    expect(result).toEqual([child.id])
+  })
+
+  it('does not include a known cross-project parent hidden by another filter', () => {
+    const parent = Object.assign(makeWorktree('parent'), {
+      projectId: 'project-b',
+      isMainWorktree: true
+    })
+    const child = Object.assign(makeWorktree('child'), { projectId: 'project-a' })
+    const lineage = makeWorktreeLineage(child, parent)
+
+    const result = computeVisibleWorktreeIds(
+      { repo1: [parent, child] },
+      [child.id, parent.id],
+      visibleOptions({
+        hideDefaultBranchWorkspace: true,
+        worktreeLineageById: { [child.id]: lineage }
+      })
+    )
+
+    expect(result).toEqual([child.id])
   })
 })
 

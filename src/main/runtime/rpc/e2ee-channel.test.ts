@@ -27,7 +27,10 @@ function setup(overrides?: Partial<E2EEChannelOptions>) {
 
   const channel = new E2EEChannel(ws as unknown as WebSocket, {
     serverSecretKey: serverKeys.secretKey,
-    validateToken: (token) => token === 'valid-token',
+    resolveAuthenticatedDevice: (token) =>
+      token === 'valid-token'
+        ? { deviceId: 'device-1', deviceToken: token, scope: 'mobile' }
+        : null,
     onReady,
     onError,
     ...overrides
@@ -63,7 +66,11 @@ describe('E2EEChannel', () => {
       const ctx = setup()
       doHandshake(ctx)
 
-      expect(ctx.onReady).toHaveBeenCalledWith(ctx.channel)
+      expect(ctx.onReady).toHaveBeenCalledWith(ctx.channel, {
+        deviceId: 'device-1',
+        deviceToken: 'valid-token',
+        scope: 'mobile'
+      })
       expect(ctx.onError).not.toHaveBeenCalled()
       expect(ctx.channel.deviceToken).toBe('valid-token')
 
@@ -102,6 +109,26 @@ describe('E2EEChannel', () => {
         encrypt(JSON.stringify({ type: 'e2ee_auth', deviceToken: 'bad-token' }), sharedKey)
       )
 
+      expect(ctx.onError).toHaveBeenCalledWith(4001, 'Unauthorized')
+      expect(ctx.onReady).not.toHaveBeenCalled()
+    })
+
+    it('rejects an auth frame encrypted to a stale desktop key', () => {
+      const ctx = setup()
+      ctx.channel.handleRawMessage(
+        JSON.stringify({
+          type: 'e2ee_hello',
+          publicKeyB64: publicKeyToBase64(ctx.clientKeys.publicKey)
+        })
+      )
+      const staleServer = generateKeyPair()
+      const staleSharedKey = deriveSharedKey(ctx.clientKeys.secretKey, staleServer.publicKey)
+
+      ctx.channel.handleRawMessage(
+        encrypt(JSON.stringify({ type: 'e2ee_auth', deviceToken: 'valid-token' }), staleSharedKey)
+      )
+
+      expect(ctx.onError).toHaveBeenCalledOnce()
       expect(ctx.onError).toHaveBeenCalledWith(4001, 'Unauthorized')
       expect(ctx.onReady).not.toHaveBeenCalled()
     })
