@@ -31,6 +31,23 @@ describe('electron-builder config', () => {
     expect(electronBuilderConfig.extraMetadata.name).toBe('orca-dev-app')
   })
 
+  it('tags the packaged version with git build metadata so Dev/Test builds are distinguishable', () => {
+    const rootPackageJson = require('../../package.json')
+    expect(
+      electronBuilderConfig.extraMetadata.version.startsWith(`${rootPackageJson.version}+`)
+    ).toBe(true)
+    expect(electronBuilderConfig.extraMetadata.version).toMatch(/^\d+\.\d+\.\d+\+[0-9A-Za-z.-]+$/)
+  })
+
+  it('exposes the exact build branch and commit hash for the About screen', () => {
+    // Unsanitized (may contain "/"), unlike the semver-safe version metadata above.
+    expect(electronBuilderConfig.extraMetadata.buildCommitHash).toMatch(/^[0-9a-f]{8}$/)
+    expect(
+      typeof electronBuilderConfig.extraMetadata.buildBranch === 'string' ||
+        electronBuilderConfig.extraMetadata.buildBranch === null
+    ).toBe(true)
+  })
+
   it('uses an isolated identity for ORCA_TEST_BUILD', () => {
     const configPath = require.resolve('../electron-builder.config.cjs')
     const original = process.env.ORCA_TEST_BUILD

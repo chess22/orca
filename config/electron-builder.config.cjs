@@ -12,6 +12,7 @@ const {
   verifyPackagedMainRuntimeDeps
 } = require('./packaged-runtime-node-modules.cjs')
 const { verifyLinuxGlibcFloor } = require('./scripts/verify-linux-glibc-floor.cjs')
+const { getGitBuildIdentity } = require('./scripts/git-build-identity.cjs')
 
 const isMacRelease = process.env.ORCA_MAC_RELEASE === '1'
 const isLinuxArm64Release = process.env.ORCA_LINUX_ARM64_RELEASE === '1'
@@ -27,6 +28,14 @@ const packagedAppIdentity = isTestBuild
       productName: 'Orca Dev',
       packageName: 'orca-dev-app'
     }
+// Why: this config only ever packages the Orca Dev/Test parallel identities
+// above (never production Orca), so every build gets a version-identifying
+// git build tag; the About screen reads buildBranch/buildCommitHash back out.
+const rootPackageVersion = require('../package.json').version
+const gitBuildIdentity = getGitBuildIdentity()
+const packagedVersion = gitBuildIdentity.versionMetadata
+  ? `${rootPackageVersion}+${gitBuildIdentity.versionMetadata}`
+  : rootPackageVersion
 const featureWallResources = {
   from: 'resources/onboarding/feature-wall',
   to: 'onboarding/feature-wall'
@@ -76,7 +85,12 @@ module.exports = {
   // ("orca-dev", see configure-process.ts) so the packaged app never shares
   // state with a developer's unlocked `pnpm dev` session either.
   extraMetadata: {
-    name: packagedAppIdentity.packageName
+    name: packagedAppIdentity.packageName,
+    version: packagedVersion,
+    // Why: read back at runtime (dev-instance-identity.ts) to show the build's
+    // source branch/commit in the About/settings screen for this parallel identity.
+    buildBranch: gitBuildIdentity.branch,
+    buildCommitHash: gitBuildIdentity.commitHash
   },
   directories: {
     buildResources: 'resources/build'

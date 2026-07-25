@@ -31,6 +31,15 @@ export function isParallelIdentityAppName(appName: string): boolean {
   return PACKAGED_PARALLEL_IDENTITIES.some((identity) => identity.name === appName)
 }
 
+// Why: the packaged build's git branch/commit (from electron-builder.config.cjs
+// extraMetadata), read back from the packaged package.json at runtime.
+export type PackagedBuildMetadata = {
+  branch: string | null
+  commitHash: string | null
+}
+
+const NO_BUILD_METADATA: PackagedBuildMetadata = { branch: null, commitHash: null }
+
 export type DevInstanceIdentity = AppIdentity & {
   appUserModelId: string
   // Why: drives app.setName → the macOS safeStorage Keychain item name
@@ -76,7 +85,8 @@ function createDevAppUserModelId(identityKey: string | null): string {
 export function getDevInstanceIdentity(
   isDev: boolean,
   env: NodeJS.ProcessEnv = process.env,
-  packagedAppName?: string
+  packagedAppName?: string,
+  packagedBuildMetadata: PackagedBuildMetadata = NO_BUILD_METADATA
 ): DevInstanceIdentity {
   if (!isDev) {
     const packagedIdentity = PACKAGED_PARALLEL_IDENTITIES.find(
@@ -92,7 +102,9 @@ export function getDevInstanceIdentity(
         devWorktreeName: null,
         devRepoRoot: null,
         dockBadgeLabel: null,
-        appUserModelId: packagedIdentity.appUserModelId
+        appUserModelId: packagedIdentity.appUserModelId,
+        buildBranch: packagedBuildMetadata.branch,
+        buildCommitHash: packagedBuildMetadata.commitHash
       }
     }
     return {
@@ -104,7 +116,9 @@ export function getDevInstanceIdentity(
       devWorktreeName: null,
       devRepoRoot: null,
       dockBadgeLabel: null,
-      appUserModelId: BASE_APP_USER_MODEL_ID
+      appUserModelId: BASE_APP_USER_MODEL_ID,
+      buildBranch: null,
+      buildCommitHash: null
     }
   }
 
@@ -129,6 +143,8 @@ export function getDevInstanceIdentity(
     devWorktreeName: worktreeName,
     devRepoRoot: repoRoot,
     dockBadgeLabel: null,
-    appUserModelId: createDevAppUserModelId(repoRoot ?? devLabel)
+    appUserModelId: createDevAppUserModelId(repoRoot ?? devLabel),
+    buildBranch: null,
+    buildCommitHash: null
   }
 }

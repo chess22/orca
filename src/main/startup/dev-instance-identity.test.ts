@@ -34,6 +34,24 @@ describe('dev-instance-identity', () => {
     })
   })
 
+  it('surfaces the packaged build branch/commit for a Dev/Test parallel build', () => {
+    const identity = getDevInstanceIdentity(false, {}, 'orca-dev-app', {
+      branch: 'chess22/version-identity',
+      commitHash: 'a1b2c3d4'
+    })
+    expect(identity.buildBranch).toBe('chess22/version-identity')
+    expect(identity.buildCommitHash).toBe('a1b2c3d4')
+  })
+
+  it('never surfaces build branch/commit for the base production identity', () => {
+    const identity = getDevInstanceIdentity(false, {}, undefined, {
+      branch: 'chess22/version-identity',
+      commitHash: 'a1b2c3d4'
+    })
+    expect(identity.buildBranch).toBeNull()
+    expect(identity.buildCommitHash).toBeNull()
+  })
+
   it('classifies only packaged parallel display names', () => {
     expect(isParallelIdentityAppName('Orca Dev')).toBe(true)
     expect(isParallelIdentityAppName('Orca Test')).toBe(true)
