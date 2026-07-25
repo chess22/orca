@@ -31,6 +31,7 @@ import type {
   IPtyProvider,
   PtyBackgroundStreamEvent,
   PtyProviderBufferSnapshot,
+  PtyAttachResult,
   PtyProcessInfo,
   PtySpawnOptions,
   PtySpawnResult
@@ -579,17 +580,35 @@ export class DaemonPtyAdapter implements IPtyProvider {
     return result.exitedBeforeSpawnReply === true
   }
 
-  async attach(id: string): Promise<void> {
+  async attach(id: string): Promise<PtyAttachResult> {
     await this.ensureConnected()
     if (!this.supportsAuthoritativeBufferSnapshots) {
       this.setPtyBackgrounded(id, false)
     }
 
-    await this.client.request<CreateOrAttachResult>('createOrAttach', {
+    const result = await this.client.request<CreateOrAttachResult>('createOrAttach', {
       sessionId: id,
       cols: 80,
       rows: 24
     })
+    const wasAlreadyManaged = this.activeSessionIds.has(id)
+    this.activeSessionIds.add(id)
+    if (this.historyManager) {
+      this.historyManager.registerWriter(id)
+      if (!wasAlreadyManaged) {
+        this.sessionsNeedingFullCheckpoint.add(id)
+        this.lastFullCheckpointAt.delete(id)
+      }
+    }
+    if (!result.snapshot) {
+      return {}
+    }
+    return {
+      snapshot: result.snapshot.rehydrateSequences + result.snapshot.snapshotAnsi,
+      snapshotCols: result.snapshot.cols,
+      snapshotRows: result.snapshot.rows,
+      isAlternateScreen: result.snapshot.modes.alternateScreen
+    }
   }
 
   hasPty(id: string): boolean {

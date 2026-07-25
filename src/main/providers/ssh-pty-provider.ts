@@ -196,8 +196,11 @@ export class SshPtyProvider implements IPtyProvider {
     return await this.agentSessionCapabilities.supportsCreateOperations(options)
   }
 
-  async attach(id: string): Promise<void> {
-    await this.mux.request('pty.attach', { id: this.toRelayPtyId(id) })
+  async attach(id: string): Promise<{ replay?: string }> {
+    const result = (await this.mux.request('pty.attach', {
+      id: this.toRelayPtyId(id)
+    })) as { replay?: string } | undefined
+    return result ?? {}
   }
 
   async attachForReconnect(

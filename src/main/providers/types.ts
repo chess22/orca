@@ -116,6 +116,11 @@ export type PtySpawnOptions = {
 
 export type { PtySpawnResult }
 
+export type PtyAttachResult = Pick<
+  PtySpawnResult,
+  'snapshot' | 'snapshotCols' | 'snapshotRows' | 'isAlternateScreen' | 'replay' | 'coldRestore'
+>
+
 export type PtyProcessInfo = {
   id: string
   incarnationId?: PtyIncarnationId
@@ -140,7 +145,7 @@ export type IPtyProvider = {
   providesAgentSessionOwnerListings?: (ptyId: string) => boolean
   /** Whether fresh structured creates can replay one spawn across a lost relay response. */
   supportsAgentSessionCreateOperations?: (options?: PtyProbeOptions) => boolean | Promise<boolean>
-  attach(id: string): Promise<void>
+  attach(id: string): Promise<PtyAttachResult | void>
   hasPty?: (id: string) => boolean
   write(id: string, data: string): void
   resize(id: string, cols: number, rows: number): void
