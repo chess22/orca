@@ -5176,11 +5176,43 @@ export class OrcaRuntimeService {
       return
     }
     if (this.isTerminalHandleAdoptionBlocked(ptyId, trimmed)) {
+      this.adoptControllerTerminalHandleAlias(ptyId, trimmed)
       return
     }
     // Why: after an app/runtime restart, the live PTY child still has its
     // original ORCA_TERMINAL_HANDLE, but the runtime's in-memory map is gone.
     this.registerPreAllocatedHandleForPty(ptyId, trimmed)
+  }
+
+  private adoptControllerTerminalHandleAlias(ptyId: string, handle: string): void {
+    const existingRecord = this.handles.get(handle)
+    if (existingRecord && existingRecord.ptyId !== ptyId) {
+      return
+    }
+    if (
+      [...this.handleByPtyId].some(
+        ([otherPtyId, value]) => value === handle && otherPtyId !== ptyId
+      )
+    ) {
+      return
+    }
+    const pty = this.ptysById.get(ptyId)
+    if (!pty) {
+      return
+    }
+    const syntheticId = `pty:${ptyId}`
+    // Why: renderer hydration may already expose a new handle for this PTY.
+    // Keep it primary while restoring the daemon-exported old handle as an alias.
+    this.handles.set(handle, {
+      handle,
+      runtimeId: this.runtimeId,
+      rendererGraphEpoch: this.rendererGraphEpoch,
+      worktreeId: pty.worktreeId,
+      tabId: syntheticId,
+      leafId: syntheticId,
+      ptyId,
+      ptyGeneration: 0
+    })
   }
 
   // Why: adoption is best-effort restart recovery and must be first-wins.
@@ -5189,12 +5221,14 @@ export class OrcaRuntimeService {
   // are not trusted to be collision-free — a handle bound to a different
   // pty must never be stolen by a later report.
   private isTerminalHandleAdoptionBlocked(ptyId: string, handle: string): boolean {
-    if (this.handleByPtyId.get(ptyId) ?? this.findHandleForPtyRecord(ptyId)) {
+    const existingPtyHandle = this.handleByPtyId.get(ptyId) ?? this.findHandleForPtyRecord(ptyId)
+    if (existingPtyHandle && existingPtyHandle !== handle) {
       return true
     }
     for (const leaf of this.getLeavesForPty(ptyId)) {
       const issued = this.handleByLeafKey.get(this.getLeafKey(leaf.tabId, leaf.leafId))
-      if (issued && issued !== handle) {
+      const issuedRecord = issued ? this.handles.get(issued) : null
+      if (issued && issued !== handle && issuedRecord?.ptyId !== ptyId) {
         return true
       }
     }
@@ -8679,15 +8713,8 @@ export class OrcaRuntimeService {
     handle: string,
     opts: { cursor?: number; limit?: number } = {}
   ): Promise<RuntimeTerminalRead> {
+    await this.recoverControllerTerminalHandle(handle)
     let pty = this.getLivePtyForHandle(handle)
-    if (!pty && !this.handles.has(handle)) {
-      // Why: a runtime restart loses its handle map; plain read must recover
-      // daemon-owned handles without requiring callers to list terminals first.
-      await this.refreshPtyWorktreeRecordsFromController([
-        ...(await this.getResolvedWorktreeMap()).values()
-      ])
-      pty = this.getLivePtyForHandle(handle)
-    }
     if (pty) {
       if (pty.pty.connected) {
         pty.pty.connected = await this.ensureControllerPtyAttached(pty.pty.ptyId)
@@ -8727,15 +8754,8 @@ export class OrcaRuntimeService {
       suffixFailureError?: string
     } = {}
   ): Promise<RuntimeTerminalSend> {
+    await this.recoverControllerTerminalHandle(handle)
     let pty = this.getLivePtyForHandle(handle)
-    if (!pty && !this.handles.has(handle)) {
-      // Why: send may be the first post-restart operation for a restored CLI
-      // terminal, so it must recover the daemon-owned handle just like read.
-      await this.refreshPtyWorktreeRecordsFromController([
-        ...(await this.getResolvedWorktreeMap()).values()
-      ])
-      pty = this.getLivePtyForHandle(handle)
-    }
     if (pty) {
       if (!pty.pty.connected || !(await this.ensureControllerPtyAttached(pty.pty.ptyId))) {
         throw new Error('terminal_not_writable')
@@ -15841,6 +15861,9 @@ export class OrcaRuntimeService {
         workspace,
         {
           ...baseEnv,
+          // Why: background creates bypass ipc/pty, so stamp the durable handle
+          // here for daemon discovery after the main runtime relaunches.
+          ORCA_TERMINAL_HANDLE: preAllocatedHandle,
           ...(sequencedStartupCommand
             ? { [SETUP_AGENT_SEQUENCE_STARTUP_COMMAND_ENV]: sequencedStartupCommand }
             : {})
@@ -16621,6 +16644,7 @@ export class OrcaRuntimeService {
   }
 
   async focusTerminal(handle: string): Promise<RuntimeTerminalFocus> {
+    await this.recoverControllerTerminalHandle(handle)
     const pty = this.getLivePtyForHandle(handle)
     if (pty) {
       if (!pty.pty.connected) {
@@ -18223,7 +18247,6 @@ export class OrcaRuntimeService {
     const sessions = sessionsResult.value
     const livePtyIds = new Set(sessions.map((session) => session.id))
     for (const session of sessions) {
-      this.adoptControllerTerminalHandle(session.id, session.terminalHandle)
       const worktreeId =
         inferWorktreeIdFromPtyId(session.id) ??
         findResolvedWorktreeIdForPath(resolvedWorktrees, session.cwd)
@@ -18236,6 +18259,7 @@ export class OrcaRuntimeService {
           connected: attached
         })
       }
+      this.adoptControllerTerminalHandle(session.id, session.terminalHandle)
       // Why: fire-and-forget so this listing hot path (listTerminals/getWorktreePs)
       // does not serialize a relay round-trip per session — and a throwing snapshot
       // listener cannot abort the liveness sweep below.
@@ -18277,6 +18301,25 @@ export class OrcaRuntimeService {
       .finally(() => this.controllerAttachPromises.delete(ptyId))
     this.controllerAttachPromises.set(ptyId, pending)
     return pending
+  }
+
+  private async recoverControllerTerminalHandle(handle: string): Promise<void> {
+    const record = this.handles.get(handle)
+    const leaf = record ? this.leaves.get(this.getLeafKey(record.tabId, record.leafId)) : undefined
+    if (
+      this.getLivePtyForHandle(handle) ||
+      (record?.runtimeId === this.runtimeId &&
+        record.rendererGraphEpoch === this.rendererGraphEpoch &&
+        leaf?.ptyId === record.ptyId &&
+        leaf.ptyGeneration === record.ptyGeneration)
+    ) {
+      return
+    }
+    // Why: read, send, and focus may each be the first request after relaunch;
+    // none may require a terminal list to rediscover the daemon-owned handle.
+    await this.refreshPtyWorktreeRecordsFromController([
+      ...(await this.getResolvedWorktreeMap()).values()
+    ])
   }
 
   private pruneDisconnectedPtyTranscript(pty: RuntimePtyWorktreeRecord): void {
@@ -22199,6 +22242,13 @@ export class OrcaRuntimeService {
     resolveWorktreeSelector: (selector) => this.resolveWorktreeSelector(selector),
     getAuthoritativeWindow: () => this.getAuthoritativeWindow(),
     getAvailableAuthoritativeWindow: () => this.getAvailableAuthoritativeWindow(),
+    getPersistedBrowserPageIds: (worktreeId) => {
+      const session = this.store?.getWorkspaceSession?.()
+      const pagesByWorkspace = session?.browserPagesByWorkspace
+      return (session?.browserTabsByWorktree?.[worktreeId] ?? []).flatMap((workspace) =>
+        (pagesByWorkspace?.[workspace.id] ?? []).map((page) => page.id)
+      )
+    },
     getOffscreenBrowserBackend: () => this.offscreenBrowserBackend,
     // Why: bind the method directly rather than re-listing params in a wrapper
     // arrow — a hand-listed wrapper silently dropped targetGroupId before, so a

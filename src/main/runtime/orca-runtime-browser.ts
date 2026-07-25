@@ -143,6 +143,7 @@ export type RuntimeBrowserCommandHost = {
   resolveWorktreeSelector(selector: string): Promise<{ id: string }>
   getAuthoritativeWindow(): BrowserWindow
   getAvailableAuthoritativeWindow(): BrowserWindow | null
+  getPersistedBrowserPageIds?(worktreeId: string): string[]
   // Why: headless serve has no renderer window; browser pages are backed by a
   // main-process offscreen backend instead. Null when offscreen browsing is
   // unavailable (e.g. environment can't support it), which keeps capability
@@ -226,9 +227,23 @@ export class RuntimeBrowserCommands {
     // activation step remains best-effort because missing windows during tests
     // or startup should not erase the validated worktree target itself.
     const bridge = this.host.getAgentBrowserBridge()
-    if (bridge && !this.hasLiveRegisteredBrowserTab(bridge, worktreeId)) {
+    const missingPersistedPageIds = bridge
+      ? (this.host.getPersistedBrowserPageIds?.(worktreeId) ?? []).filter(
+          (pageId) => !this.hasLiveRegisteredBrowserPage(bridge, worktreeId, pageId)
+        )
+      : []
+    if (
+      bridge &&
+      (missingPersistedPageIds.length > 0 || !this.hasLiveRegisteredBrowserTab(bridge, worktreeId))
+    ) {
       try {
-        await this.ensureBrowserWorktreeActive(worktreeId)
+        await (missingPersistedPageIds.length > 0
+          ? Promise.all(
+              missingPersistedPageIds.map((pageId) =>
+                this.ensureBrowserPageActive(worktreeId, pageId)
+              )
+            )
+          : this.ensureBrowserWorktreeActive(worktreeId))
       } catch {
         // Fall through with the validated worktree id so downstream routing
         // still stays scoped to the caller's explicit selector.

@@ -91,6 +91,42 @@ test.describe('Terminal restart CLI reattach', () => {
         })
         .toBe(worktreeId)
 
+      // Why: callers retain the pre-restart handle; read, send, and focus must
+      // each work directly without a terminal.list refresh minting a new handle.
+      let restored: { terminal: TerminalRead } | null = null
+      await expect
+        .poll(
+          async () => {
+            try {
+              restored = await callTerminal<{ terminal: TerminalRead }>(client, 'terminal.read', {
+                terminal: handle
+              })
+              return restored.terminal.status
+            } catch {
+              return 'stale'
+            }
+          },
+          { timeout: 10_000, message: 'Old handle did not recover after runtime startup' }
+        )
+        .toBe('running')
+      if (!restored) {
+        throw new Error('Old handle recovery returned no terminal snapshot')
+      }
+      expect(restored.terminal.status).toBe('running')
+      expect(restored.terminal.tail.some((line) => line.includes(marker))).toBe(true)
+
+      const ping = `PING_${Date.now()}`
+      await callTerminal(client, 'terminal.send', {
+        terminal: handle,
+        text: `echo ${ping}`,
+        enter: true,
+        client: { id: 'e2e-cli', type: 'desktop' }
+      })
+      const focused = await callTerminal<{
+        focus: { handle: string; worktreeId: string }
+      }>(client, 'terminal.focus', { terminal: handle })
+      expect(focused.focus).toMatchObject({ handle, worktreeId: runtimeWorktreeId })
+
       const listed = await callTerminal<{
         terminals: {
           handle: string
@@ -105,12 +141,6 @@ test.describe('Terminal restart CLI reattach', () => {
         throw new Error(`Restored PTY ${ptyId} was absent from terminal.list`)
       }
       const restoredHandle = restoredTerminal.handle
-
-      const restored = await callTerminal<{ terminal: TerminalRead }>(client, 'terminal.read', {
-        terminal: restoredHandle
-      })
-      expect(restored.terminal.status).toBe('running')
-      expect(restored.terminal.tail.some((line) => line.includes(marker))).toBe(true)
 
       await expect
         .poll(
@@ -128,13 +158,6 @@ test.describe('Terminal restart CLI reattach', () => {
         )
         .toBe(true)
 
-      const ping = `PING_${Date.now()}`
-      await callTerminal(client, 'terminal.send', {
-        terminal: restoredHandle,
-        text: `echo ${ping}`,
-        enter: true,
-        client: { id: 'e2e-cli', type: 'desktop' }
-      })
       await expect
         .poll(
           async () => {

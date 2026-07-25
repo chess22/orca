@@ -206,25 +206,29 @@ function acquireBrowserAutomationBootstrapLease(
       detail: { worktreeId: targetWorktreeId }
     })
   )
-  let targetBrowserPageId = browserPageId ?? null
-  if (!targetBrowserPageId) {
+  let targetBrowserPageIds = browserPageId ? [browserPageId] : []
+  if (targetBrowserPageIds.length === 0) {
     const browserTabs = store.browserTabsByWorktree[targetWorktreeId] ?? []
-    const activeWorkspaceId = store.activeBrowserTabIdByWorktree[targetWorktreeId] ?? null
-    const workspace =
-      browserTabs.find((tab) => tab.id === activeWorkspaceId) ?? browserTabs[0] ?? null
-    targetBrowserPageId =
-      workspace?.activePageId ?? workspace?.pageIds?.[0] ?? workspace?.id ?? null
+    targetBrowserPageIds = browserTabs.flatMap((workspace) => {
+      const persistedPages = store.browserPagesByWorkspace[workspace.id] ?? []
+      if (persistedPages.length > 0) {
+        return persistedPages.map((page) => page.id)
+      }
+      return workspace.pageIds?.length
+        ? workspace.pageIds
+        : [workspace.activePageId ?? workspace.id]
+    })
   }
-  if (!targetBrowserPageId) {
-    return
-  }
-
-  releaseBrowserAutomationBootstrapLease(targetBrowserPageId)
-  const token = acquireBrowserAutomationVisibility(targetBrowserPageId)
-  const timer = window.setTimeout(() => {
+  // Why: an inactive worktree can persist several browser workspaces, and each
+  // page needs visibility long enough to recreate and register its own guest.
+  for (const targetBrowserPageId of new Set(targetBrowserPageIds)) {
     releaseBrowserAutomationBootstrapLease(targetBrowserPageId)
-  }, BROWSER_AUTOMATION_BOOTSTRAP_LEASE_MS)
-  browserAutomationBootstrapLeaseByPageId.set(targetBrowserPageId, { token, timer })
+    const token = acquireBrowserAutomationVisibility(targetBrowserPageId)
+    const timer = window.setTimeout(() => {
+      releaseBrowserAutomationBootstrapLease(targetBrowserPageId)
+    }, BROWSER_AUTOMATION_BOOTSTRAP_LEASE_MS)
+    browserAutomationBootstrapLeaseByPageId.set(targetBrowserPageId, { token, timer })
+  }
 }
 
 export { resolveZoomTarget } from './resolve-zoom-target'
