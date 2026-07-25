@@ -77,9 +77,9 @@ export class DaemonPtyRouter implements IPtyProvider {
     return adapter.supportsGitCredentialGuardHost()
   }
 
-  supportsAgentSessionClaims(): boolean {
-    // Why: a legacy daemon may still own a resumable PTY, so authority requires every route.
-    return this.allAdapters().every((adapter) => adapter.supportsAgentSessionClaims())
+  supportsAgentSessionClaims(options: { signal?: AbortSignal; ptyId?: string } = {}): boolean {
+    const adapter = options.ptyId ? this.adapterFor(options.ptyId) : this.current
+    return adapter.supportsAgentSessionClaims()
   }
 
   providesAgentSessionOwnerListings(ptyId: string): boolean {

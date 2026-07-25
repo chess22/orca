@@ -128,13 +128,13 @@ export type PtyProcessInfo = {
   agentSessionOwners?: AgentSessionOwnerBinding[]
 }
 
-type PtyProbeOptions = { signal?: AbortSignal }
+type PtyProbeOptions = { signal?: AbortSignal; ptyId?: string }
 
 export type IPtyProvider = {
   spawn(opts: PtySpawnOptions): Promise<PtySpawnResult>
   /** Whether this spawn target can append the Git guard after its final env merge. */
   supportsGitCredentialGuardHost?: (sessionId?: string) => boolean
-  /** Explicit false selects pre-claim legacy spawn for a preserved old daemon. */
+  /** Explicit false selects pre-claim legacy spawn for the targeted PTY route. */
   supportsAgentSessionClaims?: (options?: PtyProbeOptions) => boolean | Promise<boolean>
   /** Whether missing claim metadata in this PTY's process listing proves absence. */
   providesAgentSessionOwnerListings?: (ptyId: string) => boolean

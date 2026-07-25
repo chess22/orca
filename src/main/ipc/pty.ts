@@ -3290,7 +3290,9 @@ export function registerPtyHandlers(
       }
       if (
         args.agentSessionEnsure &&
-        (await (provider as IPtyProvider).supportsAgentSessionClaims?.()) === false
+        (await (provider as IPtyProvider).supportsAgentSessionClaims?.({
+          ptyId: effectiveSessionAppId ?? sessionId
+        })) === false
       ) {
         // Why: runtime routing must select legacy before dispatch; never downgrade here after it began.
         throw new Error('agent_session_claim_unavailable')

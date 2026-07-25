@@ -672,9 +672,11 @@ describe('registerPtyHandlers', () => {
     livePtyIds?: ReadonlySet<string>
     spawn?: ReturnType<typeof vi.fn>
     authoritativeOwnerListings?: boolean
+    supportsAgentSessionClaims?: (options?: { ptyId?: string }) => boolean
   }) {
     return {
       spawn: args.spawn ?? vi.fn(async () => ({ id: 'unexpected-spawn' })),
+      supportsAgentSessionClaims: args.supportsAgentSessionClaims,
       write: vi.fn(),
       resize: vi.fn(),
       shutdown: vi.fn(),
@@ -1036,6 +1038,55 @@ describe('registerPtyHandlers', () => {
     expect(isCurrentPtyExit({ id: owner.ptyId })).toBe(false)
     expect(isCurrentPtyExit({ id: owner.ptyId, incarnationId: 'incarnation-old' })).toBe(false)
     expect(isCurrentPtyExit({ id: owner.ptyId, incarnationId: 'incarnation-recovered' })).toBe(true)
+    expect(provider.spawn).not.toHaveBeenCalled()
+    clearProviderPtyState(owner.ptyId)
+  })
+
+  it('scopes claimed ensure admission to the selected daemon session route', async () => {
+    const owner: AgentSessionOwnerBinding = {
+      claim: recoveredAgentClaim,
+      generation: 'generation-current-route',
+      phase: 'live',
+      ptyId: 'current-session',
+      surface: recoveredAgentSurface
+    }
+    const supportsAgentSessionClaims = vi.fn(
+      (options?: { ptyId?: string }) => options?.ptyId !== 'legacy-session'
+    )
+    const provider = createAgentClaimProvider({
+      sessions: [
+        {
+          id: owner.ptyId,
+          incarnationId: 'incarnation-current-route',
+          cwd: '/tmp/recovered-worktree',
+          title: 'Codex',
+          agentSessionOwners: [owner]
+        }
+      ],
+      livePtyIds: new Set([owner.ptyId]),
+      supportsAgentSessionClaims
+    })
+    setLocalPtyProvider(provider as never)
+    const controller = registerAgentClaimController()
+    const request = {
+      cols: 80,
+      rows: 24,
+      cwd: '/tmp/recovered-worktree',
+      agentSessionEnsure: { claim: recoveredAgentClaim, surface: recoveredAgentSurface }
+    }
+
+    await expect(controller.spawn({ ...request, sessionId: 'legacy-session' })).rejects.toThrow(
+      'agent_session_claim_unavailable'
+    )
+    await expect(controller.spawn({ ...request, sessionId: owner.ptyId })).resolves.toMatchObject({
+      id: owner.ptyId,
+      agentSessionEnsure: { disposition: 'adopted', owner }
+    })
+
+    expect(supportsAgentSessionClaims).toHaveBeenNthCalledWith(1, {
+      ptyId: 'legacy-session'
+    })
+    expect(supportsAgentSessionClaims).toHaveBeenNthCalledWith(2, { ptyId: owner.ptyId })
     expect(provider.spawn).not.toHaveBeenCalled()
     clearProviderPtyState(owner.ptyId)
   })

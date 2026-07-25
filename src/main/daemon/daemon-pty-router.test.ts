@@ -141,7 +141,7 @@ function createAdapter(
 }
 
 describe('DaemonPtyRouter', () => {
-  it('reports separate conservative resume and fresh-create boundaries', () => {
+  it('scopes claim support to each daemon route while keeping fresh-create support current', async () => {
     const current = createAdapter(
       'current',
       [],
@@ -150,14 +150,18 @@ describe('DaemonPtyRouter', () => {
     )
     const legacy = createAdapter(
       'legacy',
-      [],
+      ['legacy-session'],
       undefined,
       AGENT_SESSION_CREATE_OPERATION_DAEMON_PROTOCOL_VERSION - 1
     )
     const mixed = new DaemonPtyRouter({ current, legacy: [legacy] })
     const old = new DaemonPtyRouter({ current: legacy, legacy: [] })
+    await mixed.discoverLegacySessions()
+    const created = await mixed.spawn({ cols: 80, rows: 24 })
 
-    expect(mixed.supportsAgentSessionClaims()).toBe(false)
+    expect(mixed.supportsAgentSessionClaims()).toBe(true)
+    expect(mixed.supportsAgentSessionClaims({ ptyId: created.id })).toBe(true)
+    expect(mixed.supportsAgentSessionClaims({ ptyId: 'legacy-session' })).toBe(false)
     expect(mixed.supportsAgentSessionCreateOperations()).toBe(true)
     expect(old.supportsAgentSessionClaims()).toBe(false)
     expect(old.supportsAgentSessionCreateOperations()).toBe(false)

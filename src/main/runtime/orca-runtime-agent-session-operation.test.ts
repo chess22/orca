@@ -36,7 +36,7 @@ function terminal() {
 }
 
 function createRuntime(provider?: {
-  supportsAgentSessionClaims?: () => boolean
+  supportsAgentSessionClaims?: (options?: { signal?: AbortSignal; ptyId?: string }) => boolean
   supportsAgentSessionCreateOperations?: () => boolean
 }) {
   const runtime = new OrcaRuntimeService(
@@ -67,6 +67,26 @@ function createRuntime(provider?: {
 }
 
 describe('agent-session create operation ledger', () => {
+  it('keeps structured ensure enabled when the current route supports claims', async () => {
+    const supportsAgentSessionClaims = vi.fn(
+      (options?: { ptyId?: string }) => options?.ptyId !== 'legacy-session'
+    )
+    const runtime = createRuntime({ supportsAgentSessionClaims })
+    const createTerminal = vi.spyOn(runtime, 'createTerminal').mockResolvedValue(terminal())
+
+    await expect(
+      runtime.ensureAgentSession({
+        kind: 'explicit',
+        worktree: 'id:worktree-1',
+        agent: 'codex',
+        providerSession: { key: 'session_id', id: 'provider-session-1' }
+      })
+    ).resolves.toMatchObject({ disposition: 'created' })
+
+    expect(supportsAgentSessionClaims).toHaveBeenCalledWith({ signal: undefined })
+    expect(createTerminal).toHaveBeenCalledOnce()
+  })
+
   it('selects legacy before trust, spawn, or ledger state for an old daemon', async () => {
     const provider = {
       supportsAgentSessionClaims: vi.fn(() => false),
