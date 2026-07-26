@@ -174,6 +174,32 @@ describe('RuntimeBrowserCommands browser screencast', () => {
     expect(bridge.tabList).toHaveBeenCalledWith('wt-1')
   })
 
+  it('hydrates every missing persisted page when another worktree page is already live', async () => {
+    const { RuntimeBrowserCommands } = await import('./orca-runtime-browser')
+    webContentsFromIdMock.mockReturnValue({ isDestroyed: () => false })
+    const send = vi.fn()
+    const bridge = {
+      getRegisteredTabs: vi.fn(() => new Map([['page-live', 101]])),
+      tabList: vi.fn(() => ({ tabs: [] }))
+    } as unknown as AgentBrowserBridge
+    const commands = new RuntimeBrowserCommands(
+      createHost({
+        getAgentBrowserBridge: () => bridge,
+        getPersistedBrowserPageIds: () => ['page-live', 'page-missing'],
+        getAuthoritativeWindow: vi.fn(() => ({ webContents: { send } }) as never)
+      })
+    )
+
+    await commands.browserTabList({ worktree: 'id:wt-1' })
+
+    expect(send).toHaveBeenCalledWith('browser:activateView', {
+      worktreeId: 'wt-1',
+      browserPageId: 'page-missing'
+    })
+    expect(waitForTabRegistrationMock).toHaveBeenCalledWith('page-missing')
+    expect(bridge.tabList).toHaveBeenCalledWith('wt-1')
+  })
+
   it('waits for any browser registration after requesting a hidden mount without worktree scope', async () => {
     const { RuntimeBrowserCommands } = await import('./orca-runtime-browser')
     const send = vi.fn()

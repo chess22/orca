@@ -1,26 +1,10 @@
 import type { IDisposable, IParser, Terminal } from '@xterm/xterm'
-import {
-  sendTerminalOscColorQueryReplies as sendTerminalOscColorQueryRepliesForColors,
-  terminalOscColorQueryReplies,
-  terminalOscColorQuerySlotsForBody,
-  type TerminalOscColorQuerySlot
-} from '../../../../shared/terminal-osc-color-reply'
-import { guardParserHandler } from './terminal-parser-handler-guard'
-
-export const DEFAULT_DA1_RESPONSE = '\x1b[?1;2c'
-export const CONPTY_DA1_RESPONSE = '\x1b[?61;4c'
-
-type TerminalCapabilityRepliesDeps = {
-  terminal: Pick<Terminal, 'cols' | 'rows' | 'element' | 'options'>
-  parser: Pick<IParser, 'registerCsiHandler' | 'registerOscHandler'>
-  sendInput: (data: string) => boolean | void
-  isReplaying: () => boolean
-  da1Response?: string
-}
-
-function isPrimaryDeviceAttributesQuery(params: (number | number[])[]): boolean {
-  return params.length === 0 || (params.length === 1 && params[0] === 0)
-}
+export {
+  DEFAULT_DA1_RESPONSE,
+  CONPTY_DA1_RESPONSE,
+  sendTerminalOscColorQueryReplies,
+  installTerminalCapabilityReplyHandlers
+} from '../../../../shared/terminal-capability-replies'
 
 function getTerminalScreenElement(
   terminal: Pick<Terminal, 'element'>
@@ -45,35 +29,6 @@ function measureCellPixels(
     width: Math.max(1, Math.round(rect.width / terminal.cols)),
     height: Math.max(1, Math.round(rect.height / terminal.rows))
   }
-}
-
-function disposeAll(disposables: IDisposable[]): void {
-  for (const disposable of disposables) {
-    disposable.dispose()
-  }
-}
-
-export function sendTerminalOscColorQueryReplies(
-  data: string,
-  terminal: Pick<Terminal, 'options'>,
-  sendInput: (data: string) => boolean | void
-): boolean {
-  return sendTerminalOscColorQueryRepliesForColors(data, terminal.options.theme ?? {}, sendInput)
-}
-
-function sendTerminalOscColorQueryRepliesForSlots(
-  slots: readonly TerminalOscColorQuerySlot[],
-  terminal: Pick<Terminal, 'options'>,
-  sendInput: (data: string) => boolean | void
-): boolean {
-  const replies = terminalOscColorQueryReplies(terminal.options.theme ?? {}, slots)
-  if (!replies) {
-    return false
-  }
-  for (const reply of replies) {
-    sendInput(reply)
-  }
-  return true
 }
 
 export function createTerminalPixelSizeQueryResponder(
@@ -115,53 +70,7 @@ export function createTerminalPixelSizeQueryResponder(
   }
 }
 
-export function installTerminalCapabilityReplyHandlers(
-  deps: TerminalCapabilityRepliesDeps
-): IDisposable {
-  const disposables = [
-    deps.parser.registerCsiHandler(
-      { final: 'c' },
-      guardParserHandler('csi-da1', (params) => {
-        if (!isPrimaryDeviceAttributesQuery(params)) {
-          return false
-        }
-        // Why: restored scrollback may contain old DA1 queries; answering those
-        // into the fresh shell recreates the stray-input leak this handler fixes.
-        if (!deps.isReplaying()) {
-          deps.sendInput(deps.da1Response ?? DEFAULT_DA1_RESPONSE)
-        }
-        return true
-      })
-    ),
-    deps.parser.registerOscHandler(
-      10,
-      guardParserHandler('osc-10-color-query', (data) => {
-        const slots = terminalOscColorQuerySlotsForBody(10, data.trim())
-        if (!slots) {
-          return false
-        }
-        if (deps.isReplaying()) {
-          return true
-        }
-        return sendTerminalOscColorQueryRepliesForSlots(slots, deps.terminal, deps.sendInput)
-      })
-    ),
-    deps.parser.registerOscHandler(
-      11,
-      guardParserHandler('osc-11-color-query', (data) => {
-        const slots = terminalOscColorQuerySlotsForBody(11, data.trim())
-        if (!slots) {
-          return false
-        }
-        if (deps.isReplaying()) {
-          return true
-        }
-        return sendTerminalOscColorQueryRepliesForSlots(slots, deps.terminal, deps.sendInput)
-      })
-    )
-  ]
-
-  return {
-    dispose: () => disposeAll(disposables)
-  }
-}
+// Why: kept for the file's original call-site type — installTerminalCapabilityReplyHandlers
+// (re-exported above) accepts the narrower shared CapabilityReplyParser/Terminal shapes,
+// but callers in this directory still pass real xterm.js IParser/Terminal instances.
+export type { IDisposable, IParser, Terminal }
