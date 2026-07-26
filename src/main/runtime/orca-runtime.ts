@@ -6098,11 +6098,36 @@ export class OrcaRuntimeService {
     if (!shouldFallbackToVisibleTerminalSnapshot(read, opts)) {
       return read
     }
-    const lines = await this.readRendererVisibleSnapshotLines(ptyId)
+    const rendererLines = await this.readRendererVisibleSnapshotLines(ptyId)
+    // Why: a daemon PTY with no renderer pane ever mounted for it (CLI-only
+    // terminals, or a pane a just-restarted window hasn't remounted yet) has
+    // no renderer serializer to ask, so readRendererVisibleSnapshotLines is
+    // always empty for it. The main process keeps its own headless emulator
+    // mirror alive for every pty (trackHeadlessTerminalData in onPtyData) —
+    // fall back to reading that directly rather than leaving an alt-screen
+    // TUI's reply permanently invisible to terminal.read.
+    const lines =
+      rendererLines.length > 0 ? rendererLines : await this.readHeadlessTerminalVisibleLines(ptyId)
     if (lines.length === 0) {
       return read
     }
     return buildVisibleSnapshotReadFallback(read, lines, opts.limit)
+  }
+
+  private async readHeadlessTerminalVisibleLines(ptyId: string): Promise<string[]> {
+    const state = this.headlessTerminals.get(ptyId)
+    if (!state) {
+      return []
+    }
+    try {
+      await state.writeChain
+      return state.emulator
+        .getVisibleLines()
+        .map((line) => line.trimEnd())
+        .filter((line) => line.trim().length > 0)
+    } catch {
+      return []
+    }
   }
 
   private async readRendererVisibleSnapshotLines(ptyId: string): Promise<string[]> {
@@ -23918,8 +23943,14 @@ function shouldFallbackToVisibleTerminalSnapshot(
   if (typeof opts.cursor === 'number') {
     return false
   }
+  // Why: a reattached alt-screen TUI (Claude Code, vim, etc.) redraws via
+  // absolute cursor positioning, not newlines — the line-based tail buffer
+  // can stay genuinely empty (not just blank-padded) even though the daemon
+  // has real, non-empty screen content. Treat "nothing captured at all" the
+  // same as "substantial blank tail": both need the snapshot fallback, or a
+  // freshly reattached TUI's reply is permanently invisible to terminal.read.
   if (read.tail.length === 0) {
-    return false
+    return true
   }
   const hasSubstantialBlankTail =
     read.limited === true || read.truncated || read.tail.length >= DEFAULT_TERMINAL_READ_LIMIT

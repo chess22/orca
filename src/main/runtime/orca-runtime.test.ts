@@ -9928,6 +9928,39 @@ describe('OrcaRuntimeService', () => {
     })
   })
 
+  it('falls back to the headless emulator mirror when no renderer pane is mounted', async () => {
+    // Why: chess22/orca#12 — a CLI-created terminal, or any pane a just
+    // restarted window hasn't remounted yet, has no renderer serializer.
+    // An alt-screen TUI redraws via absolute cursor positioning (no
+    // newlines), so the line-based tail buffer stays genuinely empty even
+    // though the daemon has real screen content — terminal.read must still
+    // surface it via the main process's own headless emulator mirror.
+    const serializeBuffer = vi.fn()
+    const runtime = new OrcaRuntimeService(store)
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      hasRendererSerializer: () => false,
+      serializeBuffer
+    })
+    syncSinglePty(runtime)
+
+    const [terminal] = (await runtime.listTerminals()).terminals
+    runtime.onPtyData(
+      'pty-1',
+      '\x1b[?1049h\x1b[H\x1b[2JClaude Code\x1b[2;1HWorking on fix\x1b[3;1HTool: Read',
+      100
+    )
+
+    const read = await runtime.readTerminal(terminal.handle)
+
+    expect(read.tail.join('\n')).toContain('Claude Code')
+    expect(read.tail.join('\n')).toContain('Working on fix')
+    expect(read.tail.join('\n')).toContain('Tool: Read')
+    expect(serializeBuffer).not.toHaveBeenCalled()
+  })
+
   it('returns renderer visible screen lines through terminal.read RPC JSON result', async () => {
     const serializeBuffer = vi.fn().mockResolvedValue({
       data: '\x1b[?1049hClaude Code\r\nChecking files\r\nWaiting for input\r\n',

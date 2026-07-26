@@ -103,6 +103,7 @@ import {
   moveStartupTerminalColorQueryReplies,
   registerStartupTerminalColorQueryReplies
 } from './terminal-startup-color-query-replies'
+import { HeadlessCapabilityQueryResponder } from '../pty/headless-capability-query-responder'
 import {
   assertFolderWorkspacePathUsable,
   getFolderWorkspacePathStatus
@@ -213,6 +214,18 @@ const ptyPendingGenByPtyId = new Map<string, number>()
 // Populated on settlePaneSerializer (renderer has registered for this ptyId)
 // and cleared on PTY teardown.
 const rendererSerializerByPtyId = new Set<string>()
+// Why: a daemon PTY with no renderer pane ever mounted for it (CLI-only
+// terminals, or any pane a just-restarted window hasn't remounted yet) has no
+// renderer-side xterm to answer DA1/DSR/OSC capability queries — see
+// headless-capability-query-responder.ts. Feeding it a shadow copy of the
+// same bytes lets it answer those on the renderer's behalf until one attaches.
+const headlessCapabilityQueryResponder = new HeadlessCapabilityQueryResponder((ptyId, data) => {
+  try {
+    getProviderForPty(ptyId).write(ptyId, data)
+  } catch {
+    // Best-effort: a provider lookup failure here must not crash data delivery.
+  }
+})
 
 function parseValidPaneKey(paneKey: unknown): ReturnType<typeof parsePaneKey> {
   if (typeof paneKey !== 'string' || paneKey.length > 256) {
@@ -1827,6 +1840,9 @@ export function registerPtyHandlers(
       const outputSeq = isLocalProvider
         ? runtime?.getPtyOutputSequence(payload.id)
         : runtime?.onPtyData(payload.id, payload.data, Date.now())
+      if (!isLocalProvider && !rendererSerializerByPtyId.has(payload.id)) {
+        headlessCapabilityQueryResponder.feed(payload.id, payload.data, { cols: 80, rows: 24 })
+      }
       const rendererData = answerStartupTerminalColorQueriesForPty(payload.id, payload.data)
       const preservesSeq = rendererData === payload.data
       const startSeq = preservesSeq ? getChunkStartSeq(outputSeq, payload.data) : undefined
@@ -1897,6 +1913,7 @@ export function registerPtyHandlers(
       }
     })
     localExitUnsub = localProvider.onExit((payload) => {
+      headlessCapabilityQueryResponder.dispose(payload.id)
       if (consumeSyntheticKillExit(payload.id)) {
         return
       }
@@ -3816,6 +3833,10 @@ export function registerPtyHandlers(
       const ptyId = paneKeyPtyId.get(args.paneKey)
       if (ptyId) {
         rendererSerializerByPtyId.add(ptyId)
+        // Why: a live renderer is now the authoritative query responder for
+        // this ptyId — free the fallback's headless terminal instead of
+        // feeding it bytes nobody reads anymore.
+        headlessCapabilityQueryResponder.dispose(ptyId)
       }
     }
   )
