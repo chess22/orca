@@ -111,6 +111,7 @@ import { maybeRedirectPackagedCliEntryLaunch } from './startup/packaged-cli-entr
 import { startFirstWindowStartupServices } from './startup/first-window-startup-services'
 import { createWslCliReconciliationStartupBarrier } from './startup/wsl-cli-reconciliation-startup-barrier'
 import { getDevInstanceIdentity } from './startup/dev-instance-identity'
+import { getPackagedBuildMetadata } from './startup/packaged-build-metadata'
 import { hydrateShellPath, mergePathSegments } from './startup/hydrate-shell-path'
 import {
   acquireSingleInstanceLock,
@@ -470,8 +471,16 @@ function maybeAutoRenameBranchOnFirstWorkFromHook(event: {
 }
 
 // Why: before app.setName(), the bundled package name is the only signal that
-// distinguishes packaged Orca, Orca Dev, and Orca Test identities.
-const devInstanceIdentity = getDevInstanceIdentity(is.dev, process.env, app.getName())
+// distinguishes packaged Orca, Orca Dev, and Orca Test identities. Capture
+// buildBranch/buildCommitHash here too — app:getIdentity must reuse this
+// object rather than recomputing from app.getName() later, since setName()
+// below overwrites the packaged-app-name signal this match depends on.
+const devInstanceIdentity = getDevInstanceIdentity(
+  is.dev,
+  process.env,
+  app.getName(),
+  getPackagedBuildMetadata(app.getAppPath(), app.isPackaged)
+)
 const devAgentHookEndpointNamespace = devInstanceIdentity.isDev
   ? devInstanceIdentity.appUserModelId
   : undefined
@@ -1188,7 +1197,8 @@ function openOrcaWindow(): BrowserWindow {
         await preserveAgentAuthBeforeRestart({ codexRuntimeHome, claudeRuntimeAuth, store })
       },
       onOrcaProfileAuthMutation: () => desktopRelayService?.authMutated(),
-      onBeforeOrcaProfileSignOut: () => desktopRelayService?.fenceAndCloseNow()
+      onBeforeOrcaProfileSignOut: () => desktopRelayService?.fenceAndCloseNow(),
+      identity: devInstanceIdentity
     }
   )
   // Why: automations dispatch through a single renderer; keep them bound to

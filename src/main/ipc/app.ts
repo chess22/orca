@@ -35,6 +35,10 @@ const MAC_SELECTED_INPUT_SOURCES_JSON_COMMAND = [
 
 type RegisterAppHandlersOptions = {
   onBeforeRelaunch?: () => void | Promise<void>
+  // Why: must be resolved before app.setName() runs (see index.ts) — recomputing
+  // from app.getName() here would see the already-renamed value and fail the
+  // packaged-parallel-identity match, silently dropping buildBranch/buildCommitHash.
+  identity?: AppIdentity
 }
 
 async function pickFloatingMarkdownDocument(
@@ -247,9 +251,12 @@ export function registerAppHandlers(store: Store, options: RegisterAppHandlersOp
   ipcMain.handle('app:getFeatureWallAssetBaseUrl', (): string => getFeatureWallAssetBaseUrl())
 
   ipcMain.handle('app:getIdentity', (): AppIdentity => {
-    // Why: is.dev alone can't tell Orca Dev/Test apart from production Orca;
-    // app.getName() carries that (see the devInstanceIdentity computation in
-    // index.ts), and the packaged build's branch/commit rides along with it.
+    // Why: options.identity (resolved in index.ts before app.setName() runs) is
+    // authoritative. Recomputing from app.getName() here would see the
+    // already-renamed value and fail the packaged-parallel-identity match.
+    if (options.identity) {
+      return options.identity
+    }
     const buildMetadata = getPackagedBuildMetadata(app.getAppPath(), app.isPackaged)
     const identity = getDevInstanceIdentity(is.dev, process.env, app.getName(), buildMetadata)
     return {

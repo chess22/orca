@@ -1,4 +1,5 @@
 import { app } from 'electron'
+import type { AppIdentity } from '../../shared/app-identity'
 import { registerAppHandlers } from './app'
 import { registerCliHandlers } from './cli'
 import { registerPreflightHandlers } from './preflight'
@@ -96,6 +97,7 @@ type CoreHandlerLifecycleOptions = {
   prepareAiVaultSessionResume?: (
     args: AiVaultPrepareSessionResumeArgs
   ) => Promise<AiVaultPrepareSessionResumeResult>
+  identity?: AppIdentity
 }
 
 export function registerCoreHandlers(
@@ -129,7 +131,10 @@ export function registerCoreHandlers(
   }
   registered = true
 
-  registerAppHandlers(store, { onBeforeRelaunch: lifecycleOptions.onBeforeRelaunch })
+  registerAppHandlers(store, {
+    onBeforeRelaunch: lifecycleOptions.onBeforeRelaunch,
+    identity: lifecycleOptions.identity
+  })
   registerCliHandlers()
   registerPreflightHandlers()
   registerClaudeUsageHandlers(claudeUsage)
