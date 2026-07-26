@@ -3,7 +3,8 @@
    indirection — every method is a 1:1 forwarder to a relay RPC plus a
    small amount of param plumbing. */
 import type { SshChannelMultiplexer } from '../ssh/ssh-channel-multiplexer'
-import type { GitProviderStatusOptions, IGitProvider } from './types'
+import type { GitProviderStatusOptions } from './git-provider-status-options'
+import type { IGitProvider } from './git-provider-contract'
 import type {
   GitStatusResult,
   GitDiffResult,

@@ -1011,6 +1011,7 @@ describe('useIpcEvents browser tab create routing', () => {
           onToggleStatusBar: () => () => {},
           onFullscreenChanged: () => () => {},
           onTerminalZoom: () => () => {},
+          onResizeTerminalPane: () => () => {},
           getZoomLevel: () => 0,
           set: vi.fn()
         },
@@ -1235,6 +1236,7 @@ describe('useIpcEvents updater integration', () => {
           onToggleStatusBar: () => () => {},
           onFullscreenChanged: () => () => {},
           onTerminalZoom: () => () => {},
+          onResizeTerminalPane: () => () => {},
           getZoomLevel: () => 0,
           set: vi.fn()
         },
@@ -1605,6 +1607,7 @@ describe('useIpcEvents updater integration', () => {
           onToggleStatusBar: () => () => {},
           onFullscreenChanged: () => () => {},
           onTerminalZoom: () => () => {},
+          onResizeTerminalPane: () => () => {},
           getZoomLevel: () => 0,
           set: vi.fn()
         },
@@ -2109,6 +2112,7 @@ describe('useIpcEvents updater integration', () => {
           onToggleStatusBar: () => () => {},
           onFullscreenChanged: () => () => {},
           onTerminalZoom: () => () => {},
+          onResizeTerminalPane: () => () => {},
           getZoomLevel: () => 0,
           set: vi.fn()
         },
@@ -3025,6 +3029,7 @@ describe('useIpcEvents browser tab close routing', () => {
           onToggleStatusBar: () => () => {},
           onFullscreenChanged: () => () => {},
           onTerminalZoom: () => () => {},
+          onResizeTerminalPane: () => () => {},
           getZoomLevel: () => 0,
           set: vi.fn()
         },
@@ -3564,6 +3569,7 @@ describe('useIpcEvents browser tab close routing', () => {
           onToggleStatusBar: () => () => {},
           onFullscreenChanged: () => () => {},
           onTerminalZoom: () => () => {},
+          onResizeTerminalPane: () => () => {},
           getZoomLevel: () => 0,
           set: vi.fn()
         },
@@ -3783,6 +3789,7 @@ describe('useIpcEvents browser tab close routing', () => {
           onToggleStatusBar: () => () => {},
           onFullscreenChanged: () => () => {},
           onTerminalZoom: () => () => {},
+          onResizeTerminalPane: () => () => {},
           getZoomLevel: () => 0,
           set: vi.fn()
         },
@@ -3997,6 +4004,7 @@ describe('useIpcEvents browser tab close routing', () => {
           onToggleStatusBar: () => () => {},
           onFullscreenChanged: () => () => {},
           onTerminalZoom: () => () => {},
+          onResizeTerminalPane: () => () => {},
           getZoomLevel: () => 0,
           set: vi.fn()
         },
@@ -4229,6 +4237,7 @@ describe('useIpcEvents CLI-created worktree activation', () => {
           onToggleStatusBar: () => () => {},
           onFullscreenChanged: () => () => {},
           onTerminalZoom: () => () => {},
+          onResizeTerminalPane: () => () => {},
           getZoomLevel: () => 0,
           set: vi.fn()
         },
@@ -4488,6 +4497,7 @@ describe('useIpcEvents CLI-created worktree activation', () => {
           onToggleStatusBar: () => () => {},
           onFullscreenChanged: () => () => {},
           onTerminalZoom: () => () => {},
+          onResizeTerminalPane: () => () => {},
           getZoomLevel: () => 0,
           set: vi.fn()
         },
@@ -4749,6 +4759,7 @@ describe('useIpcEvents agent status snapshot integration', () => {
           onToggleStatusBar: () => () => {},
           onFullscreenChanged: () => () => {},
           onTerminalZoom: () => () => {},
+          onResizeTerminalPane: () => () => {},
           getZoomLevel: () => 0,
           set: vi.fn()
         },

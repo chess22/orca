@@ -1,4 +1,4 @@
-import type { IGitProvider } from '../providers/types'
+import type { IGitProvider } from '../providers/git-provider-contract'
 import { isFolderRepo } from '../../shared/repo-kind'
 import type { Repo, Worktree } from '../../shared/types'
 import {

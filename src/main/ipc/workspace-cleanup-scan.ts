@@ -1,7 +1,7 @@
 import type { Store } from '../persistence'
 import { listRepoWorktrees, createFolderWorktree } from '../repo-worktrees'
 import { getSshGitProvider } from '../providers/ssh-git-dispatch'
-import type { IGitProvider } from '../providers/types'
+import type { IGitProvider } from '../providers/git-provider-contract'
 import { isFolderRepo } from '../../shared/repo-kind'
 import type { GitWorktreeInfo, Repo, Worktree } from '../../shared/types'
 import { mergeWorktree } from './worktree-logic'

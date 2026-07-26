@@ -1,6 +1,6 @@
 import { getStatus } from '../git/status'
 import { gitExecFileAsync } from '../git/runner'
-import type { IGitProvider } from '../providers/types'
+import type { IGitProvider } from '../providers/git-provider-contract'
 import type { GitStatusResult, Repo, Worktree } from '../../shared/types'
 import type { WorkspaceCleanupBlocker } from '../../shared/workspace-cleanup'
 import {
