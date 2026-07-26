@@ -38,6 +38,10 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
   }
 
   const [appVersion, setAppVersion] = useState<string | null>(null)
+  const [buildIdentity, setBuildIdentity] = useState<{
+    branch: string | null
+    commitHash: string | null
+  } | null>(null)
   const updateCheckHint = getUpdateCheckHint()
 
   useEffect(() => {
@@ -45,6 +49,14 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
     void window.api.updater.getVersion().then((version) => {
       if (!cancelled) {
         setAppVersion(version)
+      }
+    })
+    // Why: only a packaged Orca Dev/Test build carries buildBranch/
+    // buildCommitHash — production Orca and interactive `pnpm dev` resolve
+    // both to null, so this row stays hidden for them.
+    void window.api.app.getIdentity().then((identity) => {
+      if (!cancelled && (identity.buildBranch || identity.buildCommitHash)) {
+        setBuildIdentity({ branch: identity.buildBranch, commitHash: identity.buildCommitHash })
       }
     })
     return () => {
@@ -60,6 +72,25 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
     void window.api.updater.quitAndInstall().catch(console.error)
   }
 
+  const versionDescription = translate(
+    'auto.components.settings.GeneralUpdateSettingsSection.d91ebfb87e',
+    'Current version: {{value0}}',
+    { value0: appVersion ?? '...' }
+  )
+  const buildDescription = buildIdentity
+    ? buildIdentity.branch
+      ? translate(
+          'auto.components.settings.GeneralUpdateSettingsSection.89e404da94',
+          'Build: {{value0}} @ {{value1}}',
+          { value0: buildIdentity.branch, value1: buildIdentity.commitHash ?? '' }
+        )
+      : translate(
+          'auto.components.settings.GeneralUpdateSettingsSection.3f23e49732',
+          'Build: {{value0}}',
+          { value0: buildIdentity.commitHash }
+        )
+    : null
+
   return (
     <section key="updates" className="space-y-4">
       <SettingsSubsectionHeader
@@ -67,11 +98,17 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
           'auto.components.settings.GeneralUpdateSettingsSection.f2b1ccc12a',
           'Updates'
         )}
-        description={translate(
-          'auto.components.settings.GeneralUpdateSettingsSection.d91ebfb87e',
-          'Current version: {{value0}}',
-          { value0: appVersion ?? '...' }
-        )}
+        description={
+          buildDescription ? (
+            <>
+              {versionDescription}
+              <br />
+              {buildDescription}
+            </>
+          ) : (
+            versionDescription
+          )
+        }
       />
 
       <SearchableSetting

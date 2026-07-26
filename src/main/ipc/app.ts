@@ -9,6 +9,7 @@ import type { FloatingTerminalCwdRequest, MarkdownDocument } from '../../shared/
 import { relaunchApp } from '../app-relaunch'
 import type { Store } from '../persistence'
 import { getDevInstanceIdentity } from '../startup/dev-instance-identity'
+import { getPackagedBuildMetadata } from '../startup/packaged-build-metadata'
 import { isPwshAvailable } from '../pwsh'
 import { isWslAvailable, listWslDistros } from '../wsl'
 import { isGitBashAvailable } from '../git-bash'
@@ -246,7 +247,11 @@ export function registerAppHandlers(store: Store, options: RegisterAppHandlersOp
   ipcMain.handle('app:getFeatureWallAssetBaseUrl', (): string => getFeatureWallAssetBaseUrl())
 
   ipcMain.handle('app:getIdentity', (): AppIdentity => {
-    const identity = getDevInstanceIdentity(is.dev)
+    // Why: is.dev alone can't tell Orca Dev/Test apart from production Orca;
+    // app.getName() carries that (see the devInstanceIdentity computation in
+    // index.ts), and the packaged build's branch/commit rides along with it.
+    const buildMetadata = getPackagedBuildMetadata(app.getAppPath(), app.isPackaged)
+    const identity = getDevInstanceIdentity(is.dev, process.env, app.getName(), buildMetadata)
     return {
       name: identity.name,
       isDev: identity.isDev,
@@ -254,7 +259,9 @@ export function registerAppHandlers(store: Store, options: RegisterAppHandlersOp
       devBranch: identity.devBranch,
       devWorktreeName: identity.devWorktreeName,
       devRepoRoot: identity.devRepoRoot,
-      dockBadgeLabel: identity.dockBadgeLabel
+      dockBadgeLabel: identity.dockBadgeLabel,
+      buildBranch: identity.buildBranch,
+      buildCommitHash: identity.buildCommitHash
     }
   })
 
