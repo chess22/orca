@@ -479,7 +479,7 @@ const devInstanceIdentity = getDevInstanceIdentity(
   is.dev,
   process.env,
   app.getName(),
-  getPackagedBuildMetadata(app.getAppPath(), app.isPackaged)
+  getPackagedBuildMetadata(process.resourcesPath, app.isPackaged)
 )
 const devAgentHookEndpointNamespace = devInstanceIdentity.isDev
   ? devInstanceIdentity.appUserModelId

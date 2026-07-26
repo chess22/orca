@@ -1,28 +1,31 @@
 import { describe, expect, it } from 'vitest'
 import {
   getPackagedBuildMetadata,
-  readPackagedBuildMetadataFromPackageJson
+  readPackagedBuildMetadataFromResourceFile
 } from './packaged-build-metadata'
 
-describe('readPackagedBuildMetadataFromPackageJson', () => {
-  it('reads buildBranch/buildCommitHash written by electron-builder extraMetadata', () => {
+describe('readPackagedBuildMetadataFromResourceFile', () => {
+  it('reads branch/commitHash from the build-identity.json extraResource', () => {
     const readFile = () =>
       JSON.stringify({
-        name: 'orca-dev-app',
-        buildBranch: 'chess22/version-identity',
-        buildCommitHash: 'a1b2c3d4'
+        branch: 'chess22/version-identity',
+        commitHash: 'a1b2c3d4'
       })
 
-    expect(readPackagedBuildMetadataFromPackageJson('/app/package.json', readFile)).toEqual({
+    expect(
+      readPackagedBuildMetadataFromResourceFile('/resources/build-identity.json', readFile)
+    ).toEqual({
       branch: 'chess22/version-identity',
       commitHash: 'a1b2c3d4'
     })
   })
 
-  it('returns nulls when the fields are absent (production package.json)', () => {
-    const readFile = () => JSON.stringify({ name: 'orca' })
+  it('returns nulls when the fields are absent', () => {
+    const readFile = () => JSON.stringify({})
 
-    expect(readPackagedBuildMetadataFromPackageJson('/app/package.json', readFile)).toEqual({
+    expect(
+      readPackagedBuildMetadataFromResourceFile('/resources/build-identity.json', readFile)
+    ).toEqual({
       branch: null,
       commitHash: null
     })
@@ -32,13 +35,17 @@ describe('readPackagedBuildMetadataFromPackageJson', () => {
     const throwingRead = () => {
       throw new Error('ENOENT')
     }
-    expect(readPackagedBuildMetadataFromPackageJson('/app/package.json', throwingRead)).toEqual({
+    expect(
+      readPackagedBuildMetadataFromResourceFile('/resources/build-identity.json', throwingRead)
+    ).toEqual({
       branch: null,
       commitHash: null
     })
 
     const malformedRead = () => 'not json'
-    expect(readPackagedBuildMetadataFromPackageJson('/app/package.json', malformedRead)).toEqual({
+    expect(
+      readPackagedBuildMetadataFromResourceFile('/resources/build-identity.json', malformedRead)
+    ).toEqual({
       branch: null,
       commitHash: null
     })
@@ -46,7 +53,10 @@ describe('readPackagedBuildMetadataFromPackageJson', () => {
 })
 
 describe('getPackagedBuildMetadata', () => {
-  it('skips reading package.json entirely for interactive (non-packaged) runs', () => {
-    expect(getPackagedBuildMetadata('/repo', false)).toEqual({ branch: null, commitHash: null })
+  it('skips reading build-identity.json entirely for interactive (non-packaged) runs', () => {
+    expect(getPackagedBuildMetadata('/resources', false)).toEqual({
+      branch: null,
+      commitHash: null
+    })
   })
 })

@@ -257,7 +257,7 @@ export function registerAppHandlers(store: Store, options: RegisterAppHandlersOp
     if (options.identity) {
       return options.identity
     }
-    const buildMetadata = getPackagedBuildMetadata(app.getAppPath(), app.isPackaged)
+    const buildMetadata = getPackagedBuildMetadata(process.resourcesPath, app.isPackaged)
     const identity = getDevInstanceIdentity(is.dev, process.env, app.getName(), buildMetadata)
     return {
       name: identity.name,

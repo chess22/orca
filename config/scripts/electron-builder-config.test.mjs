@@ -39,13 +39,30 @@ describe('electron-builder config', () => {
     expect(electronBuilderConfig.extraMetadata.version).toMatch(/^\d+\.\d+\.\d+\+[0-9A-Za-z.-]+$/)
   })
 
-  it('exposes the exact build branch and commit hash for the About screen', () => {
+  it('does not merge buildBranch/buildCommitHash into extraMetadata', () => {
+    // Why: growing the packaged package.json with these fields via
+    // extraMetadata corrupted the resulting app.asar (missing opening brace);
+    // the identity now ships as its own build-identity.json extraResource.
+    expect(electronBuilderConfig.extraMetadata.buildBranch).toBeUndefined()
+    expect(electronBuilderConfig.extraMetadata.buildCommitHash).toBeUndefined()
+  })
+
+  it('ships the exact build branch and commit hash as a build-identity.json extraResource', async () => {
+    const raw = await readFile(
+      join(import.meta.dirname, '..', '..', 'out', 'build-identity.json'),
+      'utf8'
+    )
+    const identity = JSON.parse(raw)
     // Unsanitized (may contain "/"), unlike the semver-safe version metadata above.
-    expect(electronBuilderConfig.extraMetadata.buildCommitHash).toMatch(/^[0-9a-f]{8}$/)
-    expect(
-      typeof electronBuilderConfig.extraMetadata.buildBranch === 'string' ||
-        electronBuilderConfig.extraMetadata.buildBranch === null
-    ).toBe(true)
+    expect(identity.commitHash).toMatch(/^[0-9a-f]{8}$/)
+    expect(typeof identity.branch === 'string' || identity.branch === null).toBe(true)
+
+    for (const platform of ['mac', 'linux', 'win']) {
+      expect(electronBuilderConfig[platform].extraResources).toContainEqual({
+        from: 'out/build-identity.json',
+        to: 'build-identity.json'
+      })
+    }
   })
 
   it('uses an isolated identity for ORCA_TEST_BUILD', () => {

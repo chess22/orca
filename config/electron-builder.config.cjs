@@ -1,4 +1,4 @@
-const { chmodSync, existsSync, readdirSync } = require('node:fs')
+const { chmodSync, existsSync, mkdirSync, readdirSync, writeFileSync } = require('node:fs')
 const { execFileSync } = require('node:child_process')
 const { join, resolve } = require('node:path')
 const electronBuilderNativeRebuild = require('./scripts/electron-builder-native-rebuild.cjs')
@@ -36,6 +36,25 @@ const gitBuildIdentity = getGitBuildIdentity()
 const packagedVersion = gitBuildIdentity.versionMetadata
   ? `${rootPackageVersion}+${gitBuildIdentity.versionMetadata}`
   : rootPackageVersion
+// Why: adding buildBranch/buildCommitHash directly to extraMetadata (which
+// electron-builder merges into the packaged package.json) corrupts the
+// resulting app.asar — the merged package.json comes out missing its opening
+// brace, breaking Electron's own bootstrap. Ship the identity as its own
+// small resource file instead (read back by packaged-build-metadata.ts),
+// leaving package.json's extraMetadata merge untouched (name/version only).
+const buildIdentityResourcePath = 'out/build-identity.json'
+mkdirSync('out', { recursive: true })
+writeFileSync(
+  buildIdentityResourcePath,
+  JSON.stringify({
+    branch: gitBuildIdentity.branch,
+    commitHash: gitBuildIdentity.commitHash
+  })
+)
+const buildIdentityResource = {
+  from: buildIdentityResourcePath,
+  to: 'build-identity.json'
+}
 const featureWallResources = {
   from: 'resources/onboarding/feature-wall',
   to: 'onboarding/feature-wall'
@@ -57,7 +76,7 @@ const relayExtraResource = {
 // from package directories where pnpm's symlink farm is absent. Copy the exact
 // runtime dependency closure to Resources/node_modules so bare require() calls
 // do not fall through to a developer checkout's node_modules.
-const commonExtraResources = [relayExtraResource, skillFreshnessResources]
+const commonExtraResources = [relayExtraResource, skillFreshnessResources, buildIdentityResource]
 const macSpeechNativeResource = {
   from: 'node_modules/sherpa-onnx-darwin-${arch}',
   to: 'node_modules/sherpa-onnx-darwin-${arch}'
@@ -86,11 +105,7 @@ module.exports = {
   // state with a developer's unlocked `pnpm dev` session either.
   extraMetadata: {
     name: packagedAppIdentity.packageName,
-    version: packagedVersion,
-    // Why: read back at runtime (dev-instance-identity.ts) to show the build's
-    // source branch/commit in the About/settings screen for this parallel identity.
-    buildBranch: gitBuildIdentity.branch,
-    buildCommitHash: gitBuildIdentity.commitHash
+    version: packagedVersion
   },
   directories: {
     buildResources: 'resources/build'
