@@ -7469,11 +7469,43 @@ export class OrcaRuntimeService {
       return
     }
     if (this.isTerminalHandleAdoptionBlocked(ptyId, trimmed)) {
+      this.adoptControllerTerminalHandleAlias(ptyId, trimmed)
       return
     }
     // Why: after an app/runtime restart, the live PTY child still has its
     // original ORCA_TERMINAL_HANDLE, but the runtime's in-memory map is gone.
     this.registerPreAllocatedHandleForPty(ptyId, trimmed)
+  }
+
+  private adoptControllerTerminalHandleAlias(ptyId: string, handle: string): void {
+    const existingRecord = this.handles.get(handle)
+    if (existingRecord && existingRecord.ptyId !== ptyId) {
+      return
+    }
+    if (
+      [...this.handleByPtyId].some(
+        ([otherPtyId, value]) => value === handle && otherPtyId !== ptyId
+      )
+    ) {
+      return
+    }
+    const pty = this.ptysById.get(ptyId)
+    if (!pty) {
+      return
+    }
+    const syntheticId = `pty:${ptyId}`
+    // Why: renderer hydration may already expose a new handle for this PTY.
+    // Keep it primary while restoring the daemon-exported old handle as an alias.
+    this.handles.set(handle, {
+      handle,
+      runtimeId: this.runtimeId,
+      rendererGraphEpoch: this.rendererGraphEpoch,
+      worktreeId: pty.worktreeId,
+      tabId: syntheticId,
+      leafId: syntheticId,
+      ptyId,
+      ptyGeneration: 0
+    })
   }
 
   // Why: adoption is best-effort restart recovery and must be first-wins.
@@ -7482,12 +7514,14 @@ export class OrcaRuntimeService {
   // are not trusted to be collision-free — a handle bound to a different
   // pty must never be stolen by a later report.
   private isTerminalHandleAdoptionBlocked(ptyId: string, handle: string): boolean {
-    if (this.handleByPtyId.get(ptyId) ?? this.findHandleForPtyRecord(ptyId)) {
+    const existingPtyHandle = this.handleByPtyId.get(ptyId) ?? this.findHandleForPtyRecord(ptyId)
+    if (existingPtyHandle && existingPtyHandle !== handle) {
       return true
     }
     for (const leaf of this.getLeavesForPty(ptyId)) {
       const issued = this.handleByLeafKey.get(this.getLeafKey(leaf.tabId, leaf.leafId))
-      if (issued && issued !== handle) {
+      const issuedRecord = issued ? this.handles.get(issued) : null
+      if (issued && issued !== handle && issuedRecord?.ptyId !== ptyId) {
         return true
       }
     }
@@ -9609,6 +9643,16 @@ export class OrcaRuntimeService {
     if (lines.length === 0) {
       lines = await this.readRendererVisibleSnapshotLines(ptyId)
     }
+    // Why: a daemon PTY with no renderer pane ever mounted for it (CLI-only
+    // terminals, or a pane a just-restarted window hasn't remounted yet) has
+    // no renderer serializer to ask, so readRendererVisibleSnapshotLines is
+    // always empty for it. The main process keeps its own headless emulator
+    // mirror alive for every pty (trackHeadlessTerminalData in onPtyData) —
+    // fall back to reading that directly rather than leaving an alt-screen
+    // TUI's reply permanently invisible to terminal.read.
+    if (lines.length === 0) {
+      lines = await this.readHeadlessTerminalVisibleLines(ptyId)
+    }
     if (lines.length === 0) {
       return read
     }
@@ -9741,6 +9785,27 @@ export class OrcaRuntimeService {
       return visibleNonBlankTerminalLines(emulator.getVisibleLines())
     } finally {
       emulator.dispose()
+    }
+  }
+
+  // Why: a daemon PTY with no renderer pane ever mounted for it (CLI-only
+  // terminals, or a pane a just-restarted window hasn't remounted yet) has no
+  // renderer serializer to ask; this is the plain-string last-resort fallback
+  // withVisibleSnapshotFallback reaches for once readVisibleTerminalState and
+  // readRendererVisibleSnapshotLines have both come up empty.
+  private async readHeadlessTerminalVisibleLines(ptyId: string): Promise<string[]> {
+    const state = this.headlessTerminals.get(ptyId)
+    if (!state) {
+      return []
+    }
+    try {
+      await state.writeChain
+      return state.emulator
+        .getVisibleLines()
+        .map((line) => line.trimEnd())
+        .filter((line) => line.trim().length > 0)
+    } catch {
+      return []
     }
   }
 
@@ -13305,15 +13370,8 @@ export class OrcaRuntimeService {
     handle: string,
     opts: { cursor?: number; limit?: number } = {}
   ): Promise<RuntimeTerminalRead> {
+    await this.recoverControllerTerminalHandle(handle)
     let pty = this.getLivePtyForHandle(handle)
-    if (!pty && !this.handles.has(handle)) {
-      // Why: a runtime restart loses its handle map; plain read must recover
-      // daemon-owned handles without requiring callers to list terminals first.
-      await this.refreshPtyWorktreeRecordsFromController([
-        ...(await this.getResolvedWorktreeMap()).values()
-      ])
-      pty = this.getLivePtyForHandle(handle)
-    }
     if (pty) {
       if (pty.pty.connected) {
         pty.pty.connected = await this.ensureControllerPtyAttached(pty.pty.ptyId)
@@ -13363,15 +13421,8 @@ export class OrcaRuntimeService {
       suffixFailureError?: string
     } = {}
   ): Promise<RuntimeTerminalSend> {
+    await this.recoverControllerTerminalHandle(handle)
     let pty = this.getLivePtyForHandle(handle)
-    if (!pty && !this.handles.has(handle)) {
-      // Why: send may be the first post-restart operation for a restored CLI
-      // terminal, so it must recover the daemon-owned handle just like read.
-      await this.refreshPtyWorktreeRecordsFromController([
-        ...(await this.getResolvedWorktreeMap()).values()
-      ])
-      pty = this.getLivePtyForHandle(handle)
-    }
     if (pty) {
       if (!pty.pty.connected || !(await this.ensureControllerPtyAttached(pty.pty.ptyId))) {
         throw new Error('terminal_not_writable')
@@ -21438,6 +21489,9 @@ export class OrcaRuntimeService {
         workspace,
         {
           ...baseEnv,
+          // Why: background creates bypass ipc/pty, so stamp the durable handle
+          // here for daemon discovery after the main runtime relaunches.
+          ORCA_TERMINAL_HANDLE: preAllocatedHandle,
           ...(sequencedStartupCommand
             ? { [SETUP_AGENT_SEQUENCE_STARTUP_COMMAND_ENV]: sequencedStartupCommand }
             : {})
@@ -22701,6 +22755,7 @@ export class OrcaRuntimeService {
     handle: string,
     options: { navigateHost?: boolean } = {}
   ): Promise<RuntimeTerminalFocus> {
+    await this.recoverControllerTerminalHandle(handle)
     const pty = this.getLivePtyForHandle(handle)
     if (pty) {
       if (!pty.pty.connected) {
@@ -25253,6 +25308,25 @@ export class OrcaRuntimeService {
       .finally(() => this.controllerAttachPromises.delete(ptyId))
     this.controllerAttachPromises.set(ptyId, pending)
     return pending
+  }
+
+  private async recoverControllerTerminalHandle(handle: string): Promise<void> {
+    const record = this.handles.get(handle)
+    const leaf = record ? this.leaves.get(this.getLeafKey(record.tabId, record.leafId)) : undefined
+    if (
+      this.getLivePtyForHandle(handle) ||
+      (record?.runtimeId === this.runtimeId &&
+        record.rendererGraphEpoch === this.rendererGraphEpoch &&
+        leaf?.ptyId === record.ptyId &&
+        leaf.ptyGeneration === record.ptyGeneration)
+    ) {
+      return
+    }
+    // Why: read, send, and focus may each be the first request after relaunch;
+    // none may require a terminal list to rediscover the daemon-owned handle.
+    await this.refreshPtyWorktreeRecordsFromController([
+      ...(await this.getResolvedWorktreeMap()).values()
+    ])
   }
 
   private pruneDisconnectedPtyTranscript(pty: RuntimePtyWorktreeRecord): void {
@@ -29765,6 +29839,13 @@ export class OrcaRuntimeService {
     resolveWorktreeSelector: (selector) => this.resolveWorktreeSelector(selector),
     getAuthoritativeWindow: () => this.getAuthoritativeWindow(),
     getAvailableAuthoritativeWindow: () => this.getAvailableAuthoritativeWindow(),
+    getPersistedBrowserPageIds: (worktreeId) => {
+      const session = this.store?.getWorkspaceSession?.()
+      const pagesByWorkspace = session?.browserPagesByWorkspace
+      return (session?.browserTabsByWorktree?.[worktreeId] ?? []).flatMap((workspace) =>
+        (pagesByWorkspace?.[workspace.id] ?? []).map((page) => page.id)
+      )
+    },
     getOffscreenBrowserBackend: () => this.offscreenBrowserBackend,
     // Why: bind directly, not a wrapper arrow — a hand-listed wrapper dropped targetGroupId, so a right-split browser landed in the left.
     markHeadlessBrowserSessionTabActive: this.markHeadlessBrowserSessionTabActive.bind(this)
@@ -31698,8 +31779,14 @@ function shouldFallbackToVisibleTerminalSnapshot(
   if (typeof opts.cursor === 'number') {
     return false
   }
+  // Why: a reattached alt-screen TUI (Claude Code, vim, etc.) redraws via
+  // absolute cursor positioning, not newlines — the line-based tail buffer
+  // can stay genuinely empty (not just blank-padded) even though the daemon
+  // has real, non-empty screen content. Treat "nothing captured at all" the
+  // same as "substantial blank tail": both need the snapshot fallback, or a
+  // freshly reattached TUI's reply is permanently invisible to terminal.read.
   if (read.tail.length === 0) {
-    return false
+    return true
   }
   const hasSubstantialBlankTail =
     read.limited === true || read.truncated || read.tail.length >= DEFAULT_TERMINAL_READ_LIMIT

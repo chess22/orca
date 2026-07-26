@@ -219,6 +219,7 @@ import {
   installTerminalCapabilityReplyHandlers,
   sendTerminalOscColorQueryReplies
 } from './terminal-capability-replies'
+import { guardParserHandler } from './terminal-parser-handler-guard'
 import { registerPtyModelRestoreNeededHandler } from './pty-model-restore-channel'
 import {
   acquireHiddenRendererPtyDeliveryClaim,
@@ -3562,6 +3563,7 @@ export function connectPanePty(
     // (#7329), so send immediately.
     sendInput: sendDesktopQueryReplyImmediate,
     isReplaying: () => isPaneReplaying(deps.replayingPanesRef, pane.id),
+    wrapHandler: guardParserHandler,
     ...(isNativeWindowsConpty ? { da1Response: CONPTY_DA1_RESPONSE } : {})
   })
   const respondToTerminalPixelSizeQueries = createTerminalPixelSizeQueryResponder(

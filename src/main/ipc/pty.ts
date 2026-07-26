@@ -161,6 +161,7 @@ import { buildConfiguredProxyEnv, type NetworkProxySettings } from '../../shared
 import { resolveSetupAgentSequenceLaunchCommand } from '../../shared/setup-agent-sequencing'
 import { parseWorkspaceKey } from '../../shared/workspace-scope'
 import { getStartupTerminalColorQueryReplyColors } from './terminal-startup-color-query-replies'
+import { HeadlessCapabilityQueryResponder } from '../pty/headless-capability-query-responder'
 import {
   assertFolderWorkspacePathUsable,
   getFolderWorkspacePathStatus
@@ -335,6 +336,18 @@ async function reconcileAgentSessionOwnerListings(): Promise<void> {
 const pendingPtyIdBySerializerGeneration = new Map<number, string>()
 // Why: hasRendererSerializer probe needs a ptyId-keyed signal; a later spawn starts a fresh incarnation, subscription abort owns waiter cleanup.
 const rendererSerializerReadiness = new RendererTerminalSerializerReadiness()
+// Why: a daemon PTY with no renderer pane ever mounted for it (CLI-only
+// terminals, or any pane a just-restarted window hasn't remounted yet) has no
+// renderer-side xterm to answer DA1/DSR/OSC capability queries — see
+// headless-capability-query-responder.ts. Feeding it a shadow copy of the
+// same bytes lets it answer those on the renderer's behalf until one attaches.
+const headlessCapabilityQueryResponder = new HeadlessCapabilityQueryResponder((ptyId, data) => {
+  try {
+    getProviderForPty(ptyId).write(ptyId, data)
+  } catch {
+    // Best-effort: a provider lookup failure here must not crash data delivery.
+  }
+})
 
 function parseValidPaneKey(paneKey: unknown): ReturnType<typeof parsePaneKey> {
   if (typeof paneKey !== 'string' || paneKey.length > 256) {
@@ -1306,6 +1319,8 @@ export function clearProviderPtyState(
       return !paneKey || (stillOwnsPaneKey && stablePaneKey === paneKey)
     }
   })
+  // Why: a reused ptyId must not inherit a dead PTY's renderer-serializer readiness state.
+  rendererSerializerReadiness.clear(id)
   // Why: clear the hook server's per-paneKey caches (via the spawn-time paneKey mapping, its only ptyId→paneKey correlation) so dead panes don't accumulate over process lifetime.
   if (paneKey) {
     if (stillOwnsPaneKey) {
@@ -1313,6 +1328,17 @@ export function clearProviderPtyState(
       paneKeyPtyId.delete(paneKey)
     }
     ptyPaneKey.delete(id)
+    // Why: drop the pre-signal pending entry only if it still belongs to THIS
+    // PTY's spawn generation. If a remount for the same paneKey has already
+    // pre-signaled a new gen, this teardown must NOT touch it — otherwise
+    // the second mount's hydration loses to the daemon-snapshot seed. See
+    // the generation-token rationale in
+    // docs/mobile-prefer-renderer-scrollback.md.
+    const pendingSerializer = pendingByPaneKey.get(paneKey)
+    if (pendingSerializer && pendingPtyIdBySerializerGeneration.get(pendingSerializer.gen) === id) {
+      settlePendingPaneSerializer(paneKey, pendingSerializer.gen)
+      pendingPtyIdBySerializerGeneration.delete(pendingSerializer.gen)
+    }
     if (stillOwnsPaneKey) {
       // Why: notify AFTER dropping the paneKey↔ptyId entries so a listener re-reading the map sees post-teardown state; wrap each so one throw can't block the rest.
       for (const listener of paneKeyTeardownListeners) {
@@ -2679,6 +2705,9 @@ export function registerPtyHandlers(
       const outputSeq = isLocalProvider
         ? runtime?.getPtyOutputSequence(payload.id)
         : runtime?.onPtyData(payload.id, payload.data, Date.now(), rawLength, payload.transformed)
+      if (!isLocalProvider && !rendererSerializerReadiness.has(payload.id)) {
+        headlessCapabilityQueryResponder.feed(payload.id, payload.data, { cols: 80, rows: 24 })
+      }
       const rendererData = payload.data
       const preservesSeq = !payload.transformed && rawLength === payload.data.length
       const startSeq =
@@ -2784,6 +2813,7 @@ export function registerPtyHandlers(
       if (!isCurrentPtyExit(payload)) {
         return
       }
+      headlessCapabilityQueryResponder.dispose(payload.id)
       if (consumeSyntheticKillExit(payload.id)) {
         return
       }
@@ -5580,6 +5610,10 @@ export function registerPtyHandlers(
       pendingPtyIdBySerializerGeneration.delete(args.gen)
       if (settledCurrentGeneration && ptyId) {
         rendererSerializerReadiness.markReady(ptyId)
+        // Why: a live renderer is now the authoritative query responder for
+        // this ptyId — free the fallback's headless terminal instead of
+        // feeding it bytes nobody reads anymore.
+        headlessCapabilityQueryResponder.dispose(ptyId)
       }
     }
   )

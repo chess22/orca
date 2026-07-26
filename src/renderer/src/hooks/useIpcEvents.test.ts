@@ -878,12 +878,14 @@ describe('useIpcEvents browser tab create routing', () => {
       browserTabsByWorktree: {
         'wt-1': [{ id: 'workspace-active', activePageId: 'page-active', pageIds: ['page-active'] }],
         'wt-2': [
-          { id: 'workspace-detached', activePageId: 'page-detached', pageIds: ['page-detached'] }
+          { id: 'workspace-detached', activePageId: 'page-detached', pageIds: ['page-detached'] },
+          { id: 'workspace-restored', activePageId: 'page-restored', pageIds: ['page-restored'] }
         ]
       },
       browserPagesByWorkspace: {
         'workspace-active': [{ id: 'page-active', worktreeId: 'wt-1' }],
-        'workspace-detached': [{ id: 'page-detached', worktreeId: 'wt-2' }]
+        'workspace-detached': [{ id: 'page-detached', worktreeId: 'wt-2' }],
+        'workspace-restored': [{ id: 'page-restored', worktreeId: 'wt-2' }]
       },
       unifiedTabsByWorktree: {
         'wt-1': [
@@ -1082,6 +1084,12 @@ describe('useIpcEvents browser tab create routing', () => {
     expect(dispatchEvent).toHaveBeenCalledWith(
       expect.objectContaining({ detail: { worktreeId: 'wt-2' } })
     )
+
+    acquireBrowserAutomationVisibility.mockClear()
+    activateViewListenerRef.current?.({ worktreeId: 'wt-2' })
+
+    expect(acquireBrowserAutomationVisibility).toHaveBeenCalledWith('page-detached')
+    expect(acquireBrowserAutomationVisibility).toHaveBeenCalledWith('page-restored')
   })
 })
 

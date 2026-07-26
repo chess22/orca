@@ -144,6 +144,7 @@ export type RuntimeBrowserCommandHost = {
   resolveWorktreeSelector(selector: string): Promise<{ id: string }>
   getAuthoritativeWindow(): BrowserWindow
   getAvailableAuthoritativeWindow(): BrowserWindow | null
+  getPersistedBrowserPageIds?(worktreeId: string): string[]
   // Why: headless serve backs pages with a main-process offscreen backend; null when the environment can't support offscreen browsing.
   getOffscreenBrowserBackend(): BrowserBackend | null
   // Why: the session-tab snapshot owns focus, so a headless create must mark itself active or paired clients snap back to a terminal.
@@ -213,9 +214,23 @@ export class RuntimeBrowserCommands {
     const worktreeId = (await this.host.resolveWorktreeSelector(selector)).id
     // Why: explicit selectors are user intent, so resolution errors surface (not silently widen scope); only activation stays best-effort.
     const bridge = this.host.getAgentBrowserBridge()
-    if (bridge && !this.hasLiveRegisteredBrowserTab(bridge, worktreeId)) {
+    const missingPersistedPageIds = bridge
+      ? (this.host.getPersistedBrowserPageIds?.(worktreeId) ?? []).filter(
+          (pageId) => !this.hasLiveRegisteredBrowserPage(bridge, worktreeId, pageId)
+        )
+      : []
+    if (
+      bridge &&
+      (missingPersistedPageIds.length > 0 || !this.hasLiveRegisteredBrowserTab(bridge, worktreeId))
+    ) {
       try {
-        await this.ensureBrowserWorktreeActive(worktreeId)
+        await (missingPersistedPageIds.length > 0
+          ? Promise.all(
+              missingPersistedPageIds.map((pageId) =>
+                this.ensureBrowserPageActive(worktreeId, pageId)
+              )
+            )
+          : this.ensureBrowserWorktreeActive(worktreeId))
       } catch {
         // Fall through with the validated worktree id so routing stays scoped to the caller's explicit selector.
       }

@@ -10991,6 +10991,7 @@ describe('OrcaRuntimeService', () => {
     expectStablePaneKeyEnv(spawnedEnv)
     const spawnedLeafId = spawnedEnv.ORCA_PANE_KEY.slice(`${spawnedEnv.ORCA_TAB_ID}:`.length)
     expect(spawnedEnv.ORCA_WORKTREE_ID).toBe(TEST_WORKTREE_ID)
+    expect(spawnedEnv.ORCA_TERMINAL_HANDLE).toBe(result.handle)
     expect(spawnedEnv.ORCA_AGENT_LAUNCH_TOKEN).toMatch(UUID_RE)
     expect(revealTerminalSession).toHaveBeenCalledWith(TEST_WORKTREE_ID, {
       ptyId: 'pty-bg',
@@ -14098,6 +14099,39 @@ describe('OrcaRuntimeService', () => {
     expect(serializeProviderBuffer).not.toHaveBeenCalled()
   })
 
+  it('falls back to the headless emulator mirror when no renderer pane is mounted', async () => {
+    // Why: chess22/orca#12 — a CLI-created terminal, or any pane a just
+    // restarted window hasn't remounted yet, has no renderer serializer.
+    // An alt-screen TUI redraws via absolute cursor positioning (no
+    // newlines), so the line-based tail buffer stays genuinely empty even
+    // though the daemon has real screen content — terminal.read must still
+    // surface it via the main process's own headless emulator mirror.
+    const serializeBuffer = vi.fn()
+    const runtime = new OrcaRuntimeService(store)
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      hasRendererSerializer: () => false,
+      serializeBuffer
+    })
+    syncSinglePty(runtime)
+
+    const [terminal] = (await runtime.listTerminals()).terminals
+    runtime.onPtyData(
+      'pty-1',
+      '\x1b[?1049h\x1b[H\x1b[2JClaude Code\x1b[2;1HWorking on fix\x1b[3;1HTool: Read',
+      100
+    )
+
+    const read = await runtime.readTerminal(terminal.handle)
+
+    expect(read.tail.join('\n')).toContain('Claude Code')
+    expect(read.tail.join('\n')).toContain('Working on fix')
+    expect(read.tail.join('\n')).toContain('Tool: Read')
+    expect(serializeBuffer).not.toHaveBeenCalled()
+  })
+
   it('classifies older provider alternate-screen snapshots from ANSI', async () => {
     const serializeProviderBuffer = vi.fn().mockResolvedValue({
       data: '\x1b[?1049h\x1b[2J\x1b[HRemote Vim\r\nediting README.md\r\n',
@@ -16173,6 +16207,66 @@ describe('OrcaRuntimeService', () => {
     expect(reattach).toHaveBeenCalledOnce()
   })
 
+  it('reattaches a restored daemon session when CLI switch is the first request', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    const ptyId = `${TEST_WORKTREE_ID}@@surviving-focus-pty`
+    const handle = 'term_surviving_focus'
+    const revealTerminalSession = vi.fn().mockResolvedValue({ tabId: 'tab-restored' })
+    runtime.setNotifier({ revealTerminalSession } as never)
+    runtime.setPtyController({
+      reattach: vi.fn().mockResolvedValue({ snapshot: 'BEFORE_RESTART\n' }),
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => [
+        {
+          id: ptyId,
+          cwd: TEST_WORKTREE_PATH,
+          title: 'shell',
+          terminalHandle: handle
+        }
+      ]
+    })
+
+    await expect(runtime.focusTerminal(handle)).resolves.toEqual({
+      handle,
+      tabId: 'tab-restored',
+      worktreeId: TEST_WORKTREE_ID
+    })
+    expect(revealTerminalSession).toHaveBeenCalledWith(
+      TEST_WORKTREE_ID,
+      expect.objectContaining({ ptyId })
+    )
+  })
+
+  it('replaces a provisional renderer handle with the restored controller handle', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    const handle = 'term_relinked_focus'
+    syncSinglePty(runtime)
+    const provisional = (await runtime.listTerminals()).terminals[0]?.handle
+    expect(provisional).toBeTruthy()
+    expect(provisional).not.toBe(handle)
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => [
+        {
+          id: 'pty-1',
+          cwd: TEST_WORKTREE_PATH,
+          title: 'shell',
+          terminalHandle: handle
+        }
+      ]
+    })
+
+    await expect(runtime.focusTerminal(handle)).resolves.toMatchObject({
+      handle,
+      tabId: 'tab-1',
+      worktreeId: TEST_WORKTREE_ID
+    })
+  })
+
   it('does not adopt a discovered terminal handle already bound to another live PTY', async () => {
     const runtime = new OrcaRuntimeService(store)
     const writesByPty = new Map<string, string[]>()
@@ -16211,7 +16305,7 @@ describe('OrcaRuntimeService', () => {
     expect(writesByPty.has('pty-imposter')).toBe(false)
   })
 
-  it('keeps an already-bound terminal handle when discovery reports a different exported one', async () => {
+  it('routes already-bound and exported handles to the same PTY', async () => {
     const runtime = new OrcaRuntimeService(store)
     const writes: string[] = []
     runtime.setPtyController({
@@ -16238,8 +16332,10 @@ describe('OrcaRuntimeService', () => {
       runtime.sendTerminal('term_already_bound', { text: 'still routed' })
     ).resolves.toMatchObject({ accepted: true })
     expect(writes).toEqual(['still routed'])
-    // the reported-but-not-adopted handle must not resolve to the live pty
-    await expect(runtime.readTerminal('term_from_env')).rejects.toThrow()
+    await expect(
+      runtime.sendTerminal('term_from_env', { text: 'alias routed' })
+    ).resolves.toMatchObject({ accepted: true })
+    expect(writes).toEqual(['still routed', 'alias routed'])
   })
 
   it('binds advertised URLs for renderer-restored PTYs that skip registerPty', () => {
