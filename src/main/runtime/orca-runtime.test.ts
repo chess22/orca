@@ -9961,6 +9961,34 @@ describe('OrcaRuntimeService', () => {
     expect(serializeBuffer).not.toHaveBeenCalled()
   })
 
+  it('keeps surfacing fresh alt-screen redraws once the tail buffer already has prior content', async () => {
+    // Why: chess22/orca#12 follow-up — once the tail buffer has ANY
+    // newline-terminated lines (e.g. from an earlier exchange before a
+    // restart), `read.tail.length === 0` never trips again, so later
+    // in-place alt-screen redraws (absolute cursor positioning, no new
+    // newlines) were silently invisible even with the headless fallback.
+    const serializeBuffer = vi.fn()
+    const runtime = new OrcaRuntimeService(store)
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      hasRendererSerializer: () => false,
+      serializeBuffer
+    })
+    syncSinglePty(runtime)
+
+    const [terminal] = (await runtime.listTerminals()).terminals
+    runtime.onPtyData('pty-1', '\x1b[?1049hWhat was the codeword?\r\n', 100)
+    const firstRead = await runtime.readTerminal(terminal.handle)
+    expect(firstRead.tail.join('\n')).toContain('What was the codeword?')
+
+    runtime.onPtyData('pty-1', '\x1b[H\x1b[2JZEPHYR-VAULT-8823', 200)
+    const secondRead = await runtime.readTerminal(terminal.handle)
+
+    expect(secondRead.tail.join('\n')).toContain('ZEPHYR-VAULT-8823')
+  })
+
   it('returns renderer visible screen lines through terminal.read RPC JSON result', async () => {
     const serializeBuffer = vi.fn().mockResolvedValue({
       data: '\x1b[?1049hClaude Code\r\nChecking files\r\nWaiting for input\r\n',

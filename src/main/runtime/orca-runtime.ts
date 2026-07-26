@@ -6095,7 +6095,8 @@ export class OrcaRuntimeService {
     read: RuntimeTerminalRead,
     opts: { cursor?: number; limit?: number } = {}
   ): Promise<RuntimeTerminalRead> {
-    if (!shouldFallbackToVisibleTerminalSnapshot(read, opts)) {
+    const isAlternateScreen = this.headlessTerminals.get(ptyId)?.emulator.isAlternateScreen ?? false
+    if (!shouldFallbackToVisibleTerminalSnapshot(read, opts, isAlternateScreen)) {
       return read
     }
     const rendererLines = await this.readRendererVisibleSnapshotLines(ptyId)
@@ -23938,7 +23939,8 @@ function readTerminalTail(args: {
 
 function shouldFallbackToVisibleTerminalSnapshot(
   read: RuntimeTerminalRead,
-  opts: { cursor?: number; limit?: number }
+  opts: { cursor?: number; limit?: number },
+  isAlternateScreen: boolean
 ): boolean {
   if (typeof opts.cursor === 'number') {
     return false
@@ -23950,6 +23952,14 @@ function shouldFallbackToVisibleTerminalSnapshot(
   // same as "substantial blank tail": both need the snapshot fallback, or a
   // freshly reattached TUI's reply is permanently invisible to terminal.read.
   if (read.tail.length === 0) {
+    return true
+  }
+  // Why: once the tail buffer has ANY captured lines, later in-place
+  // alt-screen redraws never append new ones (they overwrite via cursor
+  // addressing), so a non-empty tail can still be stale relative to the
+  // live screen. Always prefer the live snapshot while the pty is known to
+  // be in alt-screen mode, regardless of how much prior tail history exists.
+  if (isAlternateScreen) {
     return true
   }
   const hasSubstantialBlankTail =
