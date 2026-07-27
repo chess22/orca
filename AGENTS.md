@@ -46,3 +46,13 @@ Be mindful of the user's `gh` CLI API rate limit — batch requests where possib
 Never commit PR evidence images; attach them to the PR conversation instead (but never use gh-attach).
 
 ## Type Declarations: Prefer `.ts` Over `.d.ts`
+
+## Cross-Session Communication (Orca-Managed Terminals)
+
+When one agent session needs to reach another running in a different Orca-managed worktree/terminal (e.g. requesting a fix reflect into another branch, flagging a blocking issue), follow these rules to avoid lost or misattributed messages:
+
+- **Always identify yourself** at the start of every message with your worktree folder name and branch (e.g. `[my-worktree / my-branch より]`). A bare description of the change is not enough — the recipient needs to know who is asking.
+- **Share your own contact terminal handle in your first message**, not only after confusion arises. Look up your own handle with `orca terminal list --worktree "path:<your worktree>"` and include it so the other side can reply directly instead of guessing where to send a response.
+- **`worktree set --comment` is a single overwritable field, not a thread.** Use it only for a durable "current status" summary that must survive a session restart or handoff — never for back-and-forth dialogue, since each write erases the previous message. For actual conversation, use `terminal send` to a specific terminal handle (its output history persists).
+- **Do not trust a paraphrase of unfamiliar code — verify against primary sources.** When another session describes what a commit or file contains, check it yourself (`git show --stat <sha>`, `git diff`, reading the file) before agreeing or disagreeing. Misattributed claims (e.g. confusing "a commit's own diff" with "the full code state at that commit") are easy to make and easy to verify away.
+- **When handing off to a successor session, the handoff document must include any unresolved external requests and the requester's contact terminal handle.** A successor that starts clean from a handoff doc has no memory of prior cross-session exchanges unless they are written down explicitly.
