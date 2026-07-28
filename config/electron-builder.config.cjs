@@ -18,9 +18,9 @@ const packagedAppIdentity = isTestBuild
       packageName: 'orca-test-app'
     }
   : {
-      appId: 'com.stablyai.orca',
-      productName: 'Orca',
-      packageName: null
+      appId: 'com.stablyai.orca.dev',
+      productName: 'Orca Dev',
+      packageName: 'orca-dev-app'
     }
 const featureWallResources = {
   from: 'resources/onboarding/feature-wall',
@@ -57,11 +57,18 @@ const winSpeechNativeResource = {
 module.exports = {
   appId: packagedAppIdentity.appId,
   productName: packagedAppIdentity.productName,
-  // Why: Electron derives userData from the bundled package name. The test
-  // identity needs a third profile, separate from "orca" and "orca-dev-app".
-  ...(packagedAppIdentity.packageName
-    ? { extraMetadata: { name: packagedAppIdentity.packageName } }
-    : {}),
+  // Why: Electron's default userData dir comes from the bundled app.asar's
+  // package.json "name" field, not from productName/appId above — the root
+  // package.json stays "orca" for the pnpm workspace, so without this override
+  // a packaged Orca Dev/Test.app silently resolves to the same
+  // `~/Library/Application Support/orca` profile as production Orca, causing
+  // the single-instance lock (and daemon socket, both scoped under userData)
+  // to collide. Distinct from the interactive `pnpm dev` profile name
+  // ("orca-dev", see configure-process.ts) so the packaged app never shares
+  // state with a developer's unlocked `pnpm dev` session either.
+  extraMetadata: {
+    name: packagedAppIdentity.packageName
+  },
   directories: {
     buildResources: 'resources/build'
   },

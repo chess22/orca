@@ -19,12 +19,16 @@ const {
 } = require('../packaged-runtime-node-modules.cjs')
 
 describe('electron-builder config', () => {
-  it('keeps the production identity by default', () => {
-    expect(electronBuilderConfig).toMatchObject({
-      appId: 'com.stablyai.orca',
-      productName: 'Orca'
-    })
-    expect(electronBuilderConfig.extraMetadata).toBeUndefined()
+  it('uses a parallel local app identity by default', () => {
+    expect(electronBuilderConfig.appId).toBe('com.stablyai.orca.dev')
+    expect(electronBuilderConfig.productName).toBe('Orca Dev')
+  })
+
+  it('overrides the packaged package.json name so userData does not collide with production Orca', () => {
+    // The bundled package.json "name" (not productName/appId) drives Electron's
+    // default userData dir, so this must differ from both "orca" (production)
+    // and "orca-dev" (the interactive `pnpm dev` profile).
+    expect(electronBuilderConfig.extraMetadata.name).toBe('orca-dev-app')
   })
 
   it('uses an isolated identity for ORCA_TEST_BUILD', () => {

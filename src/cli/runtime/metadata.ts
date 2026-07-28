@@ -41,8 +41,15 @@ export function tryReadMetadata(userDataPath: string): RuntimeMetadata | null {
 
 const DEFAULT_PACKAGED_APP_NAME = 'orca'
 
-// Why: packaged CLIs run with ELECTRON_RUN_AS_NODE and cannot ask Electron for
-// userData, so they must mirror the bundled package identity themselves.
+// Why: Electron derives app.getPath('userData') from the bundled app.asar's
+// package.json "name" field (see extraMetadata in electron-builder.config.cjs),
+// not from productName/appId. A CLI invoked with ELECTRON_RUN_AS_NODE never
+// calls app.getPath itself, so without reading the same field it always
+// resolved the hardcoded production folder — even when running from inside a
+// parallel build like Orca Dev — and connected to whichever app happened to
+// own that shared metadata file. fs.readFileSync sees inside app.asar via
+// Electron's asar-transparent fs patch (unlike require(), which is bypassed
+// under ELECTRON_RUN_AS_NODE), so this reads reliably from a packaged CLI.
 function readPackagedAppName(resourcesPath: string | undefined): string | null {
   if (!resourcesPath) {
     return null
@@ -64,9 +71,21 @@ export function getDefaultUserDataPath(
     .resourcesPath
 ): string {
   const packagedAppName = readPackagedAppName(resourcesPath)
-  // Why: unpackaged and SSH CLIs need the explicit override, but a bundled CLI
-  // must prefer its own identity over an ambient path inherited from another
-  // Orca instance.
+  // Why: ORCA_USER_DATA_PATH is the CLI's only way to find the right instance
+  // when it CANNOT self-identify — interactive `pnpm dev` (config/scripts/
+  // orca-dev.mjs, run-electron-vite-dev.mjs) and SSH relay (src/relay/
+  // remote-cli-env.ts) both invoke the CLI with plain node, so there is no
+  // app.asar to read and packagedAppName is always null there; the env var is
+  // load-bearing for those paths. But a *packaged* CLI (production Orca or a
+  // parallel build like Orca Dev) can always read its own bundled identity, so
+  // for packaged runs that self-identification must win over an ambient
+  // ORCA_USER_DATA_PATH the CLI's own terminal happened to inherit from a
+  // *different* running Orca instance (see main/startup/configure-process.ts's
+  // configureOrcaUserDataPathEnv, which every packaged instance — prod or dev —
+  // stamps into its own process.env and therefore into every PTY it spawns).
+  // Otherwise a Dev-bundled CLI invoked from inside a production-owned
+  // terminal would silently reconnect to production's runtime instead of its
+  // own, exactly the bug this function exists to prevent.
   if (!packagedAppName && process.env.ORCA_USER_DATA_PATH) {
     return process.env.ORCA_USER_DATA_PATH
   }

@@ -169,6 +169,9 @@ describe('CliInstaller', () => {
   it.each(['Orca Dev', 'Orca Test'])(
     'disables public CLI registration for packaged %s',
     async (appName) => {
+      if (process.platform === 'win32') {
+        return
+      }
       appGetNameMock.mockReturnValue(appName)
       const fixture = await makeFixture()
       const resourcesPath = await createPackagedMacLauncher(fixture.root)

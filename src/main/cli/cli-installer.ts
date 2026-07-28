@@ -122,8 +122,13 @@ export class CliInstaller {
 
   async getStatus(): Promise<CliInstallStatus> {
     if (this.isPackaged && this.isParallelIdentityBuild && !this.commandPathOverride) {
-      // Why: parallel bundles have a different executable name, while the
-      // public launcher targets Orca and could steal production's command.
+      // Why: the packaged Orca Dev/Test bundle's Contents/MacOS binary is named
+      // "Orca Dev"/"Orca Test", which resources/darwin/bin/orca's launcher script
+      // does not account for (it hardcodes Contents/MacOS/Orca). Registering any
+      // shell command here — production `orca` or even a renamed `orca-dev` —
+      // would install a symlink to a launcher that fails at runtime, and worse,
+      // could reclaim the production `orca` symlink out from under the real
+      // Orca.app.
       return {
         platform: this.platform,
         commandName: this.commandName,

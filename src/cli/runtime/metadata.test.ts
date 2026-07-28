@@ -27,7 +27,10 @@ describe('getDefaultUserDataPath', () => {
     process.env.XDG_CONFIG_HOME = originalXdgConfigHomeEnv
   })
 
-  it('uses ORCA_USER_DATA_PATH when bundle discovery is unavailable', () => {
+  // Why: ORCA_USER_DATA_PATH is the CLI's only way to find the right instance
+  // when it cannot read its own bundled identity (interactive `pnpm dev`, see
+  // config/scripts/orca-dev.mjs, and SSH relay) and must still win there.
+  it('uses the ORCA_USER_DATA_PATH override when bundle discovery is unavailable', () => {
     process.env.ORCA_USER_DATA_PATH = '/custom/user-data'
     const root = mkdtempSync(join(tmpdir(), 'orca-metadata-'))
 
@@ -61,28 +64,32 @@ describe('getDefaultUserDataPath', () => {
     }
   )
 
-  it('resolves Orca Test userData from its bundled identity on win32', () => {
-    process.env.APPDATA = 'C:\\Users\\test\\AppData\\Roaming'
-    const root = mkdtempSync(join(tmpdir(), 'orca-metadata-'))
-    const resourcesPath = join(root, 'Resources')
-    writePackagedAppAsar(resourcesPath, 'orca-test-app')
+  it.each(['orca-dev-app', 'orca-test-app'])(
+    'resolves packaged identity %s userData from its bundled identity on win32',
+    (name) => {
+      process.env.APPDATA = 'C:\\Users\\test\\AppData\\Roaming'
+      const root = mkdtempSync(join(tmpdir(), 'orca-metadata-'))
+      const resourcesPath = join(root, 'Resources')
+      writePackagedAppAsar(resourcesPath, name)
 
-    expect(getDefaultUserDataPath('win32', root, resourcesPath)).toBe(
-      join('C:\\Users\\test\\AppData\\Roaming', 'orca-test-app')
-    )
-  })
+      expect(getDefaultUserDataPath('win32', root, resourcesPath)).toBe(
+        join('C:\\Users\\test\\AppData\\Roaming', name)
+      )
+    }
+  )
 
-  it('resolves Orca Test userData from its bundled identity on linux', () => {
-    const root = mkdtempSync(join(tmpdir(), 'orca-metadata-'))
-    const resourcesPath = join(root, 'Resources')
-    writePackagedAppAsar(resourcesPath, 'orca-test-app')
+  it.each(['orca-dev-app', 'orca-test-app'])(
+    'resolves packaged identity %s userData from its bundled identity on linux',
+    (name) => {
+      const root = mkdtempSync(join(tmpdir(), 'orca-metadata-'))
+      const resourcesPath = join(root, 'Resources')
+      writePackagedAppAsar(resourcesPath, name)
 
-    expect(getDefaultUserDataPath('linux', root, resourcesPath)).toBe(
-      join(root, '.config', 'orca-test-app')
-    )
-  })
+      expect(getDefaultUserDataPath('linux', root, resourcesPath)).toBe(join(root, '.config', name))
+    }
+  )
 
-  it('falls back to production when resourcesPath is unavailable', () => {
+  it('falls back to the production `orca` directory when no resourcesPath is available', () => {
     const root = mkdtempSync(join(tmpdir(), 'orca-metadata-'))
 
     expect(getDefaultUserDataPath('darwin', root, undefined)).toBe(
@@ -90,7 +97,7 @@ describe('getDefaultUserDataPath', () => {
     )
   })
 
-  it('falls back to production when app.asar/package.json is unreadable', () => {
+  it('falls back to the production `orca` directory when app.asar/package.json is unreadable', () => {
     const root = mkdtempSync(join(tmpdir(), 'orca-metadata-'))
     const resourcesPath = join(root, 'Resources')
     mkdirSync(resourcesPath, { recursive: true })
@@ -100,7 +107,19 @@ describe('getDefaultUserDataPath', () => {
     )
   })
 
-  it('resolves production for a packaged production build', () => {
+  it('falls back to the production `orca` directory when the app.asar package name is missing', () => {
+    const root = mkdtempSync(join(tmpdir(), 'orca-metadata-'))
+    const resourcesPath = join(root, 'Resources')
+    const asarDir = join(resourcesPath, 'app.asar')
+    mkdirSync(asarDir, { recursive: true })
+    writeFileSync(join(asarDir, 'package.json'), JSON.stringify({}), 'utf8')
+
+    expect(getDefaultUserDataPath('darwin', root, resourcesPath)).toBe(
+      join(root, 'Library', 'Application Support', 'orca')
+    )
+  })
+
+  it('resolves the production `orca` directory for a packaged production build', () => {
     const root = mkdtempSync(join(tmpdir(), 'orca-metadata-'))
     const resourcesPath = join(root, 'Resources')
     writePackagedAppAsar(resourcesPath, 'orca')
