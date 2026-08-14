@@ -6,7 +6,6 @@ import { resolveCursorAgentImeAnchor } from '@/lib/pane-manager/terminal-ime-anc
 import { installTerminalImeCompositionRoute } from './terminal-ime-composition-route'
 import { detectAgentStatusFromTitle, agentTypeToIconAgent, isClaudeAgent } from '@/lib/agent-status'
 import { reportWorkerTerminalUserInput } from '@/lib/worker-terminal-takeover-report'
-import { isHistoryOnlyColdRestoreWorktree } from '../terminal/history-only-cold-restore'
 import { resolvePaneTitleDecision } from './terminal-title-evidence'
 import { blocksCodexPaneInput } from '../codex-restart-notice-state'
 import { resolveLiveAgentStatusConnectionRouting } from '@/lib/agent-status-connection-ownership'
@@ -4970,7 +4969,7 @@ export function connectPanePty(
       deps.onShowSessionRestoredBanner(pane.id, reason)
     }
     const buildColdRestoreAgentResumeStartup = (): ColdRestoreAgentResumeStartup | null => {
-      if (pendingStartupCommand || isHistoryOnlyColdRestoreWorktree(deps.worktreeId)) {
+      if (pendingStartupCommand) {
         return null
       }
       const state = useAppStore.getState()

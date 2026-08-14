@@ -159,20 +159,19 @@ describe('renderer startup runtime routing', () => {
     expect(postReconnectRecoveryIndex).toBeGreaterThan(reconnectIndex)
   })
 
-  it('background-mounts restored worktrees after reconnect under the history-only gate', () => {
+  it('background-mounts restored worktrees after reconnect without gating normal PTY restore', () => {
     const source = readFileSync(join(process.cwd(), 'src/renderer/src/App.tsx'), 'utf8')
-    const gateIndex = source.indexOf('gateHistoryOnlyColdRestore(restoredTerminalWorktreeIds)')
     const reconnectIndex = source.indexOf(
       'actions.reconnectPersistedTerminals(abortController.signal)',
-      gateIndex
+      source.indexOf('actions.hydrateTabsSession(')
     )
     const mountIndex = source.indexOf(
       'requestBackgroundTerminalWorktreeMount(mount)',
       reconnectIndex
     )
 
-    expect(gateIndex).toBeGreaterThanOrEqual(0)
-    expect(reconnectIndex).toBeGreaterThan(gateIndex)
+    expect(source).not.toContain('gateHistoryOnlyColdRestore')
+    expect(reconnectIndex).toBeGreaterThanOrEqual(0)
     expect(mountIndex).toBeGreaterThan(reconnectIndex)
   })
 

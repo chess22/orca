@@ -216,7 +216,6 @@ import {
 } from './components/terminal/background-terminal-worktree-mount'
 import {
   collectHistoryOnlyColdRestoreMounts,
-  gateHistoryOnlyColdRestore,
   type HistoryOnlyColdRestoreMount
 } from './components/terminal/history-only-cold-restore'
 import {
@@ -1005,12 +1004,6 @@ function App(): React.JSX.Element {
             actions.hydrateEditorSession(sessionRead.session, sessionHydrationOptions)
             actions.hydrateBrowserSession(sessionRead.session, sessionHydrationOptions)
           })
-          const restoredTerminalWorktreeIds = Object.entries(useAppStore.getState().tabsByWorktree)
-            .filter(([, tabs]) => tabs.length > 0)
-            .map(([worktreeId]) => worktreeId)
-          // Why: archive recovery first restores history/UI. Keep agent ownership
-          // gated so mounting many saved panes cannot resume Claude/Codex twice.
-          gateHistoryOnlyColdRestore(restoredTerminalWorktreeIds)
           // Why: prune visit timestamps AFTER hydration (earlier, worktreesByRepo may be empty and prune would drop entries for worktrees about to appear); seed the active worktree if missing.
           // See docs/cmd-j-empty-query-ordering.md.
           timeRendererStartupSyncStep('visit-timestamp-prune', () => {
