@@ -159,6 +159,23 @@ describe('renderer startup runtime routing', () => {
     expect(postReconnectRecoveryIndex).toBeGreaterThan(reconnectIndex)
   })
 
+  it('background-mounts restored worktrees after reconnect under the history-only gate', () => {
+    const source = readFileSync(join(process.cwd(), 'src/renderer/src/App.tsx'), 'utf8')
+    const gateIndex = source.indexOf('gateHistoryOnlyColdRestore(restoredTerminalWorktreeIds)')
+    const reconnectIndex = source.indexOf(
+      'actions.reconnectPersistedTerminals(abortController.signal)',
+      gateIndex
+    )
+    const mountIndex = source.indexOf(
+      'requestBackgroundTerminalWorktreeMount({ worktreeId })',
+      reconnectIndex
+    )
+
+    expect(gateIndex).toBeGreaterThanOrEqual(0)
+    expect(reconnectIndex).toBeGreaterThan(gateIndex)
+    expect(mountIndex).toBeGreaterThan(reconnectIndex)
+  })
+
   it('refreshes terminal snapshot capability before degraded reconnect', () => {
     const source = readFileSync(join(process.cwd(), 'src/renderer/src/App.tsx'), 'utf8')
     const degradedStart = source.indexOf(

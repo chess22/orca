@@ -211,8 +211,10 @@ import WorktreeBaseFallbackDialog from './components/WorktreeBaseFallbackDialog'
 import { useOsc52ClipboardDefaultOnNotice } from './components/terminal-pane/osc52-clipboard-default-on-notice'
 import {
   hasRequestedBackgroundTerminalWorktreeMount,
+  requestBackgroundTerminalWorktreeMount,
   subscribeBackgroundTerminalWorktreeMountRequests
 } from './components/terminal/background-terminal-worktree-mount'
+import { gateHistoryOnlyColdRestore } from './components/terminal/history-only-cold-restore'
 import {
   collectTerminalProviderSnapshotPtyIds,
   refreshTerminalProviderSnapshotCapabilities
@@ -978,6 +980,12 @@ function App(): React.JSX.Element {
             actions.hydrateEditorSession(sessionRead.session, sessionHydrationOptions)
             actions.hydrateBrowserSession(sessionRead.session, sessionHydrationOptions)
           })
+          const restoredTerminalWorktreeIds = Object.entries(useAppStore.getState().tabsByWorktree)
+            .filter(([, tabs]) => tabs.length > 0)
+            .map(([worktreeId]) => worktreeId)
+          // Why: archive recovery first restores history/UI. Keep agent ownership
+          // gated so mounting many saved panes cannot resume Claude/Codex twice.
+          gateHistoryOnlyColdRestore(restoredTerminalWorktreeIds)
           // Why: prune visit timestamps AFTER hydration (earlier, worktreesByRepo may be empty and prune would drop entries for worktrees about to appear); seed the active worktree if missing.
           // See docs/cmd-j-empty-query-ordering.md.
           timeRendererStartupSyncStep('visit-timestamp-prune', () => {
@@ -1090,6 +1098,12 @@ function App(): React.JSX.Element {
           await timeRendererStartupStep('reconnect-terminals', () =>
             actions.reconnectPersistedTerminals(abortController.signal)
           )
+          const activeRestoredWorktreeId = useAppStore.getState().activeWorktreeId
+          for (const worktreeId of restoredTerminalWorktreeIds) {
+            if (worktreeId !== activeRestoredWorktreeId) {
+              requestBackgroundTerminalWorktreeMount({ worktreeId })
+            }
+          }
           await timeRendererStartupStep('recover-legacy-worker-terminals-post-reconnect', () =>
             window.api.app.recoverLegacyWorkerTerminalsForRendererStartup()
           )
