@@ -27,7 +27,6 @@ import { getLocalGitCapabilityCache } from './git-capability-state'
 import { gitExecFileAsync, translateWslOutputPaths } from './runner'
 import { resolveGitDir, runWithGitReadCacheInvalidation } from './status'
 import { hasWorktreeBaseCommitRef } from './worktree-base-ref-probe'
-import { mayScanGitInProtectedFolder } from './macos-protected-folder-git-access'
 
 export type AddWorktreeResult = {
   localBaseRefRefresh?: LocalBaseRefRefreshResult
@@ -763,9 +762,6 @@ async function listWorktreesUnshared(
   repoPath: string,
   options: GitWorktreeExecOptions = {}
 ): Promise<GitWorktreeInfo[]> {
-  if (!(await mayScanGitInProtectedFolder(repoPath))) {
-    return []
-  }
   try {
     const worktrees = await readTranslatedWorktreeGraph(repoPath, options)
     return annotateSparseCheckoutStatus(worktrees)

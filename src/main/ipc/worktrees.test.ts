@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as GitUsernameModule from '../git/git-username'
 import { lstat, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { CreateWorktreeResult, GitWorktreeInfo, Worktree } from '../../shared/types'
 import * as localWorktreeFilesystem from '../local-worktree-filesystem'
@@ -5577,6 +5577,74 @@ describe('registerWorktreeHandlers', () => {
       })
     ])
     expect(listWorktreesMock).not.toHaveBeenCalled()
+  })
+
+  it('uses metadata fallback for protected-folder discovery without starting Git', async () => {
+    setPlatform('darwin')
+    const repoPath = join(homedir(), 'Documents', 'protected-repo')
+    const repo = {
+      id: 'repo-protected',
+      path: repoPath,
+      displayName: 'Protected Repo',
+      badgeColor: '#000',
+      addedAt: 0
+    }
+    const rootId = `${repo.id}::${repoPath}`
+    const rootMeta = makeWorktreeMeta({ displayName: 'Persisted Root' })
+    store.getRepo.mockReturnValue(repo)
+    store.getAllWorktreeMeta.mockReturnValue({ [rootId]: rootMeta })
+    store.getWorktreeMeta.mockImplementation((id: string) => (id === rootId ? rootMeta : undefined))
+
+    const result = await handlers['worktrees:listDetected'](null, { repoId: repo.id })
+
+    expect(result).toMatchObject({
+      repoId: repo.id,
+      authoritative: false,
+      source: 'metadata-fallback',
+      worktrees: [expect.objectContaining({ id: rootId, path: repoPath })]
+    })
+    expect(listWorktreesMock).not.toHaveBeenCalled()
+    expect(gitExecFileAsyncMock).not.toHaveBeenCalled()
+  })
+
+  it('continues scanning unprotected repos while protected repos use metadata fallback', async () => {
+    setPlatform('darwin')
+    const protectedPath = join(homedir(), 'Documents', 'protected-repo')
+    const protectedRepo = {
+      id: 'repo-protected',
+      path: protectedPath,
+      displayName: 'Protected Repo',
+      badgeColor: '#000',
+      addedAt: 0
+    }
+    const localRepo = {
+      id: 'repo-local',
+      path: '/workspace/local',
+      displayName: 'Local Repo',
+      badgeColor: '#111',
+      addedAt: 0
+    }
+    store.getRepos.mockReturnValue([protectedRepo, localRepo])
+    listWorktreesMock.mockResolvedValue([
+      {
+        path: localRepo.path,
+        head: 'abc123',
+        branch: 'refs/heads/main',
+        isBare: false,
+        isMainWorktree: true
+      }
+    ])
+
+    const result = (await handlers['worktrees:listAll'](null, undefined)) as Worktree[]
+
+    expect(listWorktreesMock).toHaveBeenCalledOnce()
+    expect(listWorktreesMock).toHaveBeenCalledWith(localRepo.path)
+    expect(result).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: `${protectedRepo.id}::${protectedPath}` }),
+        expect.objectContaining({ id: `${localRepo.id}::${localRepo.path}` })
+      ])
+    )
   })
 
   it('returns reconstructed rows when an SSH provider is unavailable', async () => {

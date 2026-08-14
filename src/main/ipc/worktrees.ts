@@ -47,6 +47,7 @@ import {
   removeWorktree
 } from '../git/worktree'
 import { gitExecFileAsync } from '../git/runner'
+import { shouldDeferMacosProtectedFolderGitDiscovery } from '../git/macos-protected-folder-git-access'
 import { withWorktreeSpan } from '../observability/instrumentation'
 import { resolveGitHubPrStartPoint } from '../github/pr-start-point'
 import {
@@ -726,6 +727,34 @@ function listDisconnectedSshWorktrees(
   return [...byWorktreeId.values()]
 }
 
+function listProtectedFolderMetadataWorktrees(store: Store, repo: Repo): Worktree[] {
+  const metaIndex = createSshWorktreeMetaIndex(Object.entries(store.getAllWorktreeMeta()))
+  const worktrees = listDisconnectedSshWorktrees(store, repo, metaIndex)
+  const rootId = `${repo.id}::${repo.path}`
+  if (worktrees.some((worktree) => worktree.id === rootId)) {
+    return worktrees
+  }
+  return [
+    mergeWorktree(
+      repo.id,
+      {
+        path: repo.path,
+        head: '',
+        branch: '',
+        isBare: false,
+        isMainWorktree: true
+      },
+      store.getWorktreeMeta(rootId),
+      repo.displayName
+    ),
+    ...worktrees
+  ]
+}
+
+function shouldDeferLocalRepoDiscovery(repo: Repo): boolean {
+  return !repo.connectionId && shouldDeferMacosProtectedFolderGitDiscovery(repo.path)
+}
+
 function buildDetectedGitWorktrees(
   store: Store,
   repo: Repo,
@@ -1020,6 +1049,14 @@ export function registerWorktreeHandlers(
         let freshScan = true
         if (isFolderRepo(repo)) {
           return listVisibleFolderWorkspaces(store, repo)
+        } else if (shouldDeferLocalRepoDiscovery(repo)) {
+          return buildDisconnectedDetectedWorktrees(
+            store,
+            repo,
+            listProtectedFolderMetadataWorktrees(store, repo)
+          )
+            .filter((worktree) => worktree.visible)
+            .map((worktree) => stampAndMergeVisibleDetectedWorktree(store, repo, worktree))
         } else if (repo.connectionId) {
           const provider = getSshGitProvider(repo.connectionId)
           if (!provider) {
@@ -1084,6 +1121,14 @@ export function registerWorktreeHandlers(
       let freshScan = true
       if (isFolderRepo(repo)) {
         return listVisibleFolderWorkspaces(store, repo)
+      } else if (shouldDeferLocalRepoDiscovery(repo)) {
+        return buildDisconnectedDetectedWorktrees(
+          store,
+          repo,
+          listProtectedFolderMetadataWorktrees(store, repo)
+        )
+          .filter((worktree) => worktree.visible)
+          .map((worktree) => stampAndMergeVisibleDetectedWorktree(store, repo, worktree))
       } else if (repo.connectionId) {
         const provider = getSshGitProvider(repo.connectionId)
         if (!provider) {
@@ -1158,6 +1203,17 @@ export function registerWorktreeHandlers(
             worktrees: projectResolvedWorktreeLineage(
               buildFolderDetectedWorktrees(store, repo),
               store.getAllWorktreeLineage?.() ?? {}
+            )
+          }
+        } else if (shouldDeferLocalRepoDiscovery(repo)) {
+          return {
+            repoId: repo.id,
+            authoritative: false,
+            source: 'metadata-fallback',
+            worktrees: buildDisconnectedDetectedWorktrees(
+              store,
+              repo,
+              listProtectedFolderMetadataWorktrees(store, repo)
             )
           }
         } else if (repo.connectionId) {

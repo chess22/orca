@@ -1,9 +1,5 @@
-import { constants } from 'node:fs'
-import { access } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join, relative } from 'node:path'
-
-const protectedFolderAccess = new Map<string, Promise<boolean>>()
 
 function protectedRootForPath(targetPath: string): string | null {
   if (process.platform !== 'darwin' || !isAbsolute(targetPath)) {
@@ -20,23 +16,6 @@ function protectedRootForPath(targetPath: string): string | null {
   return null
 }
 
-export async function mayScanGitInProtectedFolder(targetPath: string): Promise<boolean> {
-  const root = protectedRootForPath(targetPath)
-  if (!root) {
-    return true
-  }
-  let check = protectedFolderAccess.get(root)
-  if (!check) {
-    // Why: one root-level probe lets macOS settle TCC once before concurrent repo scans multiply prompts.
-    check = access(root, constants.R_OK).then(
-      () => true,
-      () => false
-    )
-    protectedFolderAccess.set(root, check)
-  }
-  return check
-}
-
-export function resetMacosProtectedFolderGitAccessForTests(): void {
-  protectedFolderAccess.clear()
+export function shouldDeferMacosProtectedFolderGitDiscovery(targetPath: string): boolean {
+  return protectedRootForPath(targetPath) !== null
 }
