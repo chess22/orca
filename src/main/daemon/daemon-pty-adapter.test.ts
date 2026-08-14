@@ -1,6 +1,6 @@
 /* oxlint-disable max-lines */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { hostname, tmpdir } from 'node:os'
+import { homedir, hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { DaemonClient } from './client'
@@ -20,6 +20,7 @@ const { getMacDaemonSystemResolverHealthMock } = vi.hoisted(() => ({
 }))
 
 const itOnPosix = process.platform === 'win32' ? it.skip : it
+const itOnDarwin = process.platform === 'darwin' ? it : it.skip
 
 vi.mock('./daemon-health', async (importOriginal) => {
   const actual = await importOriginal<typeof DaemonHealthModule>()
@@ -1815,6 +1816,43 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
       expect(internals.sessionsNeedingFullCheckpoint.has(sessionId)).toBe(true)
       expect(internals.lastFullCheckpointAt.has(sessionId)).toBe(false)
     })
+
+    itOnDarwin(
+      'keeps a safe requested cwd when cold history names a protected folder',
+      async () => {
+        const sessionId = 'protected-cold-restore-cwd'
+        const sessionDir = join(historyDir, getHistorySessionDirName(sessionId))
+        const safeCwd = homedir()
+        const protectedCwd = join(safeCwd, 'Documents', 'repo')
+        mkdirSync(sessionDir, { recursive: true })
+        writeFileSync(
+          join(sessionDir, 'meta.json'),
+          JSON.stringify({
+            cwd: protectedCwd,
+            cols: 80,
+            rows: 24,
+            startedAt: '2026-04-15T10:00:00Z',
+            endedAt: null,
+            exitCode: null
+          })
+        )
+        writeFileSync(join(sessionDir, 'scrollback.bin'), 'saved output\r\n')
+        historyAdapter = new DaemonPtyAdapter({ socketPath, tokenPath, historyPath: historyDir })
+
+        const restored = await historyAdapter.spawn({
+          cols: 80,
+          rows: 24,
+          cwd: safeCwd,
+          sessionId
+        })
+
+        expect(lastSpawnOpts?.cwd).toBe(safeCwd)
+        expect(restored.coldRestore).toMatchObject({
+          cwd: safeCwd,
+          scrollback: expect.stringContaining('saved output')
+        })
+      }
+    )
 
     it('re-anchors a warm reattach the adapter was not already managing', async () => {
       const sessionId = 'warm-reattach-reanchor'

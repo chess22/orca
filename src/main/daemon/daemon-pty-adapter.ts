@@ -44,6 +44,7 @@ import { shouldUseShellReadyStartupDelivery } from '../../shared/codex-startup-d
 import type { TerminalOscLinkRange } from '../../shared/terminal-osc-link-ranges'
 import type { PtyIncarnationId } from '../../shared/pty-incarnation'
 import { resolveSafePtyDefaultCwd } from '../providers/pty-default-cwd'
+import { shouldDeferMacosProtectedFolderGitDiscovery } from '../git/macos-protected-folder-git-access'
 
 type ColdRestorePayload = {
   scrollback: string
@@ -64,6 +65,15 @@ function getRecoveredHistorySeed(restoreInfo: ColdRestoreInfo): string | null {
   return restoreInfo.modes.alternateScreen
     ? restoreInfo.scrollbackAnsi || restoreInfo.snapshotAnsi || null
     : restoreInfo.rehydrateSequences + restoreInfo.snapshotAnsi
+}
+
+function resolveColdRestoreCwd(recoveredCwd: string, requestedCwd: string | undefined): string {
+  if (!shouldDeferMacosProtectedFolderGitDiscovery(recoveredCwd)) {
+    return recoveredCwd
+  }
+  return requestedCwd && !shouldDeferMacosProtectedFolderGitDiscovery(requestedCwd)
+    ? requestedCwd
+    : resolveSafePtyDefaultCwd()
 }
 
 function providerSequenceForSpawn(
@@ -261,14 +271,15 @@ export class DaemonPtyAdapter implements IPtyProvider {
       if (!restoreInfo) {
         return null
       }
+      const normalizedCwd =
+        normalizeWslColdRestoreCwd({
+          recoveredCwd: restoreInfo.cwd,
+          requestedCwd: opts.cwd ?? resolveSafePtyDefaultCwd(),
+          wslDistro
+        }) ?? ''
       return {
         ...restoreInfo,
-        cwd:
-          normalizeWslColdRestoreCwd({
-            recoveredCwd: restoreInfo.cwd,
-            requestedCwd: opts.cwd ?? resolveSafePtyDefaultCwd(),
-            wslDistro
-          }) ?? ''
+        cwd: resolveColdRestoreCwd(normalizedCwd, opts.cwd)
       }
     }
 
