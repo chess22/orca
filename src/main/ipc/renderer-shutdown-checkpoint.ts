@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import type { ExecutionHostId } from '../../shared/execution-host'
 import type { PersistedUIState, WorkspaceSessionState } from '../../shared/types'
 import type { Store } from '../persistence'
+import { getOrcaWindowSlotByWebContents } from '../window/orca-window-registry'
 
 type PersistBeforeUnloadSyncArgs = {
   sessions: { state: WorkspaceSessionState; hostId?: ExecutionHostId }[]
@@ -11,11 +12,12 @@ type PersistBeforeUnloadSyncArgs = {
 export function registerRendererShutdownCheckpointHandler(store: Store): void {
   ipcMain.on('app:persist-before-unload-sync', (event, args: PersistBeforeUnloadSyncArgs) => {
     let ok = true
+    const windowSlot = getOrcaWindowSlotByWebContents(event.sender)
     // Why: apply both renderer-owned snapshots before synchronously flushing
     // each owning store, so an immediate exit cannot outrun either update.
     try {
       for (const { state, hostId } of args.sessions) {
-        store.setWorkspaceSession(state, hostId)
+        store.setWorkspaceSession(state, hostId, windowSlot)
       }
       store.updateUI(args.ui)
     } catch (error) {

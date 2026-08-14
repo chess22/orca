@@ -112,6 +112,11 @@ export function getOrcaWindowSlot(windowId: number): number | null {
   return entries.get(windowId)?.slot ?? null
 }
 
+export function getOrcaWindowSlotByWebContents(sender: WebContents): number | null {
+  const window = getOrcaWindowByWebContentsId(sender.id)
+  return window ? getOrcaWindowSlot(window.id) : null
+}
+
 /** True when the sender is the top-level webContents of a live Orca window.
  *  Used by once-registered global IPC listeners that must reject webview
  *  guests and any non-Orca surface. */

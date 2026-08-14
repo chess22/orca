@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { syncHandlers } = vi.hoisted(() => ({
+const { syncHandlers, getOrcaWindowSlotByWebContentsMock } = vi.hoisted(() => ({
   syncHandlers: new Map<
     string,
-    (event: { returnValue?: unknown }, args: Record<string, unknown>) => void
-  >()
+    (event: { returnValue?: unknown; sender?: unknown }, args: Record<string, unknown>) => void
+  >(),
+  getOrcaWindowSlotByWebContentsMock: vi.fn(() => null as number | null)
 }))
 
 vi.mock('electron', () => ({
@@ -12,7 +13,10 @@ vi.mock('electron', () => ({
     on: vi.fn(
       (
         channel: string,
-        handler: (event: { returnValue?: unknown }, args: Record<string, unknown>) => void
+        handler: (
+          event: { returnValue?: unknown; sender?: unknown },
+          args: Record<string, unknown>
+        ) => void
       ) => {
         syncHandlers.set(channel, handler)
       }
@@ -20,11 +24,17 @@ vi.mock('electron', () => ({
   }
 }))
 
+vi.mock('../window/orca-window-registry', () => ({
+  getOrcaWindowSlotByWebContents: getOrcaWindowSlotByWebContentsMock
+}))
+
 import { registerRendererShutdownCheckpointHandler } from './renderer-shutdown-checkpoint'
 
 describe('registerRendererShutdownCheckpointHandler', () => {
   beforeEach(() => {
     syncHandlers.clear()
+    getOrcaWindowSlotByWebContentsMock.mockReset()
+    getOrcaWindowSlotByWebContentsMock.mockReturnValue(null)
   })
 
   it('commits every shutdown state mutation before flushing both stores', () => {
@@ -49,8 +59,13 @@ describe('registerRendererShutdownCheckpointHandler', () => {
       ui: { activeView: 'settings' }
     })
 
-    expect(store.setWorkspaceSession).toHaveBeenNthCalledWith(1, localSession, undefined)
-    expect(store.setWorkspaceSession).toHaveBeenNthCalledWith(2, remoteSession, 'runtime:host-1')
+    expect(store.setWorkspaceSession).toHaveBeenNthCalledWith(1, localSession, undefined, null)
+    expect(store.setWorkspaceSession).toHaveBeenNthCalledWith(
+      2,
+      remoteSession,
+      'runtime:host-1',
+      null
+    )
     expect(store.updateUI).toHaveBeenCalledWith({ activeView: 'settings' })
     expect(store.flushOrThrow).toHaveBeenCalledTimes(1)
     expect(store.flushActiveViewPreferenceOrThrow).toHaveBeenCalledTimes(1)
@@ -61,6 +76,29 @@ describe('registerRendererShutdownCheckpointHandler', () => {
       'flush',
       'active-view'
     ])
+    expect(event.returnValue).toEqual({ ok: true })
+  })
+
+  it('checkpoints the sender window session into its slot authority', () => {
+    getOrcaWindowSlotByWebContentsMock.mockReturnValue(2)
+    const store = {
+      setWorkspaceSession: vi.fn(),
+      updateUI: vi.fn(),
+      flushOrThrow: vi.fn(),
+      flushActiveViewPreferenceOrThrow: vi.fn()
+    }
+    registerRendererShutdownCheckpointHandler(store as never)
+
+    const sender = { id: 202 }
+    const event: { returnValue?: unknown; sender?: unknown } = { sender }
+    const session = { activeWorktreeId: 'slot-2-worktree' }
+    syncHandlers.get('app:persist-before-unload-sync')?.(event, {
+      sessions: [{ state: session }],
+      ui: {}
+    })
+
+    expect(getOrcaWindowSlotByWebContentsMock).toHaveBeenCalledWith(sender)
+    expect(store.setWorkspaceSession).toHaveBeenCalledWith(session, undefined, 2)
     expect(event.returnValue).toEqual({ ok: true })
   })
 
