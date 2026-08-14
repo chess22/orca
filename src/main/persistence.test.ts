@@ -6935,6 +6935,59 @@ describe('Store', () => {
     expect(reloaded.getWorkspaceSession().activeWorktreeId).toBeNull()
   })
 
+  it('lists only secondary window slots with durable visible content for startup restore', async () => {
+    const store = await createStore()
+    store.setWorkspaceSession(
+      {
+        activeRepoId: 'r2',
+        activeWorktreeId: 'wt2',
+        activeTabId: 'tab2',
+        tabsByWorktree: {
+          wt2: [makeTerminalTab({ id: 'tab2', ptyId: 'wt2@@pty2', worktreeId: 'wt2' })]
+        },
+        terminalLayoutsByTabId: {}
+      },
+      null,
+      2
+    )
+    store.setWorkspaceSession(
+      {
+        activeRepoId: 'r3',
+        activeWorktreeId: 'wt3',
+        activeTabId: null,
+        tabsByWorktree: {},
+        terminalLayoutsByTabId: {}
+      },
+      null,
+      3
+    )
+    store.setWorkspaceSession(
+      {
+        activeRepoId: 'r4',
+        activeWorktreeId: 'wt4',
+        activeTabId: 'file4',
+        tabsByWorktree: {},
+        terminalLayoutsByTabId: {},
+        openFilesByWorktree: {
+          wt4: [
+            {
+              filePath: '/tmp/file4',
+              relativePath: 'file4',
+              worktreeId: 'wt4',
+              language: 'text'
+            }
+          ]
+        }
+      },
+      null,
+      4
+    )
+
+    store.flush()
+    const reloaded = await createStore()
+    expect(reloaded.getRestorableSecondaryWindowSlots()).toEqual([2, 4])
+  })
+
   it('patches workspace session without replacing unchanged slices', async () => {
     const store = await createStore()
     const tabsByWorktree = {

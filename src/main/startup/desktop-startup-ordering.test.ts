@@ -25,6 +25,10 @@ describe('startup ordering', () => {
 
     expect(windowIndex).toBeGreaterThanOrEqual(0)
     expect(Math.max(rpcStartIndex, legacyRpcStartIndex)).toBeGreaterThanOrEqual(0)
+    expect(desktopStartup).toContain(
+      'for (const windowSlot of store.getRestorableSecondaryWindowSlots())'
+    )
+    expect(desktopStartup).toContain('openOrcaWindow(windowSlot)')
   })
 
   it('bounds WSL reconciliation before serve RPC while leaving desktop startup independent', () => {

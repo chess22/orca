@@ -1001,7 +1001,7 @@ function syncMacMenuBarIcon(showMenuBarIcon: boolean): Tray | null {
   return options ? setMacMenuBarIconVisible(showMenuBarIcon, options) : null
 }
 
-function openOrcaWindow(): BrowserWindow {
+function openOrcaWindow(requestedWindowSlot?: number): BrowserWindow {
   logStartupMilestone('open-main-window-start')
   if (!store) {
     throw new Error('Store must be initialized before opening the main window')
@@ -1061,7 +1061,7 @@ function openOrcaWindow(): BrowserWindow {
   // Why: the slot is the window's stable persistence identity (bounds,
   // session partition); reserve it before construction so createMainWindow can
   // restore that slot's saved geometry.
-  const windowSlot = getNextOrcaWindowSlot()
+  const windowSlot = requestedWindowSlot ?? getNextOrcaWindowSlot()
   const cascadeSource = getLastFocusedOrcaWindow()
   const window = createMainWindow(store, {
     windowSlot,
@@ -2487,6 +2487,14 @@ app.whenReady().then(async () => {
       console.error('[runtime] Failed to start local RPC transport:', error)
     })
   ])
+
+  // Why: a clean restart begins with an empty in-memory window registry, so
+  // opening only the default window always claims slot 1 and strands durable
+  // slot-2+ sessions. Recreate each non-empty secondary partition with its
+  // original slot identity after the primary window has claimed slot 1.
+  for (const windowSlot of store.getRestorableSecondaryWindowSlots()) {
+    openOrcaWindow(windowSlot)
+  }
 
   const cloudAuth = getOrcaCloudAuthConfig()
   if (cloudAuth.configured) {

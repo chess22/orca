@@ -5659,6 +5659,34 @@ export class Store {
     return this.state.workspaceSessionsByHostId?.[resolved] ?? getDefaultWorkspaceSession()
   }
 
+  /** Secondary window slots whose saved session still owns visible content.
+   *  Startup uses these exact slot identities so a surviving slot-2 window is
+   *  not silently replaced by the unrelated legacy slot-1 session. */
+  getRestorableSecondaryWindowSlots(): number[] {
+    const hasVisibleContent = (session: WorkspaceSessionState | undefined): boolean => {
+      if (!session) {
+        return false
+      }
+      return (
+        Object.values(session.tabsByWorktree ?? {}).some((tabs) => tabs.length > 0) ||
+        Object.values(session.openFilesByWorktree ?? {}).some((files) => files.length > 0) ||
+        Object.values(session.browserTabsByWorktree ?? {}).some((tabs) => tabs.length > 0) ||
+        Object.values(session.unifiedTabs ?? {}).some((tabs) => tabs.length > 0)
+      )
+    }
+
+    return Object.entries(this.state.workspaceSessionsByWindowSlot ?? {})
+      .flatMap(([slotKey, sessions]) => {
+        const slot = Number(slotKey)
+        return Number.isSafeInteger(slot) &&
+          slot >= 2 &&
+          Object.values(sessions).some(hasVisibleContent)
+          ? [slot]
+          : []
+      })
+      .sort((a, b) => a - b)
+  }
+
   readTerminalScrollbackSnapshot(ref: string): string | null {
     return readTerminalScrollbackSnapshotSync(ref, this.terminalScrollbackSnapshotStorage)
   }
