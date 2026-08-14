@@ -1,5 +1,6 @@
 import type { Repo } from '../shared/types'
 import { resolveLocalGitUsernameDetailed } from './git/git-username'
+import { shouldDeferMacosProtectedFolderGitDiscovery } from './git/macos-protected-folder-git-access'
 
 type RepoUsernameStore = {
   getRepos(): Repo[]
@@ -31,6 +32,7 @@ async function enrichRepoGitUsernamesInBackground(
       // Why: SSH repo paths are remote; local git cannot inspect them. The
       // SSH username path (getSshGitUsername) stays caller-driven.
       !repo.connectionId &&
+      !shouldDeferMacosProtectedFolderGitDiscovery(repo.path) &&
       !attemptedLocations.has(getRepoLocationKey(repo))
   )
   let changed = false

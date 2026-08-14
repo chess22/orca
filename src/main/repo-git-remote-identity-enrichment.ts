@@ -1,4 +1,5 @@
 import type { Repo } from '../shared/types'
+import { shouldDeferMacosProtectedFolderGitDiscovery } from './git/macos-protected-folder-git-access'
 import { detectGitRemoteIdentity } from './repo-git-remote-identity'
 
 const NO_IDENTITY_RETRY_TTL_MS = 5 * 60 * 1000
@@ -74,7 +75,12 @@ async function enrichMissingRepoGitRemoteIdentitiesInBackground(
 ): Promise<void> {
   const candidates = store
     .getRepos()
-    .filter((repo) => repo.kind !== 'folder' && !repo.gitRemoteIdentity)
+    .filter(
+      (repo) =>
+        repo.kind !== 'folder' &&
+        !repo.gitRemoteIdentity &&
+        (repo.connectionId || !shouldDeferMacosProtectedFolderGitDiscovery(repo.path))
+    )
   let changed = false
   for (const repo of candidates) {
     // Why: enrichment runs later; capture the location we probed so a mutable

@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { GitRemoteIdentity } from '../shared/git-remote-identity'
 import type { Repo } from '../shared/types'
+import { resetMacosProtectedFolderGitStartupForTests } from './git/macos-protected-folder-git-access'
 import { detectGitRemoteIdentity } from './repo-git-remote-identity'
 import {
   enrichMissingRepoGitRemoteIdentities,
@@ -36,8 +39,10 @@ function makeRepo(overrides: Partial<Repo> = {}): Repo {
   }
 }
 
-function makeStore(repo: Repo): RepoIdentityStore & { updateRepo: ReturnType<typeof vi.fn> } {
-  const repos = [repo]
+function makeStore(repoOrRepos: Repo | Repo[]): RepoIdentityStore & {
+  updateRepo: ReturnType<typeof vi.fn>
+} {
+  const repos = Array.isArray(repoOrRepos) ? repoOrRepos : [repoOrRepos]
   return {
     getRepos: () => repos,
     getRepo: (id) => repos.find((candidate) => candidate.id === id),
@@ -67,9 +72,38 @@ afterEach(() => {
   vi.useRealTimers()
   vi.clearAllMocks()
   resetRepoGitRemoteIdentityEnrichmentForTests()
+  resetMacosProtectedFolderGitStartupForTests()
 })
 
 describe('enrichMissingRepoGitRemoteIdentities', () => {
+  it('defers protected local repos without populating the negative cache', async () => {
+    const platform = process.platform
+    Object.defineProperty(process, 'platform', { configurable: true, value: 'darwin' })
+    try {
+      vi.mocked(detectGitRemoteIdentity).mockResolvedValueOnce(remoteIdentity)
+      const protectedPath = join(homedir(), 'Documents', 'protected-repo')
+      const regularPath = join(homedir(), 'src', 'regular-repo')
+      const protectedRepo = makeRepo({ id: 'protected', path: protectedPath })
+      const regularRepo = makeRepo({ id: 'regular', path: regularPath })
+      const store = makeStore([protectedRepo, regularRepo])
+
+      enrichMissingRepoGitRemoteIdentities(store)
+      await flushRepoGitRemoteIdentityEnrichmentForTests()
+
+      expect(detectGitRemoteIdentity).toHaveBeenCalledOnce()
+      expect(detectGitRemoteIdentity).toHaveBeenCalledWith(regularPath, undefined)
+      expect(protectedRepo.gitRemoteIdentity).toBeUndefined()
+
+      enrichMissingRepoGitRemoteIdentities(store)
+      await flushRepoGitRemoteIdentityEnrichmentForTests()
+
+      expect(detectGitRemoteIdentity).toHaveBeenCalledOnce()
+      expect(protectedRepo.gitRemoteIdentity).toBeUndefined()
+    } finally {
+      Object.defineProperty(process, 'platform', { configurable: true, value: platform })
+    }
+  })
+
   it('schedules remote identity enrichment without blocking the caller', async () => {
     vi.mocked(detectGitRemoteIdentity).mockResolvedValue(remoteIdentity)
     const repo = makeRepo()

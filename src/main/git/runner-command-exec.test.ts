@@ -1,5 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 
 const { execFileMock, execFileSyncMock, spawnMock } = vi.hoisted(() => ({
   execFileMock: vi.fn(),
@@ -17,10 +19,15 @@ import {
   commandExecFileAsync,
   ghExecFileAsync,
   gitExecFileAsync,
+  gitExecFileSync,
   gitStreamStdout,
   translateWslOutputPaths,
   wslAwareSpawn
 } from './runner'
+import {
+  completeMacosProtectedFolderGitStartup,
+  resetMacosProtectedFolderGitStartupForTests
+} from './macos-protected-folder-git-access'
 
 type MockChildProcess = EventEmitter & {
   stdout: EventEmitter
@@ -172,6 +179,40 @@ describe('commandExecFileAsync Windows command shims', () => {
       expect(command.stderr.listenerCount('data')).toBe(0)
       expect(command.listenerCount('error')).toBe(0)
       expect(command.listenerCount('close')).toBe(0)
+    })
+  })
+})
+
+describe('protected-folder startup Git gate', () => {
+  beforeEach(() => {
+    execFileMock.mockReset()
+    execFileSyncMock.mockReset()
+    resetMacosProtectedFolderGitStartupForTests()
+  })
+
+  it('rejects async and sync Git before spawning, then releases after graph ready', async () => {
+    await withPlatform('darwin', async () => {
+      const cwd = join(homedir(), 'Documents', 'repo')
+
+      await expect(
+        gitExecFileAsync(['config', '--get', 'github.user'], { cwd })
+      ).rejects.toMatchObject({ code: 'GIT_PROTECTED_FOLDER_STARTUP_DEFERRED' })
+      expect(() => gitExecFileSync(['branch', '--show-current'], { cwd })).toThrow(
+        'git_protected_folder_startup_deferred'
+      )
+      expect(execFileMock).not.toHaveBeenCalled()
+      expect(execFileSyncMock).not.toHaveBeenCalled()
+
+      completeMacosProtectedFolderGitStartup()
+      execFileMock.mockImplementation((_binary, _args, _options, callback) => {
+        callback(null, '', '')
+        return createMockChildProcess(1234)
+      })
+      await expect(gitExecFileAsync(['status'], { cwd })).resolves.toEqual({
+        stdout: '',
+        stderr: ''
+      })
+      expect(execFileMock).toHaveBeenCalledOnce()
     })
   })
 })

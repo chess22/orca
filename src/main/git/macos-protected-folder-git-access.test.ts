@@ -5,6 +5,11 @@ const { homedirMock } = vi.hoisted(() => ({ homedirMock: vi.fn(() => '/Users/ada
 vi.mock('node:os', () => ({ homedir: homedirMock }))
 
 import { shouldDeferMacosProtectedFolderGitDiscovery } from './macos-protected-folder-git-access'
+import {
+  completeMacosProtectedFolderGitStartup,
+  resetMacosProtectedFolderGitStartupForTests,
+  shouldDeferMacosProtectedFolderGitStartup
+} from './macos-protected-folder-git-access'
 
 describe('shouldDeferMacosProtectedFolderGitDiscovery', () => {
   let platform: PropertyDescriptor | undefined
@@ -12,6 +17,7 @@ describe('shouldDeferMacosProtectedFolderGitDiscovery', () => {
   beforeEach(() => {
     platform = Object.getOwnPropertyDescriptor(process, 'platform')
     Object.defineProperty(process, 'platform', { configurable: true, value: 'darwin' })
+    resetMacosProtectedFolderGitStartupForTests()
   })
 
   afterEach(() => {
@@ -36,5 +42,19 @@ describe('shouldDeferMacosProtectedFolderGitDiscovery', () => {
 
   it('does not defer repositories outside protected folders', () => {
     expect(shouldDeferMacosProtectedFolderGitDiscovery('/Users/ada/code/repo')).toBe(false)
+  })
+
+  it('defers protected Git only until the startup graph is ready', () => {
+    expect(shouldDeferMacosProtectedFolderGitStartup('/Users/ada/Documents/repo')).toBe(true)
+
+    completeMacosProtectedFolderGitStartup()
+
+    expect(shouldDeferMacosProtectedFolderGitStartup('/Users/ada/Documents/repo')).toBe(false)
+  })
+
+  it('does not apply the local macOS gate to WSL-routed Git', () => {
+    expect(shouldDeferMacosProtectedFolderGitStartup('/Users/ada/Documents/repo', 'Ubuntu')).toBe(
+      false
+    )
   })
 })

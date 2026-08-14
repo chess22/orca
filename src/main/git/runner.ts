@@ -41,6 +41,7 @@ import {
 } from '../../shared/wsl-login-shell-command'
 import { UNTRANSLATED_GIT_OUTPUT_ENV } from '../../shared/git-output-locale'
 import { endSubprocessStdin } from '../../shared/subprocess-stdin-write'
+import { shouldDeferMacosProtectedFolderGitStartup } from './macos-protected-folder-git-access'
 // Re-exported for existing importers; lightweight consumers should import from './exec-error' to avoid this heavy module.
 import { extractExecError, parseRetryAfterMs } from './exec-error'
 export { extractExecError, parseRetryAfterMs }
@@ -262,6 +263,15 @@ type GitExecOptions = {
   signal?: AbortSignal
   wslDistro?: string
   useConfiguredSshCommandForNetwork?: boolean
+}
+
+function assertGitStartupPathAvailable(cwd: string, wslDistro?: string): void {
+  if (!shouldDeferMacosProtectedFolderGitStartup(cwd, wslDistro)) {
+    return
+  }
+  const error = new Error('git_protected_folder_startup_deferred') as Error & { code: string }
+  error.code = 'GIT_PROTECTED_FOLDER_STARTUP_DEFERRED'
+  throw error
 }
 
 type CommandExecOptions = {
@@ -829,6 +839,7 @@ export async function gitExecFileAsync(
   args: string[],
   options: GitExecOptions
 ): Promise<{ stdout: string; stderr: string }> {
+  assertGitStartupPathAvailable(options.cwd, options.wslDistro)
   // Why: span the user-visible `git <subcommand>` form, not the resolved binary, so dashboards group by intent.
   return withGitSpan(
     { args, ...(options.cwd !== undefined ? { cwd: options.cwd } : {}) },
@@ -914,6 +925,7 @@ export async function gitExecFileAsyncBuffer(
   args: string[],
   options: { cwd: string; maxBuffer?: number; wslDistro?: string }
 ): Promise<{ stdout: Buffer }> {
+  assertGitStartupPathAvailable(options.cwd, options.wslDistro)
   const resolved = resolveCommand('git', args, options.cwd, options.wslDistro, {
     useWslLoginShell: Boolean(options.wslDistro)
   })
@@ -954,6 +966,7 @@ export async function gitStreamStdout(
   args: string[],
   options: GitStreamOptions
 ): Promise<GitStreamResult> {
+  assertGitStartupPathAvailable(options.cwd, options.wslDistro)
   const maxBuffer = options.maxBuffer ?? DEFAULT_GIT_MAX_BUFFER
   return withGitSpan({ args, cwd: options.cwd }, async () => {
     return new Promise<GitStreamResult>((resolve, reject) => {
@@ -1086,6 +1099,7 @@ export function gitExecFileSync(
     timeout?: number
   }
 ): string {
+  assertGitStartupPathAvailable(options.cwd)
   const resolved = resolveCommand('git', args, options.cwd)
   const spawnStartedAt = performance.now()
   try {
@@ -1111,6 +1125,7 @@ export function gitSpawn(
   options: SpawnOptions & { cwd: string; wslDistro?: string }
 ): ChildProcess {
   const { wslDistro, ...spawnOptions } = options
+  assertGitStartupPathAvailable(options.cwd, wslDistro)
   const resolved = resolveCommand('git', args, options.cwd, wslDistro, {
     useWslLoginShell: Boolean(wslDistro)
   })

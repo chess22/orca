@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { Repo } from '../shared/types'
 import type { ResolvedGitUsername } from './git/git-username'
+import { resetMacosProtectedFolderGitStartupForTests } from './git/macos-protected-folder-git-access'
 
 const resolveLocalGitUsernameDetailedMock = vi.hoisted(() => vi.fn())
 
@@ -43,7 +46,43 @@ describe('enrichRepoGitUsernames', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetRepoGitUsernameEnrichmentForTests()
+    resetMacosProtectedFolderGitStartupForTests()
     resolveLocalGitUsernameDetailedMock.mockResolvedValue(resolved('demo-user'))
+  })
+
+  it('defers protected local repos without marking their locations attempted', async () => {
+    const platform = process.platform
+    Object.defineProperty(process, 'platform', { configurable: true, value: 'darwin' })
+    try {
+      const protectedPath = join(homedir(), 'Documents', 'protected-repo')
+      const store = makeStore([
+        makeRepo({ id: 'protected', path: protectedPath }),
+        makeRepo({ id: 'regular', path: join(homedir(), 'src', 'regular-repo') })
+      ])
+
+      enrichRepoGitUsernames(store)
+      await flushRepoGitUsernameEnrichmentForTests()
+
+      expect(resolveLocalGitUsernameDetailedMock).toHaveBeenCalledOnce()
+      expect(resolveLocalGitUsernameDetailedMock).toHaveBeenCalledWith(
+        join(homedir(), 'src', 'regular-repo')
+      )
+      expect(store.setResolvedRepoGitUsername).not.toHaveBeenCalledWith(
+        'protected',
+        expect.anything()
+      )
+
+      enrichRepoGitUsernames(store)
+      await flushRepoGitUsernameEnrichmentForTests()
+
+      expect(resolveLocalGitUsernameDetailedMock).toHaveBeenCalledOnce()
+      expect(store.setResolvedRepoGitUsername).not.toHaveBeenCalledWith(
+        'protected',
+        expect.anything()
+      )
+    } finally {
+      Object.defineProperty(process, 'platform', { configurable: true, value: platform })
+    }
   })
 
   it('resolves and persists usernames, then notifies once', async () => {

@@ -39,6 +39,10 @@ import {
 } from '../git/worktree'
 import * as gitRunner from '../git/runner'
 import {
+  completeMacosProtectedFolderGitStartup,
+  resetMacosProtectedFolderGitStartupForTests
+} from '../git/macos-protected-folder-git-access'
+import {
   WORKTREE_PROCESS_SWEEP_TIMEOUT_MS,
   WORKTREE_TEARDOWN_RPC_MARGIN_MS
 } from './worktree-teardown'
@@ -30265,6 +30269,47 @@ describe('OrcaRuntimeService', () => {
     pending.resolve([makeWorktreeInfo(TEST_WORKTREE_PATH)])
     await expect(Promise.all([detected, resolved])).resolves.toBeTruthy()
     expect(listWorktrees).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses stored worktrees and a root fallback for protected repos during startup', async () => {
+    const platform = process.platform
+    Object.defineProperty(process, 'platform', { configurable: true, value: 'darwin' })
+    resetMacosProtectedFolderGitStartupForTests()
+    try {
+      const repo = {
+        ...store.getRepos()[0],
+        path: join(homedir(), 'Documents', 'protected-repo')
+      }
+      const storedPath = join(repo.path, 'stored-worktree')
+      const runtime = new OrcaRuntimeService({
+        ...store,
+        getRepos: () => [repo],
+        getRepo: (id: string) => (id === repo.id ? repo : undefined),
+        getAllWorktreeMeta: () => ({
+          [`${repo.id}::${storedPath}`]: { customName: 'Stored' }
+        })
+      } as never)
+      vi.mocked(listWorktrees).mockClear()
+
+      const deferredResult = await runtime.listDetectedManagedWorktrees(`id:${repo.id}`)
+
+      expect(deferredResult.authoritative).toBe(false)
+      expect(deferredResult.worktrees.map((worktree) => worktree.path)).toEqual([
+        storedPath,
+        repo.path
+      ])
+      expect(listWorktrees).not.toHaveBeenCalled()
+
+      completeMacosProtectedFolderGitStartup()
+      vi.mocked(listWorktrees).mockResolvedValueOnce([makeWorktreeInfo(repo.path)])
+      const releasedResult = await runtime.listDetectedManagedWorktrees(`id:${repo.id}`)
+
+      expect(releasedResult.authoritative).toBe(true)
+      expect(listWorktrees).toHaveBeenCalledWith(repo.path)
+    } finally {
+      Object.defineProperty(process, 'platform', { configurable: true, value: platform })
+      resetMacosProtectedFolderGitStartupForTests()
+    }
   })
 
   it('worktree scan cache: rescans immediately after worktree invalidation', async () => {

@@ -190,6 +190,11 @@ import {
 import type { SshConnectionState } from '../../shared/ssh-types'
 import { getPublicSshState } from './public-ssh-state'
 import { closeTerminalTabInWorkspaceSession } from '../../shared/workspace-session-terminal-tab-close'
+import {
+  completeMacosProtectedFolderGitStartup,
+  shouldDeferMacosProtectedFolderGitDiscovery,
+  shouldDeferMacosProtectedFolderGitStartup
+} from '../git/macos-protected-folder-git-access'
 import type {
   LinearCurrentIssueContextHints,
   LinearAttachResult,
@@ -4232,6 +4237,7 @@ export class OrcaRuntimeService {
       }
     }
     this.windowGraphStatuses.set(windowId, 'ready')
+    completeMacosProtectedFolderGitStartup()
     this.recomputeGraphStatus()
     this.setTerminalSideEffectConsumerAvailable(windowId !== HEADLESS_RUNTIME_WINDOW_ID)
     this.refreshWritableFlags()
@@ -15866,7 +15872,12 @@ export class OrcaRuntimeService {
       const store = this.requireStore()
       let changed = false
       for (const repo of store.getRepos()) {
-        if (repo.upstream !== undefined || repo.kind === 'folder' || repo.connectionId) {
+        if (
+          repo.upstream !== undefined ||
+          repo.kind === 'folder' ||
+          repo.connectionId ||
+          shouldDeferMacosProtectedFolderGitDiscovery(repo.path)
+        ) {
           continue
         }
         let upstream: GitHubOwnerRepo | null
@@ -23925,6 +23936,7 @@ export class OrcaRuntimeService {
       return
     }
     this.windowGraphStatuses.set(windowId, 'ready')
+    completeMacosProtectedFolderGitStartup()
     this.recomputeGraphStatus()
     this.setTerminalSideEffectConsumerAvailable(windowId !== HEADLESS_RUNTIME_WINDOW_ID)
     this.refreshWritableFlags()
@@ -24945,6 +24957,9 @@ export class OrcaRuntimeService {
     projectRuntime: ProjectExecutionRuntimeResolution | undefined
   ): Promise<RuntimeWorktreeScanResult> {
     if (!repo.connectionId) {
+      if (shouldDeferMacosProtectedFolderGitStartup(repo.path)) {
+        return { ok: false, worktrees: this.listStoredWorktreesForResolution(repo, true) }
+      }
       return {
         ok: true,
         worktrees: await listRepoWorktrees(
@@ -24955,16 +24970,19 @@ export class OrcaRuntimeService {
     }
     const provider = getSshGitProvider(repo.connectionId)
     if (!provider) {
-      return { ok: false, worktrees: this.listStoredSshWorktreesForResolution(repo) }
+      return { ok: false, worktrees: this.listStoredWorktreesForResolution(repo) }
     }
     try {
       return { ok: true, worktrees: await provider.listWorktrees(repo.path) }
     } catch {
-      return { ok: false, worktrees: this.listStoredSshWorktreesForResolution(repo) }
+      return { ok: false, worktrees: this.listStoredWorktreesForResolution(repo) }
     }
   }
 
-  private listStoredSshWorktreesForResolution(repo: Repo): GitWorktreeInfo[] {
+  private listStoredWorktreesForResolution(
+    repo: Repo,
+    includeRootFallback = false
+  ): GitWorktreeInfo[] {
     const store = this.store
     if (!store) {
       return []
@@ -24975,7 +24993,6 @@ export class OrcaRuntimeService {
       if (!parsed || parsed.repoId !== repo.id) {
         continue
       }
-      // Why: mirror worktrees:list's disconnected-SSH fallback — keep persisted SSH worktrees while the provider reconnects instead of zero rows.
       byWorktreeId.set(worktreeId, {
         path: parsed.worktreePath,
         head: '',
@@ -24987,6 +25004,16 @@ export class OrcaRuntimeService {
         meta.sparsePresetId !== undefined
           ? { isSparse: true }
           : {})
+      })
+    }
+    const rootWorktreeId = `${repo.id}::${repo.path}`
+    if (includeRootFallback && !byWorktreeId.has(rootWorktreeId)) {
+      byWorktreeId.set(rootWorktreeId, {
+        path: repo.path,
+        head: '',
+        branch: '',
+        isBare: false,
+        isMainWorktree: true
       })
     }
     return [...byWorktreeId.values()]
