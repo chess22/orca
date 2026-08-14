@@ -41,7 +41,7 @@ import {
 } from '../../shared/wsl-login-shell-command'
 import { UNTRANSLATED_GIT_OUTPUT_ENV } from '../../shared/git-output-locale'
 import { endSubprocessStdin } from '../../shared/subprocess-stdin-write'
-import { shouldDeferMacosProtectedFolderGitStartup } from './macos-protected-folder-git-access'
+import { shouldBlockAutomaticMacosProtectedFolderGit } from './macos-protected-folder-git-access'
 // Re-exported for existing importers; lightweight consumers should import from './exec-error' to avoid this heavy module.
 import { extractExecError, parseRetryAfterMs } from './exec-error'
 export { extractExecError, parseRetryAfterMs }
@@ -263,14 +263,24 @@ type GitExecOptions = {
   signal?: AbortSignal
   wslDistro?: string
   useConfiguredSshCommandForNetwork?: boolean
+  allowMacosProtectedFolderAccess?: boolean
 }
 
-function assertGitStartupPathAvailable(cwd: string, wslDistro?: string): void {
-  if (!shouldDeferMacosProtectedFolderGitStartup(cwd, wslDistro)) {
+function assertAutomaticGitPathAvailable(
+  cwd: string,
+  wslDistro?: string,
+  allowMacosProtectedFolderAccess?: boolean
+): void {
+  if (
+    allowMacosProtectedFolderAccess ||
+    !shouldBlockAutomaticMacosProtectedFolderGit(cwd, wslDistro)
+  ) {
     return
   }
-  const error = new Error('git_protected_folder_startup_deferred') as Error & { code: string }
-  error.code = 'GIT_PROTECTED_FOLDER_STARTUP_DEFERRED'
+  const error = new Error('git_protected_folder_automatic_access_deferred') as Error & {
+    code: string
+  }
+  error.code = 'GIT_PROTECTED_FOLDER_AUTOMATIC_ACCESS_DEFERRED'
   throw error
 }
 
@@ -839,7 +849,11 @@ export async function gitExecFileAsync(
   args: string[],
   options: GitExecOptions
 ): Promise<{ stdout: string; stderr: string }> {
-  assertGitStartupPathAvailable(options.cwd, options.wslDistro)
+  assertAutomaticGitPathAvailable(
+    options.cwd,
+    options.wslDistro,
+    options.allowMacosProtectedFolderAccess
+  )
   // Why: span the user-visible `git <subcommand>` form, not the resolved binary, so dashboards group by intent.
   return withGitSpan(
     { args, ...(options.cwd !== undefined ? { cwd: options.cwd } : {}) },
@@ -923,9 +937,18 @@ export async function commandExecFileAsync(
  */
 export async function gitExecFileAsyncBuffer(
   args: string[],
-  options: { cwd: string; maxBuffer?: number; wslDistro?: string }
+  options: {
+    cwd: string
+    maxBuffer?: number
+    wslDistro?: string
+    allowMacosProtectedFolderAccess?: boolean
+  }
 ): Promise<{ stdout: Buffer }> {
-  assertGitStartupPathAvailable(options.cwd, options.wslDistro)
+  assertAutomaticGitPathAvailable(
+    options.cwd,
+    options.wslDistro,
+    options.allowMacosProtectedFolderAccess
+  )
   const resolved = resolveCommand('git', args, options.cwd, options.wslDistro, {
     useWslLoginShell: Boolean(options.wslDistro)
   })
@@ -946,6 +969,7 @@ type GitStreamOptions = {
   env?: NodeJS.ProcessEnv
   wslDistro?: string
   signal?: AbortSignal
+  allowMacosProtectedFolderAccess?: boolean
   /** Byte backstop; defaults to DEFAULT_GIT_MAX_BUFFER. */
   maxBuffer?: number
   /**
@@ -966,7 +990,11 @@ export async function gitStreamStdout(
   args: string[],
   options: GitStreamOptions
 ): Promise<GitStreamResult> {
-  assertGitStartupPathAvailable(options.cwd, options.wslDistro)
+  assertAutomaticGitPathAvailable(
+    options.cwd,
+    options.wslDistro,
+    options.allowMacosProtectedFolderAccess
+  )
   const maxBuffer = options.maxBuffer ?? DEFAULT_GIT_MAX_BUFFER
   return withGitSpan({ args, cwd: options.cwd }, async () => {
     return new Promise<GitStreamResult>((resolve, reject) => {
@@ -1097,9 +1125,10 @@ export function gitExecFileSync(
     encoding?: BufferEncoding
     stdio?: SpawnOptions['stdio']
     timeout?: number
+    allowMacosProtectedFolderAccess?: boolean
   }
 ): string {
-  assertGitStartupPathAvailable(options.cwd)
+  assertAutomaticGitPathAvailable(options.cwd, undefined, options.allowMacosProtectedFolderAccess)
   const resolved = resolveCommand('git', args, options.cwd)
   const spawnStartedAt = performance.now()
   try {
@@ -1122,10 +1151,14 @@ export function gitExecFileSync(
  */
 export function gitSpawn(
   args: string[],
-  options: SpawnOptions & { cwd: string; wslDistro?: string }
+  options: SpawnOptions & {
+    cwd: string
+    wslDistro?: string
+    allowMacosProtectedFolderAccess?: boolean
+  }
 ): ChildProcess {
-  const { wslDistro, ...spawnOptions } = options
-  assertGitStartupPathAvailable(options.cwd, wslDistro)
+  const { wslDistro, allowMacosProtectedFolderAccess, ...spawnOptions } = options
+  assertAutomaticGitPathAvailable(options.cwd, wslDistro, allowMacosProtectedFolderAccess)
   const resolved = resolveCommand('git', args, options.cwd, wslDistro, {
     useWslLoginShell: Boolean(wslDistro)
   })

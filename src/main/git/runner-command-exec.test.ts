@@ -24,10 +24,6 @@ import {
   translateWslOutputPaths,
   wslAwareSpawn
 } from './runner'
-import {
-  completeMacosProtectedFolderGitStartup,
-  resetMacosProtectedFolderGitStartupForTests
-} from './macos-protected-folder-git-access'
 
 type MockChildProcess = EventEmitter & {
   stdout: EventEmitter
@@ -187,28 +183,28 @@ describe('protected-folder startup Git gate', () => {
   beforeEach(() => {
     execFileMock.mockReset()
     execFileSyncMock.mockReset()
-    resetMacosProtectedFolderGitStartupForTests()
   })
 
-  it('rejects async and sync Git before spawning, then releases after graph ready', async () => {
+  it('rejects automatic Git but permits an explicit protected-folder opt-in', async () => {
     await withPlatform('darwin', async () => {
       const cwd = join(homedir(), 'Documents', 'repo')
 
       await expect(
         gitExecFileAsync(['config', '--get', 'github.user'], { cwd })
-      ).rejects.toMatchObject({ code: 'GIT_PROTECTED_FOLDER_STARTUP_DEFERRED' })
+      ).rejects.toMatchObject({ code: 'GIT_PROTECTED_FOLDER_AUTOMATIC_ACCESS_DEFERRED' })
       expect(() => gitExecFileSync(['branch', '--show-current'], { cwd })).toThrow(
-        'git_protected_folder_startup_deferred'
+        'git_protected_folder_automatic_access_deferred'
       )
       expect(execFileMock).not.toHaveBeenCalled()
       expect(execFileSyncMock).not.toHaveBeenCalled()
 
-      completeMacosProtectedFolderGitStartup()
       execFileMock.mockImplementation((_binary, _args, _options, callback) => {
         callback(null, '', '')
         return createMockChildProcess(1234)
       })
-      await expect(gitExecFileAsync(['status'], { cwd })).resolves.toEqual({
+      await expect(
+        gitExecFileAsync(['status'], { cwd, allowMacosProtectedFolderAccess: true })
+      ).resolves.toEqual({
         stdout: '',
         stderr: ''
       })

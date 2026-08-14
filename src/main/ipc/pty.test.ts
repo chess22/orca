@@ -8771,6 +8771,32 @@ describe('registerPtyHandlers', () => {
     expect(spawnMock).not.toHaveBeenCalled()
   })
 
+  it('restores a missing protected-folder session from home without probing its cwd', async () => {
+    const platform = process.platform
+    const originalHome = process.env.HOME
+    Object.defineProperty(process, 'platform', { configurable: true, value: 'darwin' })
+    process.env.HOME = '/Users/ada'
+    try {
+      registerPtyHandlers(mainWindow as never)
+      const protectedCwd = '/Users/ada/Documents/repo'
+
+      await handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        cwd: protectedCwd,
+        sessionId: 'repo-1::/Users/ada/Documents/repo@@saved',
+        worktreeId: 'repo-1::/Users/ada/Documents/repo'
+      })
+
+      const [, , options] = spawnMock.mock.calls.at(-1) as [string, string[], { cwd: string }]
+      expect(options.cwd).toBe('/Users/ada')
+      expect(statSyncMock).not.toHaveBeenCalledWith(protectedCwd)
+    } finally {
+      Object.defineProperty(process, 'platform', { configurable: true, value: platform })
+      process.env.HOME = originalHome
+    }
+  })
+
   it('rejects missing WSL worktree cwd instead of validating only the fallback Windows cwd', async () => {
     const originalPlatform = process.platform
     const originalUserProfile = process.env.USERPROFILE

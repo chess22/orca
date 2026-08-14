@@ -117,6 +117,8 @@ import {
   type TerminalStartupCwdMissingDirFallback
 } from '../../shared/terminal-startup-cwd'
 import { isWslUncPath } from '../../shared/wsl-paths'
+import { shouldDeferMacosProtectedFolderGitDiscovery } from '../git/macos-protected-folder-git-access'
+import { resolveSafePtyDefaultCwd } from '../providers/pty-default-cwd'
 import { splitWorktreeIdForFilesystem } from '../../shared/worktree-id'
 import type { AgentSessionOwnerBinding } from '../../shared/agent-session-host-authority'
 import {
@@ -4129,7 +4131,7 @@ export function registerPtyHandlers(
       const allowMissingCwdFallback =
         !args.connectionId && !args.sessionId && args.cwdFallback === 'worktree'
       let didFallbackToWorkspaceRootCwd = false
-      const cwd = resolvePtySpawnStartupCwd(
+      const resolvedCwd = resolvePtySpawnStartupCwd(
         args.worktreeId,
         args.cwd,
         allowMissingCwdFallback
@@ -4141,6 +4143,13 @@ export function registerPtyHandlers(
             }
           : undefined
       )
+      const cwd =
+        !args.connectionId &&
+        args.sessionId &&
+        resolvedCwd &&
+        shouldDeferMacosProtectedFolderGitDiscovery(resolvedCwd)
+          ? resolveSafePtyDefaultCwd()
+          : resolvedCwd
       const startupCwdFallback =
         didFallbackToWorkspaceRootCwd && cwd ? ({ kind: 'worktree', cwd } as const) : undefined
       spawnTiming.mark('preflight')

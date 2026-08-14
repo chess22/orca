@@ -3,7 +3,6 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { GitRemoteIdentity } from '../shared/git-remote-identity'
 import type { Repo } from '../shared/types'
-import { resetMacosProtectedFolderGitStartupForTests } from './git/macos-protected-folder-git-access'
 import { detectGitRemoteIdentity } from './repo-git-remote-identity'
 import {
   enrichMissingRepoGitRemoteIdentities,
@@ -72,7 +71,6 @@ afterEach(() => {
   vi.useRealTimers()
   vi.clearAllMocks()
   resetRepoGitRemoteIdentityEnrichmentForTests()
-  resetMacosProtectedFolderGitStartupForTests()
 })
 
 describe('enrichMissingRepoGitRemoteIdentities', () => {

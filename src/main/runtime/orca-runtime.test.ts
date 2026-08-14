@@ -39,10 +39,6 @@ import {
 } from '../git/worktree'
 import * as gitRunner from '../git/runner'
 import {
-  completeMacosProtectedFolderGitStartup,
-  resetMacosProtectedFolderGitStartupForTests
-} from '../git/macos-protected-folder-git-access'
-import {
   WORKTREE_PROCESS_SWEEP_TIMEOUT_MS,
   WORKTREE_TEARDOWN_RPC_MARGIN_MS
 } from './worktree-teardown'
@@ -30274,7 +30270,6 @@ describe('OrcaRuntimeService', () => {
   it('uses stored worktrees and a root fallback for protected repos during startup', async () => {
     const platform = process.platform
     Object.defineProperty(process, 'platform', { configurable: true, value: 'darwin' })
-    resetMacosProtectedFolderGitStartupForTests()
     try {
       const repo = {
         ...store.getRepos()[0],
@@ -30300,15 +30295,16 @@ describe('OrcaRuntimeService', () => {
       ])
       expect(listWorktrees).not.toHaveBeenCalled()
 
-      completeMacosProtectedFolderGitStartup()
-      vi.mocked(listWorktrees).mockResolvedValueOnce([makeWorktreeInfo(repo.path)])
-      const releasedResult = await runtime.listDetectedManagedWorktrees(`id:${repo.id}`)
+      const laterResult = await runtime.listDetectedManagedWorktrees(`id:${repo.id}`)
 
-      expect(releasedResult.authoritative).toBe(true)
-      expect(listWorktrees).toHaveBeenCalledWith(repo.path)
+      expect(laterResult.authoritative).toBe(false)
+      expect(laterResult.worktrees.map((worktree) => worktree.path)).toEqual([
+        storedPath,
+        repo.path
+      ])
+      expect(listWorktrees).not.toHaveBeenCalled()
     } finally {
       Object.defineProperty(process, 'platform', { configurable: true, value: platform })
-      resetMacosProtectedFolderGitStartupForTests()
     }
   })
 

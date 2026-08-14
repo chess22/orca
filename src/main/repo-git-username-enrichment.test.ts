@@ -3,7 +3,6 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Repo } from '../shared/types'
 import type { ResolvedGitUsername } from './git/git-username'
-import { resetMacosProtectedFolderGitStartupForTests } from './git/macos-protected-folder-git-access'
 
 const resolveLocalGitUsernameDetailedMock = vi.hoisted(() => vi.fn())
 
@@ -46,7 +45,6 @@ describe('enrichRepoGitUsernames', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetRepoGitUsernameEnrichmentForTests()
-    resetMacosProtectedFolderGitStartupForTests()
     resolveLocalGitUsernameDetailedMock.mockResolvedValue(resolved('demo-user'))
   })
 

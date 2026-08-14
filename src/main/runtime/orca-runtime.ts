@@ -191,9 +191,8 @@ import type { SshConnectionState } from '../../shared/ssh-types'
 import { getPublicSshState } from './public-ssh-state'
 import { closeTerminalTabInWorkspaceSession } from '../../shared/workspace-session-terminal-tab-close'
 import {
-  completeMacosProtectedFolderGitStartup,
-  shouldDeferMacosProtectedFolderGitDiscovery,
-  shouldDeferMacosProtectedFolderGitStartup
+  shouldBlockAutomaticMacosProtectedFolderGit,
+  shouldDeferMacosProtectedFolderGitDiscovery
 } from '../git/macos-protected-folder-git-access'
 import type {
   LinearCurrentIssueContextHints,
@@ -4237,7 +4236,6 @@ export class OrcaRuntimeService {
       }
     }
     this.windowGraphStatuses.set(windowId, 'ready')
-    completeMacosProtectedFolderGitStartup()
     this.recomputeGraphStatus()
     this.setTerminalSideEffectConsumerAvailable(windowId !== HEADLESS_RUNTIME_WINDOW_ID)
     this.refreshWritableFlags()
@@ -23936,7 +23934,6 @@ export class OrcaRuntimeService {
       return
     }
     this.windowGraphStatuses.set(windowId, 'ready')
-    completeMacosProtectedFolderGitStartup()
     this.recomputeGraphStatus()
     this.setTerminalSideEffectConsumerAvailable(windowId !== HEADLESS_RUNTIME_WINDOW_ID)
     this.refreshWritableFlags()
@@ -24957,7 +24954,7 @@ export class OrcaRuntimeService {
     projectRuntime: ProjectExecutionRuntimeResolution | undefined
   ): Promise<RuntimeWorktreeScanResult> {
     if (!repo.connectionId) {
-      if (shouldDeferMacosProtectedFolderGitStartup(repo.path)) {
+      if (shouldBlockAutomaticMacosProtectedFolderGit(repo.path)) {
         return { ok: false, worktrees: this.listStoredWorktreesForResolution(repo, true) }
       }
       return {
