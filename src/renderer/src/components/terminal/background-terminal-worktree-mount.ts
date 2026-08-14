@@ -54,6 +54,18 @@ export function requestBackgroundTerminalWorktreeMount(
   }
 }
 
+/** Worktrees that were live at shutdown but are not the visible workspace.
+ *  Their panes need an explicit background mount after hydration; otherwise
+ *  deferred reconnect only records wake hints and cold history never mounts. */
+export function collectPersistedBackgroundTerminalWorktreeMounts(
+  pendingReconnectWorktreeIds: readonly string[],
+  activeWorktreeId: string | null
+): string[] {
+  return [...new Set(pendingReconnectWorktreeIds)].filter(
+    (worktreeId) => worktreeId.length > 0 && worktreeId !== activeWorktreeId
+  )
+}
+
 export function takePendingBackgroundTerminalWorktreeMount(
   worktreeId: string | undefined
 ): BackgroundMountTerminalWorktreeDetail | null {

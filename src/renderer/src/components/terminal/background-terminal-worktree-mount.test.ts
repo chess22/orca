@@ -12,6 +12,7 @@ import {
   applyBackgroundMountTabRestriction,
   canDeferColdActivationTabsForHost,
   collectDeferredMountTabIds,
+  collectPersistedBackgroundTerminalWorktreeMounts,
   hasRequestedBackgroundTerminalWorktreeMount,
   planColdActivationTabDeferral,
   pruneClosedBackgroundMountTabs,
@@ -23,6 +24,15 @@ import {
 } from './background-terminal-worktree-mount'
 
 describe('background terminal mount request registry', () => {
+  it('selects unique non-active shutdown worktrees for cold restore mounting', () => {
+    expect(
+      collectPersistedBackgroundTerminalWorktreeMounts(
+        ['wt-realtask', 'wt-commander', 'wt-active', 'wt-commander', ''],
+        'wt-active'
+      )
+    ).toEqual(['wt-realtask', 'wt-commander'])
+  })
+
   it('replays a request made before the Terminal listener mounts', () => {
     takeAllPendingBackgroundTerminalWorktreeMounts()
     const onRequest = vi.fn()

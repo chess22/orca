@@ -168,6 +168,8 @@ describe('renderer startup runtime routing', () => {
     expect(source).toContain('hasMountedTerminalWorkbenchRef.current = true')
     expect(source).toContain('activeWorktreeId !== null || backgroundTerminalMountRequested')
     expect(source).toContain('backgroundTerminalMountRequested ||')
+    expect(source).toContain('collectPersistedBackgroundTerminalWorktreeMounts(')
+    expect(source).toContain('requestBackgroundTerminalWorktreeMount({ worktreeId })')
     expect(source).toContain('hasMountedTerminalWorkbenchRef.current')
     expect(source).toContain('shouldMountTerminalWorkbench ?')
   })

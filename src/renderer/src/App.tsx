@@ -192,7 +192,9 @@ import { resolveMountedLazyModalIds, type LazyModalId } from './lazy-modal-mount
 import { translate } from '@/i18n/i18n'
 import PinnedTabCloseDialog from './components/terminal-pane/PinnedTabCloseDialog'
 import {
+  collectPersistedBackgroundTerminalWorktreeMounts,
   hasRequestedBackgroundTerminalWorktreeMount,
+  requestBackgroundTerminalWorktreeMount,
   subscribeBackgroundTerminalWorktreeMountRequests
 } from './components/terminal/background-terminal-worktree-mount'
 
@@ -997,10 +999,21 @@ function App(): React.JSX.Element {
           await timeRendererStartupStep('first-window-services-await', () =>
             window.api.app.awaitFirstWindowStartupServices()
           )
+          const backgroundRestoreWorktreeIds = collectPersistedBackgroundTerminalWorktreeMounts(
+            useAppStore.getState().pendingReconnectWorktreeIds,
+            useAppStore.getState().activeWorktreeId
+          )
           reconnectStarted = true
           await timeRendererStartupStep('reconnect-terminals', () =>
             actions.reconnectPersistedTerminals(abortController.signal)
           )
+          // Why: reconnectPersistedTerminals intentionally defers daemon attach
+          // until a TerminalPane mounts. Restore every workspace that was live
+          // at shutdown without navigating away from the saved active one, so
+          // split-pane cold history and agent-resume paths actually run.
+          for (const worktreeId of backgroundRestoreWorktreeIds) {
+            requestBackgroundTerminalWorktreeMount({ worktreeId })
+          }
           syncZoomCSSVar()
           // Why (issue #1158): unlock the session writer only after hydration and all dependent steps succeeded, so a mid-startup throw can't serialize partially-mutated state to disk.
           actions.setHydrationSucceeded(true)
