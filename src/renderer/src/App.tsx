@@ -876,6 +876,7 @@ function App(): React.JSX.Element {
       return collectHistoryOnlyColdRestoreMounts({
         tabsByWorktree: state.tabsByWorktree,
         activeWorktreeId: state.activeWorktreeId,
+        activeTabId: state.activeTabId,
         repoIdByWorktreeId: new Map(worktrees.map((worktree) => [worktree.id, worktree.repoId])),
         connectionIdByRepoId: new Map(
           state.repos.flatMap((repo) =>
