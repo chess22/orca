@@ -10,6 +10,9 @@ const HTTP1_COMPATIBILITY_ENV_VAR = 'ORCA_DISABLE_HTTP2'
 const TRUE_ENV_VALUES = new Set(['1', 'true', 'yes', 'on'])
 const FALSE_ENV_VALUES = new Set(['0', 'false', 'no', 'off'])
 let devParentShutdownRequested = false
+const sighupGuardedProcesses = new WeakSet<object>()
+
+type SighupGuardRuntime = Pick<NodeJS.Process, 'on' | 'platform'>
 
 type NetworkCompatibilityOptions = {
   env?: NodeJS.ProcessEnv
@@ -134,6 +137,25 @@ export function patchPackagedProcessPath(): void {
       pathDelimiter
     )
   }
+}
+
+export function installPackagedGuiSighupGuard(
+  isPackaged: boolean,
+  isServeMode: boolean,
+  runtime: SighupGuardRuntime = process
+): void {
+  if (
+    !isPackaged ||
+    isServeMode ||
+    (runtime.platform !== 'darwin' && runtime.platform !== 'linux') ||
+    sighupGuardedProcesses.has(runtime)
+  ) {
+    return
+  }
+
+  // Why: a packaged GUI must outlive the launcher terminal without changing child PTY signal policy.
+  runtime.on('SIGHUP', () => {})
+  sighupGuardedProcesses.add(runtime)
 }
 
 export function configureDevUserDataPath(isDev: boolean): void {

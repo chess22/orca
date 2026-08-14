@@ -120,6 +120,7 @@ import {
   installDevParentDisconnectQuit,
   installDevParentSignalQuit,
   installDevParentWatchdog,
+  installPackagedGuiSighupGuard,
   isDevParentShutdownRequested,
   patchPackagedProcessPath,
   shouldInstallManagedHooks
@@ -448,6 +449,7 @@ if (argvRequestsServeMode(process.argv)) {
   process.argv = normalizeServeModeArgv(process.argv)
 }
 const isServeMode = process.argv.includes('--serve')
+installPackagedGuiSighupGuard(app.isPackaged, isServeMode)
 
 function updateGpuAccelerationAboutPanel(): void {
   app.setAboutPanelOptions(
