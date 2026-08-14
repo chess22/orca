@@ -30281,8 +30281,18 @@ describe('OrcaRuntimeService', () => {
         getRepos: () => [repo],
         getRepo: (id: string) => (id === repo.id ? repo : undefined),
         getAllWorktreeMeta: () => ({
-          [`${repo.id}::${storedPath}`]: { customName: 'Stored' }
-        })
+          [`${repo.id}::${storedPath}`]: {
+            customName: 'Stored',
+            lastKnownBranch: 'refs/heads/feature/saved'
+          },
+          [`${repo.id}::${repo.path}`]: { lastKnownBranch: 'refs/heads/main' }
+        }),
+        getWorktreeMeta: (id: string) =>
+          id === `${repo.id}::${storedPath}`
+            ? ({ lastKnownBranch: 'refs/heads/feature/saved' } as never)
+            : id === `${repo.id}::${repo.path}`
+              ? ({ lastKnownBranch: 'refs/heads/main' } as never)
+              : undefined
       } as never)
       vi.mocked(listWorktrees).mockClear()
 
@@ -30292,6 +30302,10 @@ describe('OrcaRuntimeService', () => {
       expect(deferredResult.worktrees.map((worktree) => worktree.path)).toEqual([
         storedPath,
         repo.path
+      ])
+      expect(deferredResult.worktrees.map((worktree) => worktree.branch)).toEqual([
+        'refs/heads/feature/saved',
+        'refs/heads/main'
       ])
       expect(listWorktrees).not.toHaveBeenCalled()
 
@@ -30306,6 +30320,20 @@ describe('OrcaRuntimeService', () => {
     } finally {
       Object.defineProperty(process, 'platform', { configurable: true, value: platform })
     }
+  })
+
+  it('persists branches from authoritative detection for later protected fallback', async () => {
+    const { runtimeStore } = createStaleRuntimeWorktreeStore(TEST_WORKTREE_ID)
+    const runtime = new OrcaRuntimeService(runtimeStore as never)
+    vi.mocked(listWorktrees).mockResolvedValueOnce([
+      { ...makeWorktreeInfo(TEST_WORKTREE_PATH), branch: 'refs/heads/feature/saved' }
+    ])
+
+    await runtime.listDetectedManagedWorktrees(`id:${TEST_REPO_ID}`)
+
+    expect(runtimeStore.getWorktreeMeta(TEST_WORKTREE_ID)?.lastKnownBranch).toBe(
+      'refs/heads/feature/saved'
+    )
   })
 
   it('worktree scan cache: rescans immediately after worktree invalidation', async () => {

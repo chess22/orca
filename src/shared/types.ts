@@ -623,6 +623,8 @@ export type WorktreeMeta = {
   sparseDirectories?: string[]
   sparseBaseRef?: string
   sparsePresetId?: string
+  /** Last branch observed by an authoritative worktree scan. */
+  lastKnownBranch?: string
   /** Intended create base for stale-base probes. Persisted metadata, not UI drift state. */
   baseRef?: string
   /** True when Orca checked out a pre-existing local branch that delete must not prune. */

@@ -17329,6 +17329,15 @@ export class OrcaRuntimeService {
     }
     if (scan.ok) {
       this.pruneLineageForMissingRepoWorktrees(repo, scan.worktrees)
+      for (const gitWorktree of scan.worktrees) {
+        if (!gitWorktree.branch) {
+          continue
+        }
+        const worktreeId = `${repo.id}::${gitWorktree.path}`
+        if (store.getWorktreeMeta(worktreeId)?.lastKnownBranch !== gitWorktree.branch) {
+          store.setWorktreeMeta(worktreeId, { lastKnownBranch: gitWorktree.branch })
+        }
+      }
     }
     const agentScratchWorktreePathMatcher = createAgentScratchWorktreePathMatcher([
       repo.path,
@@ -24993,7 +25002,7 @@ export class OrcaRuntimeService {
       byWorktreeId.set(worktreeId, {
         path: parsed.worktreePath,
         head: '',
-        branch: '',
+        branch: meta.lastKnownBranch ?? '',
         isBare: false,
         isMainWorktree: areWorktreePathsEqual(parsed.worktreePath, repo.path),
         ...(meta.sparseDirectories !== undefined ||
@@ -25005,10 +25014,11 @@ export class OrcaRuntimeService {
     }
     const rootWorktreeId = `${repo.id}::${repo.path}`
     if (includeRootFallback && !byWorktreeId.has(rootWorktreeId)) {
+      const rootMeta = store.getWorktreeMeta(rootWorktreeId)
       byWorktreeId.set(rootWorktreeId, {
         path: repo.path,
         head: '',
-        branch: '',
+        branch: rootMeta?.lastKnownBranch ?? '',
         isBare: false,
         isMainWorktree: true
       })

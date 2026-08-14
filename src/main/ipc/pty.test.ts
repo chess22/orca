@@ -8797,6 +8797,40 @@ describe('registerPtyHandlers', () => {
     }
   })
 
+  it('starts runtime-owned protected-folder terminals from home without a session id', async () => {
+    const originalHome = process.env.HOME
+    process.env.HOME = '/Users/ada'
+    try {
+      const runtime = {
+        setPtyController: vi.fn(),
+        preAllocateHandleForPty: vi.fn(() => 'term_protected'),
+        registerPty: vi.fn(),
+        noteTerminalSpawnCommand: vi.fn(),
+        onPtySpawned: vi.fn(),
+        onPtyExit: vi.fn(),
+        onPtyData: vi.fn()
+      }
+      registerPtyHandlers(mainWindow as never, runtime as never)
+      const controller = runtime.setPtyController.mock.calls[0]?.[0] as {
+        spawn: (args: Record<string, unknown>) => Promise<unknown>
+      }
+      const protectedCwd = '/Users/ada/Documents/repo'
+
+      await controller.spawn({
+        cols: 80,
+        rows: 24,
+        cwd: protectedCwd,
+        worktreeId: 'repo-1::/Users/ada/Documents/repo'
+      })
+
+      const [, , options] = spawnMock.mock.calls.at(-1) as [string, string[], { cwd: string }]
+      expect(options.cwd).toBe('/Users/ada')
+      expect(statSyncMock).not.toHaveBeenCalledWith(protectedCwd)
+    } finally {
+      process.env.HOME = originalHome
+    }
+  })
+
   it('rejects missing WSL worktree cwd instead of validating only the fallback Windows cwd', async () => {
     const originalPlatform = process.platform
     const originalUserProfile = process.env.USERPROFILE

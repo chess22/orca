@@ -3073,7 +3073,13 @@ export function registerPtyHandlers(
         await startupPromise
       }
       await assertFolderWorkspacePtyPathUsable(args.worktreeId)
-      const cwd = resolvePtySpawnStartupCwd(args.worktreeId, args.cwd)
+      const resolvedCwd = resolvePtySpawnStartupCwd(args.worktreeId, args.cwd)
+      const cwd =
+        !args.connectionId &&
+        resolvedCwd &&
+        shouldDeferMacosProtectedFolderGitDiscovery(resolvedCwd)
+          ? resolveSafePtyDefaultCwd()
+          : resolvedCwd
       const provider = getProvider(args.connectionId)
       const isClaudeLaunch = !args.connectionId && isClaudeLaunchCommand(args.command)
       if (isClaudeLaunch && isClaudeAuthSwitchInProgress()) {
