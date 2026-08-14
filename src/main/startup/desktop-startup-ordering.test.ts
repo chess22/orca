@@ -19,16 +19,16 @@ describe('startup ordering', () => {
     expect(source).toContain('firstWindowStartupServicesReady = startupServices.firstWindowReady')
     expect(source).toContain('localPtyStartupReady = startupServices.localPtyReady')
 
-    const windowIndex = desktopStartup.indexOf('Promise.resolve(openOrcaWindow())')
+    const windowIndex = desktopStartup.indexOf('Promise.resolve(openOrcaWindow(startupWindowSlot))')
     const rpcStartIndex = desktopStartup.indexOf('desktopRuntimeRpc.start()')
     const legacyRpcStartIndex = desktopStartup.indexOf('runtimeRpc.start()')
 
     expect(windowIndex).toBeGreaterThanOrEqual(0)
     expect(Math.max(rpcStartIndex, legacyRpcStartIndex)).toBeGreaterThanOrEqual(0)
-    expect(desktopStartup).toContain(
-      'for (const windowSlot of store.getRestorableSecondaryWindowSlots())'
+    expect(source).toContain(
+      'const startupWindowSlot = store.getRestorableSecondaryWindowSlots().at(-1)'
     )
-    expect(desktopStartup).toContain('openOrcaWindow(windowSlot)')
+    expect(desktopStartup).not.toContain('for (const windowSlot')
   })
 
   it('bounds WSL reconciliation before serve RPC while leaving desktop startup independent', () => {

@@ -2480,21 +2480,19 @@ app.whenReady().then(async () => {
     return
   }
 
+  // Why: a restored secondary slot is the user's saved startup surface. Open
+  // the last durable slot directly as the first/only startup window instead of
+  // briefly creating unrelated slot 1 and letting its later ready-to-show take
+  // the foreground back. With no saved secondary content, undefined preserves
+  // the legacy smallest-free-slot (slot 1) behavior.
+  const startupWindowSlot = store.getRestorableSecondaryWindowSlots().at(-1)
   // Why: window and RPC startup run in parallel; registerPtyHandlers gates PTY spawns so RPC binds without racing the daemon provider swap.
   const [win] = await Promise.all([
-    Promise.resolve(openOrcaWindow()),
+    Promise.resolve(openOrcaWindow(startupWindowSlot)),
     runtimeRpc.start().catch((error) => {
       console.error('[runtime] Failed to start local RPC transport:', error)
     })
   ])
-
-  // Why: a clean restart begins with an empty in-memory window registry, so
-  // opening only the default window always claims slot 1 and strands durable
-  // slot-2+ sessions. Recreate each non-empty secondary partition with its
-  // original slot identity after the primary window has claimed slot 1.
-  for (const windowSlot of store.getRestorableSecondaryWindowSlots()) {
-    openOrcaWindow(windowSlot)
-  }
 
   const cloudAuth = getOrcaCloudAuthConfig()
   if (cloudAuth.configured) {
