@@ -17,6 +17,10 @@ export function isHistoryOnlyColdRestoreWorktree(worktreeId: string | undefined)
   return Boolean(worktreeId && historyOnlyWorktreeIds.has(worktreeId))
 }
 
+export function shouldConnectColdRestorePanePty(worktreeId: string | undefined): boolean {
+  return !isHistoryOnlyColdRestoreWorktree(worktreeId)
+}
+
 export function releaseHistoryOnlyColdRestore(worktreeId: string): void {
   historyOnlyWorktreeIds.delete(worktreeId)
 }

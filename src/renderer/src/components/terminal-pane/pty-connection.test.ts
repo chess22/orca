@@ -1096,6 +1096,30 @@ describe('connectPanePty', () => {
     logSpy.mockRestore()
   }, 30_000)
 
+  it('renders a history-only checkpoint without creating or connecting a PTY', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const { gateHistoryOnlyColdRestore, resetHistoryOnlyColdRestoreForTests } =
+      await import('../terminal/history-only-cold-restore')
+    const transport = createMockTransport()
+    transportFactoryQueue.push(transport)
+    gateHistoryOnlyColdRestore(['wt-1'])
+
+    try {
+      const binding = connectPanePty(
+        createPane(1) as never,
+        createManager(1) as never,
+        createDeps() as never
+      )
+      await flushAsyncTicks()
+
+      expect(transportFactoryQueue).toEqual([transport])
+      expect(transport.connect).not.toHaveBeenCalled()
+      binding.dispose()
+    } finally {
+      resetHistoryOnlyColdRestoreForTests()
+    }
+  })
+
   it.each(['rejects', 'resolves empty'] as const)(
     'settles the exact direct SSH retry when its fresh spawn %s',
     async (outcome) => {

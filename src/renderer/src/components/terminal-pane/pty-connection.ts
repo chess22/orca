@@ -6,7 +6,10 @@ import { resolveCursorAgentImeAnchor } from '@/lib/pane-manager/terminal-ime-anc
 import { installTerminalImeCompositionRoute } from './terminal-ime-composition-route'
 import { detectAgentStatusFromTitle, agentTypeToIconAgent, isClaudeAgent } from '@/lib/agent-status'
 import { reportWorkerTerminalUserInput } from '@/lib/worker-terminal-takeover-report'
-import { isHistoryOnlyColdRestoreWorktree } from '../terminal/history-only-cold-restore'
+import {
+  isHistoryOnlyColdRestoreWorktree,
+  shouldConnectColdRestorePanePty
+} from '../terminal/history-only-cold-restore'
 import { resolvePaneTitleDecision } from './terminal-title-evidence'
 import { blocksCodexPaneInput } from '../codex-restart-notice-state'
 import { resolveLiveAgentStatusConnectionRouting } from '@/lib/agent-status-connection-ownership'
@@ -1100,6 +1103,23 @@ export function connectPanePty(
   manager: PaneManager,
   deps: PtyConnectionDeps
 ): PanePtyBinding {
+  if (!shouldConnectColdRestorePanePty(deps.worktreeId)) {
+    // Why: the lifecycle replays persisted buffers into xterm after this
+    // callback. Archive recovery needs that visual surface only; connecting
+    // here would replace every dead checkpoint with a login shell (and can
+    // amplify macOS TCC prompts) before agent ownership has been migrated.
+    return {
+      syncProcessTracking() {},
+      noteVisibilityResume() {},
+      reassertPtySizeAfterWindowWake() {},
+      wakeHibernatedAgentIfArmed: () => null,
+      sampleForegroundAgentOnFocus() {},
+      requestWindowsShiftEnterReconfirmation() {},
+      reconcileIfSessionDead() {},
+      reconcileIfSessionMissing() {},
+      dispose() {}
+    }
+  }
   const shouldRefreshForegroundSynchronously = (): boolean => !manager.hasWebglRenderer(pane.id)
   // Why: recovery ownership belongs to this xterm instance. A request that
   // settles after remount must not remount its already-replaced successor.
