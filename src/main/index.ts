@@ -13,6 +13,7 @@ import {
 } from './persistence'
 import { initSessionParseCachePersistence } from './ai-vault/session-parse-cache-persistence'
 import { ensureActiveOrcaProfile, initOrcaProfilePaths } from './orca-profiles/profile-index-store'
+import { migrateLegacyClaudeLivePtyIds } from './orca-profiles/legacy-claude-live-pty-migration'
 import { getOrcaCloudAuthConfig } from './orca-profiles/profile-cloud-auth-config'
 import { getProfileUserDataPath } from './orca-profiles/profile-storage-paths'
 import { applyAppIcon } from './app-icon'
@@ -1890,6 +1891,16 @@ app.whenReady().then(async () => {
 
   const activeOrcaProfile = ensureActiveOrcaProfile()
   store = new Store({ dataFile: activeOrcaProfile.dataFile })
+  const migratedClaudePtyIds = migrateLegacyClaudeLivePtyIds({
+    profileId: activeOrcaProfile.profile.id,
+    store,
+    userDataPath: app.getPath('userData')
+  })
+  if (migratedClaudePtyIds > 0) {
+    console.log(
+      `[claude-live-pty] Migrated ${migratedClaudePtyIds} legacy session id(s) to the local profile`
+    )
+  }
   logStartupMilestone('store-loaded')
   store.onSettingsChanged((updates, settings) => {
     if ('showMenuBarIcon' in updates) {

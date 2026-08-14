@@ -975,6 +975,8 @@ type RuntimeStore = {
   getWorkspaceSession?: Store['getWorkspaceSession']
   setWorkspaceSession?: Store['setWorkspaceSession']
   flushOrThrow?: Store['flushOrThrow']
+  getClaudeLivePtySessionIds?: Store['getClaudeLivePtySessionIds']
+  removeClaudeLivePtySessionId?: Store['removeClaudeLivePtySessionId']
   persistPtyBinding?: Store['persistPtyBinding']
   getSshRemotePtyLeases?: Store['getSshRemotePtyLeases']
   getUI?: Store['getUI']
@@ -2505,6 +2507,7 @@ export class OrcaRuntimeService {
   // ptyId keeps active TUI redraws independent of the total open terminal count.
   private leavesByPtyId = new Map<string, RuntimeLeafRecord[]>()
   private handles = new Map<string, TerminalHandleRecord>()
+  private terminalCloseRecords = new Map<string, TerminalHandleRecord>()
   private handleByLeafKey = new Map<string, string>()
   private handleByPtyId = new Map<string, string>()
   private detachedPreAllocatedLeaves = new Map<string, RuntimeLeafRecord>()
@@ -22840,21 +22843,110 @@ export class OrcaRuntimeService {
   async closeTerminalTab(handle: string): Promise<RuntimeTerminalClose> {
     const pty = this.getLivePtyForHandle(handle)
     if (pty) {
-      const tabId = pty.pty.tabId
+      const tabId = this.resolvePersistedTerminalTabId(pty.record, pty.pty.tabId)
       if (!tabId) {
+        if (this.store?.getClaudeLivePtySessionIds?.().includes(pty.pty.ptyId)) {
+          const ptyKilled = this.ptyController?.kill(pty.pty.ptyId) ?? false
+          this.store.removeClaudeLivePtySessionId?.(pty.pty.ptyId)
+          this.store.flushOrThrow?.()
+          this.claudeAgentTeams.removeTeamForLeaderHandle(handle)
+          this.terminalCloseRecords.delete(handle)
+          return { handle, tabId: pty.record.tabId, closeMode: 'tab', ptyKilled }
+        }
         throw new Error('terminal_tab_not_found')
       }
       // Why: a handle-addressed CLI/automation close is an explicit intent, so
       // it must stay destructive under the non-user close adjudication gate.
       await this.closeMobileSessionTab(`id:${pty.pty.worktreeId}`, tabId, { reason: 'user' })
       this.claudeAgentTeams.removeTeamForLeaderHandle(handle)
+      this.terminalCloseRecords.delete(handle)
       return { handle, tabId, closeMode: 'tab', ptyKilled: false }
     }
-    this.assertGraphReady()
-    const { leaf } = this.getLiveLeafForHandle(handle)
-    await this.closeMobileSessionTab(`id:${leaf.worktreeId}`, leaf.tabId, { reason: 'user' })
+    let worktreeId: string
+    let tabId: string
+    try {
+      this.assertGraphReady()
+      const { leaf } = this.getLiveLeafForHandle(handle)
+      worktreeId = leaf.worktreeId
+      tabId = leaf.tabId
+    } catch (error) {
+      const record = this.handles.get(handle) ?? this.terminalCloseRecords.get(handle)
+      const persistedTabId = record ? this.resolvePersistedTerminalTabId(record) : null
+      if (!record || !persistedTabId) {
+        throw error
+      }
+      worktreeId = record.worktreeId
+      tabId = persistedTabId
+    }
+    await this.closeMobileSessionTab(`id:${worktreeId}`, tabId, { reason: 'user' })
     this.claudeAgentTeams.removeTeamForLeaderHandle(handle)
-    return { handle, tabId: leaf.tabId, closeMode: 'tab', ptyKilled: false }
+    this.terminalCloseRecords.delete(handle)
+    return { handle, tabId, closeMode: 'tab', ptyKilled: false }
+  }
+
+  private resolvePersistedTerminalTabId(
+    record: TerminalHandleRecord,
+    runtimeTabId?: string | null
+  ): string | null {
+    const session = this.getWorkspaceSessionForWorktree(record.worktreeId)
+    if (!session) {
+      return null
+    }
+
+    const worktreeTabs = session.tabsByWorktree[record.worktreeId] ?? []
+    const isPersistedTerminal = (tabId: string): boolean => {
+      const unifiedTabs = session.unifiedTabs?.[record.worktreeId] ?? []
+      const matchingUnifiedTabs = unifiedTabs.filter(
+        (tab) => tab.id === tabId || tab.entityId === tabId
+      )
+      return (
+        worktreeTabs.some((tab) => tab.id === tabId) &&
+        matchingUnifiedTabs.every((tab) => tab.contentType === 'terminal')
+      )
+    }
+
+    for (const tabId of [runtimeTabId, record.tabId]) {
+      if (tabId && !tabId.startsWith('pty:') && isPersistedTerminal(tabId)) {
+        return tabId
+      }
+    }
+
+    if (record.ptyId) {
+      const exactMatches = worktreeTabs.filter((tab) => {
+        const layoutPtyIds = Object.values(
+          session.terminalLayoutsByTabId[tab.id]?.ptyIdsByLeafId ?? {}
+        )
+        return tab.ptyId === record.ptyId || layoutPtyIds.includes(record.ptyId!)
+      })
+      if (exactMatches.length === 1 && isPersistedTerminal(exactMatches[0]!.id)) {
+        return exactMatches[0]!.id
+      }
+    }
+
+    const activeTabId = session.activeTabIdByWorktree?.[record.worktreeId] ?? null
+    if (
+      !activeTabId ||
+      session.activeTabTypeByWorktree?.[record.worktreeId] !== 'terminal' ||
+      !isPersistedTerminal(activeTabId)
+    ) {
+      return null
+    }
+    const activeRow = worktreeTabs.find((tab) => tab.id === activeTabId)
+    const activeLayout = session.terminalLayoutsByTabId[activeTabId]
+    const hasDurableBinding =
+      Boolean(activeRow?.ptyId) ||
+      Object.keys(activeLayout?.ptyIdsByLeafId ?? {}).length > 0 ||
+      Boolean(session.remoteSessionIdsByTabId?.[activeTabId])
+    const unboundTerminalTabs = worktreeTabs.filter((tab) => {
+      const layout = session.terminalLayoutsByTabId[tab.id]
+      return (
+        isPersistedTerminal(tab.id) &&
+        !tab.ptyId &&
+        Object.keys(layout?.ptyIdsByLeafId ?? {}).length === 0 &&
+        !session.remoteSessionIdsByTabId?.[tab.id]
+      )
+    })
+    return !hasDurableBinding && unboundTerminalTabs.length === 1 ? activeTabId : null
   }
 
   async resizeTerminalPane(
@@ -23818,6 +23910,9 @@ export class OrcaRuntimeService {
     this.recomputeGraphStatus()
     this.setTerminalSideEffectConsumerAvailable(false)
     this.rememberDetachedPreAllocatedLeaves()
+    for (const [handle, record] of this.handles) {
+      this.terminalCloseRecords.set(handle, record)
+    }
     this.handles.clear()
     this.handleByLeafKey.clear()
     // Why: handleByPtyId (pre-allocated CLI handles) survives reloads so CLI agents keep control; adoptPreAllocatedHandle re-links on the new graph.
@@ -23856,6 +23951,9 @@ export class OrcaRuntimeService {
       this.leaves.clear()
       this.leafWindowIds.clear()
       this.leavesByPtyId.clear()
+      for (const [handle, record] of this.handles) {
+        this.terminalCloseRecords.set(handle, record)
+      }
       this.handles.clear()
       this.handleByLeafKey.clear()
       // Why: same as markRendererReloading — pre-allocated CLI handles must
@@ -27062,6 +27160,10 @@ export class OrcaRuntimeService {
       return
     }
     this.handleByLeafKey.delete(leafKey)
+    const record = this.handles.get(handle)
+    if (record) {
+      this.terminalCloseRecords.set(handle, record)
+    }
     this.handles.delete(handle)
     this.rejectWaitersForHandle(handle, 'terminal_handle_stale')
   }

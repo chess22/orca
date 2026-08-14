@@ -21002,6 +21002,160 @@ describe('OrcaRuntimeService', () => {
     })
   })
 
+  it('durably closes the handle-owned persisted tab while the renderer graph is unavailable', async () => {
+    const { runtimeStore, getSession } = makeRuntimeStoreWithWorkspaceSession(
+      makeWorkspaceSessionWithHeadlessTerminal()
+    )
+    const flushOrThrow = vi.fn()
+    const runtime = new OrcaRuntimeService({ ...runtimeStore, flushOrThrow } as never)
+    runtime.setPtyController({
+      write: () => true,
+      kill: vi.fn(() => false),
+      getForegroundProcess: async () => null,
+      listProcesses: async () => []
+    })
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'host-tab',
+          worktreeId: TEST_WORKTREE_ID,
+          title: 'Durable',
+          activeLeafId: HEADLESS_LEAF_ID,
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'host-tab',
+          worktreeId: TEST_WORKTREE_ID,
+          leafId: HEADLESS_LEAF_ID,
+          paneRuntimeId: 1,
+          ptyId: 'persisted-pty'
+        }
+      ]
+    })
+    const [terminal] = (await runtime.listTerminals()).terminals
+    runtime.markGraphUnavailable(1)
+
+    await expect(runtime.closeTerminalTab(terminal.handle)).resolves.toEqual({
+      handle: terminal.handle,
+      tabId: 'host-tab',
+      closeMode: 'tab',
+      ptyKilled: false
+    })
+    expect(getSession().tabsByWorktree[TEST_WORKTREE_ID]).toEqual([])
+    expect(flushOrThrow).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-resolves a tabless PTY handle to the current empty terminal tab and deletes it durably', async () => {
+    const { runtimeStore, getSession } = makeRuntimeStoreWithWorkspaceSession(
+      makeWorkspaceSessionWithHeadlessTerminal({
+        activeTabIdByWorktree: { [TEST_WORKTREE_ID]: 'host-tab' },
+        activeTabTypeByWorktree: { [TEST_WORKTREE_ID]: 'terminal' },
+        tabsByWorktree: {
+          [TEST_WORKTREE_ID]: [
+            {
+              id: 'host-tab',
+              ptyId: null,
+              worktreeId: TEST_WORKTREE_ID,
+              title: 'Ended',
+              customTitle: null,
+              color: null,
+              sortOrder: 0,
+              createdAt: 1
+            }
+          ]
+        },
+        terminalLayoutsByTabId: {
+          'host-tab': makeHeadlessTerminalLayout({ [HEADLESS_LEAF_ID]: undefined })
+        }
+      })
+    )
+    const flushOrThrow = vi.fn()
+    const closeTerminal = vi.fn()
+    const runtime = new OrcaRuntimeService({ ...runtimeStore, flushOrThrow } as never)
+    runtime.setNotifier({ closeTerminal } as never)
+    runtime.setPtyController({
+      write: () => true,
+      kill: vi.fn(() => true),
+      getForegroundProcess: async () => null,
+      listProcesses: async () => [{ id: 'ended-pty', cwd: TEST_WORKTREE_PATH, title: 'Ended' }]
+    })
+    runtime.registerPty('ended-pty', TEST_WORKTREE_ID)
+    const [terminal] = (await runtime.listTerminals()).terminals
+    runtime.onPtyExit('ended-pty', 0)
+    runtime.syncWindowGraph(0, { tabs: [], leaves: [] })
+
+    await expect(runtime.closeTerminalTab(terminal.handle)).resolves.toEqual({
+      handle: terminal.handle,
+      tabId: 'host-tab',
+      closeMode: 'tab',
+      ptyKilled: false
+    })
+
+    expect(getSession().tabsByWorktree[TEST_WORKTREE_ID]).toEqual([])
+    expect(getSession().terminalLayoutsByTabId['host-tab']).toBeUndefined()
+    expect(flushOrThrow).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes an exact Claude live PTY whose persisted workspace has no terminal tab', async () => {
+    const ptyId = `${TEST_WORKTREE_ID}@@claude-orphan`
+    const removeClaudeLivePtySessionId = vi.fn()
+    const flushOrThrow = vi.fn()
+    const runtime = new OrcaRuntimeService({
+      ...store,
+      getWorkspaceSession: () => makeWorkspaceSessionWithHeadlessTerminal({ tabsByWorktree: {} }),
+      getClaudeLivePtySessionIds: () => [ptyId],
+      removeClaudeLivePtySessionId,
+      flushOrThrow
+    } as never)
+    const kill = vi.fn(() => true)
+    runtime.setPtyController({
+      write: () => true,
+      kill,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => [{ id: ptyId, cwd: TEST_WORKTREE_PATH, title: 'Claude' }]
+    })
+    runtime.registerPty(ptyId, TEST_WORKTREE_ID)
+    const [terminal] = (await runtime.listTerminals()).terminals
+
+    await expect(runtime.closeTerminalTab(terminal.handle)).resolves.toEqual({
+      handle: terminal.handle,
+      tabId: `pty:${ptyId}`,
+      closeMode: 'tab',
+      ptyKilled: true
+    })
+    expect(kill).toHaveBeenCalledWith(ptyId)
+    expect(removeClaudeLivePtySessionId).toHaveBeenCalledWith(ptyId)
+    expect(flushOrThrow).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not re-resolve a stale terminal handle onto a non-terminal current tab', async () => {
+    const { runtimeStore, getSession } = makeRuntimeStoreWithWorkspaceSession(
+      makeWorkspaceSessionWithHeadlessTerminal({
+        activeTabIdByWorktree: { [TEST_WORKTREE_ID]: 'monitor-tab' },
+        activeTabTypeByWorktree: { [TEST_WORKTREE_ID]: 'editor' }
+      })
+    )
+    const runtime = new OrcaRuntimeService(runtimeStore as never)
+    runtime.setPtyController({
+      write: () => true,
+      kill: vi.fn(() => false),
+      getForegroundProcess: async () => null,
+      listProcesses: async () => [{ id: 'stale-pty', cwd: TEST_WORKTREE_PATH, title: 'Ended' }]
+    })
+    runtime.registerPty('stale-pty', TEST_WORKTREE_ID)
+    const [terminal] = (await runtime.listTerminals()).terminals
+    runtime.onPtyExit('stale-pty', 0)
+    runtime.syncWindowGraph(0, { tabs: [], leaves: [] })
+
+    await expect(runtime.closeTerminalTab(terminal.handle)).rejects.toThrow(
+      'terminal_tab_not_found'
+    )
+    expect(getSession().tabsByWorktree[TEST_WORKTREE_ID]).toHaveLength(1)
+    expect(getSession().terminalLayoutsByTabId['host-tab']).toBeDefined()
+  })
+
   it('durably closes every split leaf without a renderer', async () => {
     const { runtimeStore, getSession } = makeRuntimeStoreWithWorkspaceSession(
       makeWorkspaceSessionWithHeadlessTerminal({

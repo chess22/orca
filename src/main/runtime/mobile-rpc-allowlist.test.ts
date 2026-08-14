@@ -107,6 +107,11 @@ function registeredRuntimeMethods(): Set<string> {
 }
 
 describe('mobile RPC allowlist', () => {
+  it('registers and authorizes durable terminal tab close', () => {
+    expect(registeredRuntimeMethods()).toContain('terminal.closeTab')
+    expect(mobileRpcAllowlist()).toContain('terminal.closeTab')
+  })
+
   it('allows every RPC method used by the mobile app', () => {
     // Why: mobile-scoped runtime tokens are checked before dispatch. A mobile
     // feature can compile and still fail at runtime if its method is missing here.
