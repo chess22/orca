@@ -211,8 +211,14 @@ import WorktreeBaseFallbackDialog from './components/WorktreeBaseFallbackDialog'
 import { useOsc52ClipboardDefaultOnNotice } from './components/terminal-pane/osc52-clipboard-default-on-notice'
 import {
   hasRequestedBackgroundTerminalWorktreeMount,
+  requestBackgroundTerminalWorktreeMount,
   subscribeBackgroundTerminalWorktreeMountRequests
 } from './components/terminal/background-terminal-worktree-mount'
+import {
+  collectHistoryOnlyColdRestoreMounts,
+  gateHistoryOnlyColdRestore,
+  type HistoryOnlyColdRestoreMount
+} from './components/terminal/history-only-cold-restore'
 import {
   collectTerminalProviderSnapshotPtyIds,
   refreshTerminalProviderSnapshotCapabilities
@@ -863,6 +869,26 @@ function App(): React.JSX.Element {
     let uiHydrated = false
     // Why (issue #1158): track whether success-path reconnect started so the catch doesn't re-run it — re-entering on partially-mutated state would double-set ptyIds and drain pending* twice.
     let reconnectStarted = false
+    let restoredTerminalMounts: HistoryOnlyColdRestoreMount[] = []
+    const collectRestoredTerminalMounts = (): HistoryOnlyColdRestoreMount[] => {
+      const state = useAppStore.getState()
+      const worktrees = Object.values(state.worktreesByRepo).flat()
+      return collectHistoryOnlyColdRestoreMounts({
+        tabsByWorktree: state.tabsByWorktree,
+        activeWorktreeId: state.activeWorktreeId,
+        repoIdByWorktreeId: new Map(worktrees.map((worktree) => [worktree.id, worktree.repoId])),
+        connectionIdByRepoId: new Map(
+          state.repos.flatMap((repo) =>
+            repo.connectionId ? ([[repo.id, repo.connectionId]] as const) : []
+          )
+        ),
+        connectedSshTargetIds: new Set(
+          [...state.sshConnectionStates]
+            .filter(([, connection]) => connection.status === 'connected')
+            .map(([targetId]) => targetId)
+        )
+      })
+    }
     void (async () => {
       const startupStartedAt = performance.now()
       logRendererStartupDiagnostic('startup-chain-start')
@@ -978,6 +1004,12 @@ function App(): React.JSX.Element {
             actions.hydrateEditorSession(sessionRead.session, sessionHydrationOptions)
             actions.hydrateBrowserSession(sessionRead.session, sessionHydrationOptions)
           })
+          const restoredTerminalWorktreeIds = Object.entries(useAppStore.getState().tabsByWorktree)
+            .filter(([, tabs]) => tabs.length > 0)
+            .map(([worktreeId]) => worktreeId)
+          // Why: archive recovery first restores history/UI. Keep agent ownership
+          // gated so mounting many saved panes cannot resume Claude/Codex twice.
+          gateHistoryOnlyColdRestore(restoredTerminalWorktreeIds)
           // Why: prune visit timestamps AFTER hydration (earlier, worktreesByRepo may be empty and prune would drop entries for worktrees about to appear); seed the active worktree if missing.
           // See docs/cmd-j-empty-query-ordering.md.
           timeRendererStartupSyncStep('visit-timestamp-prune', () => {
@@ -1086,10 +1118,14 @@ function App(): React.JSX.Element {
               collectTerminalProviderSnapshotPtyIds(useAppStore.getState())
             )
           })
+          restoredTerminalMounts = collectRestoredTerminalMounts()
           reconnectStarted = true
           await timeRendererStartupStep('reconnect-terminals', () =>
             actions.reconnectPersistedTerminals(abortController.signal)
           )
+          for (const mount of restoredTerminalMounts) {
+            requestBackgroundTerminalWorktreeMount(mount)
+          }
           await timeRendererStartupStep('recover-legacy-worker-terminals-post-reconnect', () =>
             window.api.app.recoverLegacyWorkerTerminalsForRendererStartup()
           )
@@ -1174,7 +1210,11 @@ function App(): React.JSX.Element {
               await refreshTerminalProviderSnapshotCapabilities(
                 collectTerminalProviderSnapshotPtyIds(useAppStore.getState())
               )
+              restoredTerminalMounts = collectRestoredTerminalMounts()
               await actions.reconnectPersistedTerminals(abortController.signal)
+              for (const mount of restoredTerminalMounts) {
+                requestBackgroundTerminalWorktreeMount(mount)
+              }
               await window.api.app.recoverLegacyWorkerTerminalsForRendererStartup()
             } catch (reconnectErr) {
               console.error(
