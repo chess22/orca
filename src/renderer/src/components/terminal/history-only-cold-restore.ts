@@ -21,6 +21,14 @@ export function releaseHistoryOnlyColdRestore(worktreeId: string): void {
   historyOnlyWorktreeIds.delete(worktreeId)
 }
 
+/** History-only archive panes must stay mounted; parking would destroy the
+ * freshly materialized PTYs and leave their UI history transient. */
+export function retainHistoryOnlyColdRestoreWorktrees(worktreeIds: Set<string>): void {
+  for (const worktreeId of historyOnlyWorktreeIds) {
+    worktreeIds.delete(worktreeId)
+  }
+}
+
 export function resetHistoryOnlyColdRestoreForTests(): void {
   historyOnlyWorktreeIds.clear()
 }

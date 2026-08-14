@@ -97,6 +97,7 @@ import {
   takeAllPendingBackgroundTerminalWorktreeMounts,
   takePendingBackgroundTerminalWorktreeMount
 } from './terminal/background-terminal-worktree-mount'
+import { retainHistoryOnlyColdRestoreWorktrees } from './terminal/history-only-cold-restore'
 import { hasRegisteredRuntimeTerminalTab } from '../runtime/sync-runtime-graph'
 import {
   getEffectiveLayoutForWorktree as getEffectiveLayout,
@@ -986,6 +987,7 @@ function Terminal(): React.JSX.Element | null {
       restorePolicy,
       ...overrides
     })
+    retainHistoryOnlyColdRestoreWorktrees(nextParkedTerminalWorktreeIds)
     // Why memoized: the retention pass below re-asks coverage for EVERY mounted
     // worktree's tabs, not just the parked few — each call re-reads the store and
     // can walk the layout tree, so cache per tab for this pass.
@@ -1050,6 +1052,7 @@ function Terminal(): React.JSX.Element | null {
       nowMs,
       ...overrides
     })
+    retainHistoryOnlyColdRestoreWorktrees(forceParkedWorktreeIds)
     recordTerminalWorktreeParkingDebugVerdicts(
       retentionBudgetCandidates.map((candidate) => ({
         ...candidate,
