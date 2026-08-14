@@ -1,4 +1,5 @@
 import type {
+  RuntimeMobileSessionTabCloseResult,
   RuntimeTerminalClose,
   RuntimeTerminalCreate,
   RuntimeTerminalFocus,
@@ -153,6 +154,29 @@ export const TERMINAL_HANDLERS: Record<string, CommandHandler> = {
   // `focus` resolves to this canonical path via CommandSpec.aliases before dispatch.
   'terminal switch': terminalFocusHandler,
   'terminal close': async ({ flags, client, cwd, json }) => {
+    if (flags.has('tab-id')) {
+      if (flags.has('terminal') || flags.has('tab')) {
+        throw new RuntimeClientError(
+          'invalid_argument',
+          '--tab-id cannot be combined with --terminal or --tab'
+        )
+      }
+      const tabId = getRequiredStringFlag(flags, 'tab-id')
+      const result = await client.call<RuntimeMobileSessionTabCloseResult>('session.tabs.close', {
+        worktree: await getRequiredWorktreeSelector(flags, 'worktree', cwd, client),
+        tabId,
+        reason: 'user'
+      })
+      printResult(result, json, (close) =>
+        close.refused
+          ? `Close refused for saved tab ${tabId}: ${close.refusalReason ?? 'unknown'}.`
+          : `Closed saved tab ${tabId}.`
+      )
+      return
+    }
+    if (flags.has('worktree')) {
+      throw new RuntimeClientError('invalid_argument', '--worktree requires --tab-id')
+    }
     const method = flags.get('tab') === true ? 'terminal.closeTab' : 'terminal.close'
     const result = await client.call<{ close: RuntimeTerminalClose }>(method, {
       terminal: await getTerminalHandle(flags, cwd, client)

@@ -88,7 +88,7 @@ Terminals:
   terminal split            Split an existing terminal pane
   terminal switch           Bring a terminal tab to the foreground
   terminal focus            Alias for terminal switch
-  terminal close            Close a terminal pane/session, or its whole tab with --tab
+  terminal close            Close a terminal pane/session, whole tab, or saved tab by ID
 
 Orchestration:
   orchestration run-create  Create and bind a lightweight orchestration Run
@@ -246,7 +246,7 @@ Common Commands:
   orca terminal create [--worktree <selector>] [--title <name>] [--command <text>] [--focus] [--json]
   orca terminal split [--terminal <handle>] [--direction horizontal|vertical] [--json]
   orca terminal switch [--terminal <handle>] [--json]
-  orca terminal close [--terminal <handle>] [--tab] [--json]
+  orca terminal close [--terminal <handle>] [--tab] [--tab-id <id> --worktree <selector>] [--json]
   orca project list [--json]
   orca project setups [--project <id>] [--host <host-id>] [--json]
   orca project setup-existing-folder --project <id> --host <host-id> --path <path> [--kind git|folder] [--display-name <name>] [--json]
@@ -432,6 +432,9 @@ function formatCommandFlagHelp(flag: string, commandPath: string[]): string {
   }
   if (command === 'terminal close' && flag === 'tab') {
     return '--tab                  Close the whole tab and wait for durable persistence'
+  }
+  if (command === 'terminal close' && flag === 'tab-id') {
+    return '--tab-id <id>          Close a saved tab without a terminal handle'
   }
   if (command === 'linear issue' && flag === 'id') {
     return '--id <id>             Linear issue key, id, or URL'

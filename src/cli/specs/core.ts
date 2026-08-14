@@ -258,15 +258,18 @@ export const CORE_COMMAND_SPECS: CommandSpec[] = [
   },
   {
     path: ['terminal', 'close'],
-    summary: 'Close a terminal pane/session, or its whole tab with --tab',
-    usage: 'orca terminal close [--terminal <handle>] [--tab] [--json]',
-    allowedFlags: [...GLOBAL_FLAGS, 'terminal', 'tab'],
+    summary: 'Close a terminal pane/session, its whole tab, or a saved tab by ID',
+    usage:
+      'orca terminal close [--terminal <handle>] [--tab] [--tab-id <id> --worktree <selector>] [--json]',
+    allowedFlags: [...GLOBAL_FLAGS, 'terminal', 'tab', 'tab-id', 'worktree'],
     notes: [
-      'Without --tab, preserves the existing pane/session close behavior. With --tab, waits until the whole tab is durably removed.'
+      'Without --tab, preserves the existing pane/session close behavior. With --tab, waits until the whole tab is durably removed.',
+      '--tab-id closes a saved tab without a terminal handle and requires --worktree. It cannot be combined with --terminal or --tab.'
     ],
     examples: [
       'orca terminal close --terminal term_abc123',
-      'orca terminal close --terminal term_abc123 --tab --json'
+      'orca terminal close --terminal term_abc123 --tab --json',
+      'orca terminal close --tab-id tab_abc123 --worktree active --json'
     ]
   },
   {
