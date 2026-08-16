@@ -25,6 +25,7 @@ import { shouldFollowMouseFocus } from './focus-follows-mouse'
 import { getTerminalWebglAutoDecision } from './terminal-webgl-auto-policy'
 import {
   equalizePaneSplitSizes,
+  resizePaneAtParent,
   safeFit,
   fitAllPanesInternal,
   refitPanesUnder
@@ -270,6 +271,19 @@ export class PaneManager {
     }
 
     this.options.onLayoutChanged?.()
+  }
+
+  resizePane(paneId: number, targetRatio: number): boolean {
+    const pane = this.panes.get(paneId)
+    if (!pane || !resizePaneAtParent(pane.container, targetRatio)) {
+      return false
+    }
+    const split = pane.container.parentElement
+    if (split) {
+      refitPanesUnder(split, this.panes)
+    }
+    this.options.onLayoutChanged?.()
+    return true
   }
 
   getActivePane(): ManagedPane | null {

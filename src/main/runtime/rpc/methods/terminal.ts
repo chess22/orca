@@ -995,6 +995,19 @@ const TerminalSplit = TerminalHandle.extend({
   path: ['sizePx']
 })
 
+const TerminalResizePane = TerminalHandle.extend({
+  ratio: z.number().gt(0).lt(1).optional(),
+  sizePx: z.number().int().positive().optional()
+})
+  .refine((v) => v.ratio !== undefined || v.sizePx !== undefined, {
+    message: 'Pass either ratio or sizePx',
+    path: ['ratio']
+  })
+  .refine((v) => !(v.ratio !== undefined && v.sizePx !== undefined), {
+    message: 'Pass either ratio or sizePx, not both',
+    path: ['sizePx']
+  })
+
 const TerminalStop = z.object({
   worktree: requiredString('Missing worktree selector')
 })
@@ -1482,6 +1495,16 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
         ratio: params.ratio,
         sizePx: params.sizePx,
         telemetrySource: params.telemetrySource
+      })
+    })
+  }),
+  defineMethod({
+    name: 'terminal.resizePane',
+    params: TerminalResizePane,
+    handler: async (params, { runtime }) => ({
+      resize: await runtime.resizeTerminalPane(params.terminal, {
+        ratio: params.ratio,
+        sizePx: params.sizePx
       })
     })
   }),

@@ -693,6 +693,13 @@ export type RuntimeTerminalSplit = {
   paneRuntimeId: number
 }
 
+export type RuntimeTerminalResize = {
+  handle: string
+  tabId: string
+  leafId: string
+  pane: RuntimeTerminalPaneGeometry
+}
+
 export type RuntimeTerminalResolvePane = {
   handle: string
   tabId: string

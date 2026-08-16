@@ -302,6 +302,22 @@ export function equalizePaneSplitSizes(root: HTMLElement | null): boolean {
   return changed
 }
 
+export function resizePaneAtParent(container: HTMLElement, targetRatio: number): boolean {
+  const split = container.parentElement
+  if (!split?.classList.contains('pane-split') || targetRatio <= 0 || targetRatio >= 1) {
+    return false
+  }
+  const children = findPaneChildren(split)
+  const targetIndex = children.indexOf(container)
+  if (children.length !== 2 || targetIndex === -1) {
+    return false
+  }
+  const firstRatio = targetIndex === 0 ? targetRatio : 1 - targetRatio
+  children[0].style.flex = `${firstRatio} 1 0%`
+  children[1].style.flex = `${1 - firstRatio} 1 0%`
+  return true
+}
+
 /**
  * Create a flex split wrapper that replaces `existingContainer` in the DOM,
  * then places [existing] [divider] [new] inside it.

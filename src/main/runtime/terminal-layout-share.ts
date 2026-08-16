@@ -7,6 +7,12 @@ export type TerminalLeafShare = {
   heightRatio: number
 }
 
+export type TerminalLeafResize = {
+  root: TerminalPaneLayoutNode
+  direction: 'horizontal' | 'vertical'
+  previousTargetRatio: number
+}
+
 // Why: split direction follows the renderer's flex axis — 'vertical' lays
 // panes out side-by-side (divides width), 'horizontal' stacks them (divides
 // height). See wrapInSplit in pane-tree-ops.ts.
@@ -53,4 +59,56 @@ export function resolveNewPaneRatioFromSizePx(
   }
   const newPaneShare = newPaneSizePx / splitAxisTotalPx
   return Math.min(1 - MIN_PX_DERIVED_PANE_RATIO, Math.max(MIN_PX_DERIVED_PANE_RATIO, newPaneShare))
+}
+
+export function resizeTerminalLeaf(
+  node: TerminalPaneLayoutNode,
+  leafId: string,
+  targetRatio: number
+): TerminalLeafResize | null {
+  if (node.type === 'leaf') {
+    return null
+  }
+  const firstRatio = node.ratio ?? 0.5
+  if (node.first.type === 'leaf' && node.first.leafId === leafId) {
+    return {
+      root: { ...node, ratio: targetRatio },
+      direction: node.direction,
+      previousTargetRatio: firstRatio
+    }
+  }
+  if (node.second.type === 'leaf' && node.second.leafId === leafId) {
+    return {
+      root: { ...node, ratio: 1 - targetRatio },
+      direction: node.direction,
+      previousTargetRatio: 1 - firstRatio
+    }
+  }
+  const first = resizeTerminalLeaf(node.first, leafId, targetRatio)
+  if (first) {
+    return { ...first, root: { ...node, first: first.root } }
+  }
+  const second = resizeTerminalLeaf(node.second, leafId, targetRatio)
+  return second ? { ...second, root: { ...node, second: second.root } } : null
+}
+
+export function resolveTargetPaneRatioFromSizePx(
+  sizePx: number | undefined,
+  currentPaneSizePx: number | undefined,
+  currentTargetRatio: number
+): number | undefined {
+  if (
+    sizePx === undefined ||
+    sizePx <= 0 ||
+    currentPaneSizePx === undefined ||
+    currentPaneSizePx <= 0 ||
+    currentTargetRatio <= 0 ||
+    currentTargetRatio >= 1
+  ) {
+    return undefined
+  }
+  // Why: the measured target pane is only part of its parent split; recover
+  // that divided area's full axis size before converting the requested px.
+  const splitAxisTotalPx = currentPaneSizePx / currentTargetRatio
+  return resolveNewPaneRatioFromSizePx(sizePx, splitAxisTotalPx)
 }

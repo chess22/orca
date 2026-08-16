@@ -4,6 +4,7 @@ export const TOGGLE_TERMINAL_PANE_EXPAND_EVENT = 'orca-toggle-terminal-pane-expa
 export const FOCUS_TERMINAL_PANE_EVENT = 'orca-focus-terminal-pane'
 export const PASTE_TERMINAL_TEXT_EVENT = 'orca-paste-terminal-text'
 export const SPLIT_TERMINAL_PANE_EVENT = 'orca-split-terminal-pane'
+export const RESIZE_TERMINAL_PANE_EVENT = 'orca-resize-terminal-pane'
 export const REQUEST_ACTIVE_TERMINAL_PANE_SPLIT_EVENT = 'orca-request-active-terminal-pane-split'
 export const CLOSE_TERMINAL_PANE_EVENT = 'orca-close-terminal-pane'
 export const BACKGROUND_MOUNT_TERMINAL_WORKTREE_EVENT = 'orca-background-mount-terminal-worktree'
@@ -60,6 +61,12 @@ export type SplitTerminalPaneDetail = {
   ratio?: number
   /** Requested size in px for the NEW pane along the split axis. */
   sizePx?: number
+}
+
+export type ResizeTerminalPaneDetail = {
+  tabId: string
+  leafId: string
+  targetRatio: number
 }
 
 export type RequestActiveTerminalPaneSplitDetail = {

@@ -447,6 +447,8 @@ function registerRuntimeWindowLifecycle(
         telemetrySource: opts.telemetrySource
       })
     },
+    resizeTerminalPane: (tabId, leafId, targetRatio) =>
+      send('ui:resizeTerminalPane', { tabId, leafId, targetRatio }),
     renameTerminal: (tabId, title) => send('ui:renameTerminal', { tabId, title }),
     focusTerminal: (tabId, worktreeId, leafId) =>
       send('ui:focusTerminal', { tabId, worktreeId, leafId }),
