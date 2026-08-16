@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { getVersionManagerBinPaths } from '../codex-cli/command'
 import { getMainE2EConfig } from '../e2e-config'
 
@@ -150,7 +150,7 @@ export function patchPackagedProcessPath(): void {
   }
 }
 
-export function configureDevUserDataPath(isDev: boolean): void {
+export function configureDevUserDataPath(isDev: boolean, executablePath = process.execPath): void {
   const e2eConfig = getMainE2EConfig()
   if (e2eConfig.userDataDir) {
     // Why: the E2E suite launches a fresh Electron app for each spec. A
@@ -172,6 +172,10 @@ export function configureDevUserDataPath(isDev: boolean): void {
   }
 
   if (!isDev) {
+    if (['Orca Dev 2', 'OrcaDev2', 'orca-dev2'].includes(basename(executablePath))) {
+      // Why: the second dev app must never share runtime metadata or sessions with either existing Orca profile.
+      app.setPath('userData', join(app.getPath('appData'), 'orca-dev2-app'))
+    }
     return
   }
   const overrideUserDataPath = process.env.ORCA_DEV_USER_DATA_PATH

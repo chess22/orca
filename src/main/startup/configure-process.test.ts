@@ -7,6 +7,7 @@ vi.mock('electron', () => {
   const paths = new Map<string, string>([['appData', '/tmp/app-data']])
   return {
     app: {
+      getName: vi.fn(() => 'Orca'),
       getPath: vi.fn((name: string) => paths.get(name) ?? ''),
       setPath: vi.fn((name: string, value: string) => {
         paths.set(name, value)
@@ -277,6 +278,16 @@ describe('configureDevUserDataPath', () => {
     configureDevUserDataPath(false)
 
     expect(app.setPath).not.toHaveBeenCalled()
+  })
+
+  it('isolates packaged Orca Dev 2 userData', async () => {
+    const { app } = await import('electron')
+    const { configureDevUserDataPath } = await import('./configure-process')
+
+    vi.mocked(app.setPath).mockClear()
+    configureDevUserDataPath(false, '/Applications/Orca Dev 2.app/Contents/MacOS/Orca Dev 2')
+
+    expect(app.setPath).toHaveBeenCalledWith('userData', join('/tmp/app-data', 'orca-dev2-app'))
   })
 })
 

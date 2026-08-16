@@ -67,4 +67,21 @@ describe('dev CLI terminal wrappers', () => {
     expect(readFileSync(path.join(root, 'out', 'bin', 'orca-dev'), 'utf8')).toBe(wrapper)
     expect(readFileSync(path.join(root, 'out', 'bin', 'orca'), 'utf8')).toBe(wrapper)
   })
+
+  it('uses the Orca Dev 2 command name without changing the terminal-local orca alias', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'orca-dev2-terminal-wrapper-'))
+    const userDataPath = path.join(root, 'orca-dev2-app')
+    prepareDevCliTerminalWrappers({
+      repoRoot: root,
+      userDataPath,
+      electronExecutable: path.join(root, 'electron'),
+      cliName: 'orca-dev2',
+      platform: 'linux'
+    })
+
+    const wrapper = readFileSync(path.join(userDataPath, 'cli', 'bin', 'orca-dev2'), 'utf8')
+    expect(wrapper).toContain(`export ORCA_USER_DATA_PATH=${JSON.stringify(userDataPath)}`)
+    expect(readFileSync(path.join(userDataPath, 'cli', 'bin', 'orca'), 'utf8')).toBe(wrapper)
+    expect(readFileSync(path.join(root, 'out', 'bin', 'orca-dev2'), 'utf8')).toBe(wrapper)
+  })
 })

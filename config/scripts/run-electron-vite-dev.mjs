@@ -323,10 +323,12 @@ function getDevUserDataPath() {
 
 function prepareDevCliWrapper() {
   const userDataPath = getDevUserDataPath()
+  const cliName = process.env.ORCA_DEV_CLI_NAME || 'orca-dev'
   const { binDir } = prepareDevCliTerminalWrappers({
     repoRoot,
     userDataPath,
-    electronExecutable: getElectronExecutable()
+    electronExecutable: getElectronExecutable(),
+    cliName
   })
 
   process.env.PATH = `${binDir}${path.delimiter}${process.env.PATH ?? ''}`
