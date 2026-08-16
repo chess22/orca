@@ -3,6 +3,7 @@ import type {
   RuntimeTerminalCreate,
   RuntimeTerminalFocus,
   RuntimeTerminalListResult,
+  RuntimeTerminalPaneGeometry,
   RuntimeTerminalVisualLayout,
   RuntimeTerminalVisualLayoutNode,
   RuntimeTerminalVisualPaneNode,
@@ -74,8 +75,10 @@ function formatVisualTab(tab: RuntimeTerminalVisualTab, depth: number): string[]
 function formatVisualPaneNode(node: RuntimeTerminalVisualPaneNode, depth: number): string[] {
   const indent = '  '.repeat(depth)
   if (node.type === 'pane-split') {
+    const ratio = node.ratio ?? 0.5
+    const shares = `${formatSharePercent(ratio)}/${formatSharePercent(1 - ratio)}`
     return [
-      `${indent}pane split ${node.direction}`,
+      `${indent}pane split ${node.direction} [${shares}]`,
       ...formatVisualPaneNode(node.first, depth + 1),
       ...formatVisualPaneNode(node.second, depth + 1)
     ]
@@ -97,8 +100,27 @@ export function formatTerminalShow(result: { terminal: RuntimeTerminalShow }): s
     `ptyId: ${terminal.ptyId ?? 'none'}`,
     `connected: ${terminal.connected}`,
     `writable: ${terminal.writable}`,
+    ...(terminal.pane ? [`pane: ${formatTerminalPaneGeometry(terminal.pane)}`] : []),
     `preview: ${terminal.preview || '<empty>'}`
   ].join('\n')
+}
+
+function formatTerminalPaneGeometry(pane: RuntimeTerminalPaneGeometry): string {
+  const size =
+    pane.widthPx !== null || pane.heightPx !== null
+      ? `${pane.widthPx ?? '?'}x${pane.heightPx ?? '?'} px`
+      : null
+  const share =
+    pane.widthRatio !== null && pane.heightRatio !== null
+      ? `width ${formatSharePercent(pane.widthRatio)} / height ${formatSharePercent(pane.heightRatio)} of tab`
+      : null
+  return [size, share].filter((part): part is string => part !== null).join(', ') || 'unknown'
+}
+
+function formatSharePercent(ratio: number): string {
+  const percent = ratio * 100
+  const rounded = Math.round(percent * 10) / 10
+  return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded}%`
 }
 
 export function formatTerminalRead(result: { terminal: RuntimeTerminalRead }): string {

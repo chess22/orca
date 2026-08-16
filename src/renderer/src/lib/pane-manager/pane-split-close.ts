@@ -30,7 +30,7 @@ type MovedPaneSplitState = {
 type SplitManagedPaneArgs = {
   paneId: number
   direction: 'vertical' | 'horizontal'
-  opts?: { ratio?: number; cwd?: string; leafId?: string; ptyId?: string }
+  opts?: { ratio?: number; newPaneSizePx?: number; cwd?: string; leafId?: string; ptyId?: string }
   sourceContainer?: HTMLElement
   panes: Map<number, ManagedPaneInternal>
   root: HTMLElement

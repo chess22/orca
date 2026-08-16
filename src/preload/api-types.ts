@@ -3225,6 +3225,8 @@ export type PreloadApi = {
         leafId?: string
         splitFromLeafId?: string
         splitDirection?: 'horizontal' | 'vertical'
+        splitRatio?: number
+        splitSizePx?: number
         splitTelemetrySource?: TerminalPaneSplitSource
       }) => void
     ) => () => void
@@ -3241,6 +3243,8 @@ export type PreloadApi = {
         paneRuntimeId: number
         direction: 'horizontal' | 'vertical'
         command?: string
+        ratio?: number
+        sizePx?: number
         telemetrySource?: TerminalPaneSplitSource
       }) => void
     ) => () => void

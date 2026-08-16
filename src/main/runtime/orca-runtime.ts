@@ -340,6 +340,7 @@ import {
   type RuntimeWorktreeStatus,
   type RuntimeSpeechModelSummary,
   type RuntimeSpeechSetupState,
+  type RuntimeTerminalPaneGeometry,
   type RuntimeTerminalShow,
   type RuntimeTerminalSummary,
   type RuntimeTerminalVisualGroupNode,
@@ -539,6 +540,7 @@ import {
   terminalLayoutContainsLeaf
 } from './headless-terminal-split-layout'
 import { RECENT_PTY_OUTPUT_LIMIT, RecentPtyOutputBuffer } from './recent-pty-output-buffer'
+import { computeTerminalLeafShare } from './terminal-layout-share'
 import {
   buildHeadlessTabGroupMove,
   buildHeadlessTabGroupSplit
@@ -1912,6 +1914,8 @@ type RuntimeNotifier = {
       leafId?: string
       splitFromLeafId?: string
       splitDirection?: 'horizontal' | 'vertical'
+      splitRatio?: number
+      splitSizePx?: number
       splitTelemetrySource?: TerminalPaneSplitSource
       focus?: boolean
       expectedProcessIdentity?: {
@@ -1934,6 +1938,11 @@ type RuntimeNotifier = {
     opts: {
       direction: 'horizontal' | 'vertical'
       command?: string
+      // Why: wire ratio is the NEW pane's share (tmux-style); the renderer
+      // layout tree stores the first/existing child's share, so the renderer
+      // converts at the split-application site.
+      ratio?: number
+      sizePx?: number
       telemetrySource?: TerminalPaneSplitSource
     }
   ): void
@@ -6480,7 +6489,11 @@ export class OrcaRuntimeService {
       selectIfNoActiveTab?: boolean
       startupCwd?: string
       viewMode?: 'terminal' | 'chat'
-      split?: { splitFromLeafId: string; direction: 'horizontal' | 'vertical' }
+      split?: {
+        splitFromLeafId: string
+        direction: 'horizontal' | 'vertical'
+        newLeafRatio?: number
+      }
       notify?: boolean
     }
   ): void {
@@ -7261,7 +7274,7 @@ export class OrcaRuntimeService {
     leafId: string,
     ptyId: string,
     existingLayout: TerminalLayoutSnapshot | undefined,
-    split?: { splitFromLeafId: string; direction: 'horizontal' | 'vertical' }
+    split?: { splitFromLeafId: string; direction: 'horizontal' | 'vertical'; newLeafRatio?: number }
   ): TerminalLayoutSnapshot {
     if (!existingLayout) {
       return {
@@ -7280,7 +7293,8 @@ export class OrcaRuntimeService {
         leafId,
         ptyId,
         splitFromLeafId: split.splitFromLeafId,
-        direction: split.direction
+        direction: split.direction,
+        newLeafRatio: split.newLeafRatio
       })
     }
     return {
@@ -7685,6 +7699,7 @@ export class OrcaRuntimeService {
     ptyId: string
     splitFromLeafId: string
     direction: 'horizontal' | 'vertical'
+    newLeafRatio?: number
   }): boolean {
     const session = this.getWorkspaceSessionForWorktree(args.worktreeId)
     if (!session || !this.store?.setWorkspaceSession) {
@@ -16261,7 +16276,13 @@ export class OrcaRuntimeService {
       summariesByLeafKey
     )
     if (first && second) {
-      return { type: 'pane-split', direction: node.direction, first, second }
+      return {
+        type: 'pane-split',
+        direction: node.direction,
+        ...(node.ratio !== undefined ? { ratio: node.ratio } : {}),
+        first,
+        second
+      }
     }
     return first ?? second
   }
@@ -16574,12 +16595,30 @@ export class OrcaRuntimeService {
     if (leaf.ptyId) {
       this.assertLiveTerminalHandleTargetsPty(handle, leaf.ptyId)
     }
+    const pane = this.buildTerminalPaneGeometry(leaf)
     return {
       ...summary,
       preview,
       paneRuntimeId: leaf.paneRuntimeId,
       ptyId: leaf.ptyId,
-      rendererGraphEpoch: this.rendererGraphEpoch
+      rendererGraphEpoch: this.rendererGraphEpoch,
+      ...(pane ? { pane } : {})
+    }
+  }
+
+  private buildTerminalPaneGeometry(leaf: RuntimeLeafRecord): RuntimeTerminalPaneGeometry | null {
+    const share = computeTerminalLeafShare(this.tabs.get(leaf.tabId)?.layout, leaf.leafId)
+    if (!share && leaf.widthPx === undefined && leaf.heightPx === undefined) {
+      return null
+    }
+    // Why: match the layout serializer's 3-decimal ratio precision so show
+    // output and persisted snapshots agree.
+    const round = (ratio: number): number => Math.round(ratio * 1000) / 1000
+    return {
+      widthPx: leaf.widthPx ?? null,
+      heightPx: leaf.heightPx ?? null,
+      widthRatio: share ? round(share.widthRatio) : null,
+      heightRatio: share ? round(share.heightRatio) : null
     }
   }
 
@@ -27299,6 +27338,8 @@ export class OrcaRuntimeService {
       // Why: same split as createTerminal — adopt the pane without revealing its
       // workspace, for splits the user never asked to see.
       surfaceOwner?: false
+      ratio?: number
+      sizePx?: number
       telemetrySource?: TerminalPaneSplitSource
     } = {}
   ): Promise<RuntimeTerminalSplit> {
@@ -27321,6 +27362,8 @@ export class OrcaRuntimeService {
     this.notifier?.splitTerminal(leaf.tabId, leaf.paneRuntimeId, {
       direction,
       command: opts.command,
+      ratio: opts.ratio,
+      sizePx: opts.sizePx,
       telemetrySource: opts.telemetrySource
     })
 
@@ -27339,6 +27382,8 @@ export class OrcaRuntimeService {
       // Why: same split as createTerminal — adopt the pane without revealing its
       // workspace, for splits the user never asked to see.
       surfaceOwner?: false
+      ratio?: number
+      sizePx?: number
       telemetrySource?: TerminalPaneSplitSource
     } = {}
   ): Promise<RuntimeTerminalSplit> {
@@ -27428,6 +27473,8 @@ export class OrcaRuntimeService {
         leafId,
         splitFromLeafId: parsedPaneKey.leafId,
         splitDirection: direction,
+        splitRatio: opts.ratio,
+        splitSizePx: opts.sizePx,
         splitTelemetrySource: opts.telemetrySource
       })
     }
@@ -27464,7 +27511,8 @@ export class OrcaRuntimeService {
           leafId,
           ptyId: createdPty.ptyId,
           splitFromLeafId: parsedPaneKey.leafId,
-          direction
+          direction,
+          newLeafRatio: opts.ratio
         })
         if (sourceAuthority.persisted && !persisted) {
           throw new Error('workspace_session_unavailable')
@@ -27474,7 +27522,7 @@ export class OrcaRuntimeService {
           leafId,
           title: null,
           activate: opts.activate !== false,
-          split: { splitFromLeafId: parsedPaneKey.leafId, direction }
+          split: { splitFromLeafId: parsedPaneKey.leafId, direction, newLeafRatio: opts.ratio }
         })
       }
     } catch (error) {

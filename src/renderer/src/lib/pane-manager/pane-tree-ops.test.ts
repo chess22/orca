@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   cancelPendingSafeFitContinuations,
   equalizePaneSplitSizes,
+  resolveRatioFromNewPaneSizePx,
   safeFit,
   safeFitAndThen
 } from './pane-tree-ops'
@@ -801,6 +802,23 @@ describe('safeFit', () => {
     expect(pane.fitAddon.fit).not.toHaveBeenCalled()
     expect(continuation).not.toHaveBeenCalled()
     await expect(pending.completion).resolves.toBe(false)
+  })
+})
+
+describe('resolveRatioFromNewPaneSizePx', () => {
+  it('converts a px request into the existing pane share of the split axis', () => {
+    expect(resolveRatioFromNewPaneSizePx(300, 1000)).toBe(0.7)
+  })
+
+  it('clamps oversized requests so neither pane collapses', () => {
+    expect(resolveRatioFromNewPaneSizePx(5000, 1000)).toBe(0.05)
+    expect(resolveRatioFromNewPaneSizePx(1, 1000)).toBe(0.95)
+  })
+
+  it('returns undefined when the request or measured axis is unusable', () => {
+    expect(resolveRatioFromNewPaneSizePx(undefined, 1000)).toBeUndefined()
+    expect(resolveRatioFromNewPaneSizePx(0, 1000)).toBeUndefined()
+    expect(resolveRatioFromNewPaneSizePx(300, 0)).toBeUndefined()
   })
 })
 

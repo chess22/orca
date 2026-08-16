@@ -318,6 +318,7 @@ describe('formatTerminalList', () => {
                   panes: {
                     type: 'pane-split',
                     direction: 'vertical',
+                    ratio: 0.3,
                     first: {
                       type: 'terminal',
                       handle: 'term_top',
@@ -352,7 +353,7 @@ describe('formatTerminalList', () => {
     expect(output).toContain('tab tab-left  Left')
     expect(output).toContain('* term_left  Left  tab=tab-left leaf=leaf-left')
     expect(output).toContain('group group-right')
-    expect(output).toContain('pane split vertical')
+    expect(output).toContain('pane split vertical [30%/70%]')
     expect(output).toContain('  term_top  Right top  tab=tab-right leaf=leaf-top')
     expect(output).toContain('* term_bottom  Right bottom  tab=tab-right leaf=leaf-bottom')
   })
