@@ -4,7 +4,7 @@ export const ORCA_DEV2_APP_NAME = 'Orca Dev 2'
 export const ORCA_DEV2_APP_ID = 'com.stablyai.orca.dev2'
 export const ORCA_DEV2_CLI_NAME = 'orca-dev2'
 export const ORCA_DEV2_USER_DATA_DIR = 'orca-dev2-app'
-export const ORCA_DEV2_VERSION = '1.4.183-dev2.0'
+export const ORCA_DEV2_VERSION = '1.4.183-dev2.1'
 
 export function getOrcaDev2UserDataPath(env = process.env, platform = process.platform) {
   if (env.ORCA_DEV2_USER_DATA_PATH) {
