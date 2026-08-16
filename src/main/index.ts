@@ -637,7 +637,7 @@ function maybeAutoRenameBranchOnFirstWorkFromHook(event: {
   )
 }
 
-const devInstanceIdentity = getDevInstanceIdentity(is.dev)
+const devInstanceIdentity = getDevInstanceIdentity(is.dev, process.env, app.getName())
 const devAgentHookEndpointNamespace = devInstanceIdentity.isDev
   ? devInstanceIdentity.appUserModelId
   : undefined
@@ -2107,6 +2107,8 @@ function shouldSuppressCodexAutoApprovalSyntheticTitleFromHook(args: {
 }
 
 void app.whenReady().then(async () => {
+  // Chromium may replace process signal wiring during startup, so restore the packaged guard once ready.
+  installPackagedSighupGuard()
   logStartupMilestone('app-ready')
   installMainThreadHangWatchdog({ userDataPath: getCanonicalUserDataPath() })
   const hangDetection = consumeHangDetectionMarker(

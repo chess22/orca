@@ -111,10 +111,11 @@ export function installPackagedSighupGuard(): void {
 
   // Why: the packaged GUI must survive its launching terminal closing; the
   // detached daemon already survives independently.
-  process.on('SIGHUP', () => {
-    process.stderr.write('[main] Received SIGHUP (launching terminal closed), ignoring\n')
-  })
+  process.removeListener('SIGHUP', ignoreSighup)
+  process.on('SIGHUP', ignoreSighup)
 }
+
+function ignoreSighup(): void {}
 
 export function patchPackagedProcessPath(): void {
   if (!app.isPackaged) {

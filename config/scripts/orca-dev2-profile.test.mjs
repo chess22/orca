@@ -34,6 +34,6 @@ describe('Orca Dev 2 identity', () => {
   })
 
   it('tracks the staged DEV2 build version', () => {
-    expect(ORCA_DEV2_VERSION).toBe('1.4.183-dev2.1')
+    expect(ORCA_DEV2_VERSION).toBe('1.4.183-dev2.2')
   })
 })

@@ -40,15 +40,10 @@ describe('installPackagedSighupGuard', () => {
       }
       return originalOn(event, listener)
     }) as typeof process.on)
-    const writeSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
-
     installPackagedSighupGuard()
     sighupHandler?.()
 
     expect(onSpy).toHaveBeenCalledWith('SIGHUP', expect.any(Function))
-    expect(writeSpy).toHaveBeenCalledWith(
-      '[main] Received SIGHUP (launching terminal closed), ignoring\n'
-    )
   })
 
   it('does not register a SIGHUP listener in dev mode', async () => {

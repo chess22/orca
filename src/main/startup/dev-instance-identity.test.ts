@@ -13,6 +13,21 @@ describe('dev-instance-identity', () => {
     })
   })
 
+  it('keeps a custom packaged build on its own safeStorage key', () => {
+    expect(
+      getDevInstanceIdentity(
+        false,
+        { ORCA_DEV_INSTANCE_KEY: 'com.stablyai.orca.dev2' },
+        'Orca Dev 2'
+      )
+    ).toMatchObject({
+      name: 'Orca Dev 2',
+      appName: 'Orca Dev 2',
+      isDev: false,
+      appUserModelId: 'com.stablyai.orca.dev2'
+    })
+  })
+
   it('pins a stable dev appName across branches so the safeStorage key does not churn', () => {
     const a = getDevInstanceIdentity(true, { ORCA_DEV_BRANCH: 'feature/a' })
     const b = getDevInstanceIdentity(true, { ORCA_DEV_BRANCH: 'feature/b' })

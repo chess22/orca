@@ -48,6 +48,14 @@ const devChannelRepo = isMacHourly
       : null
 const appId = isDev2Build ? 'com.stablyai.orca.dev2' : 'com.stablyai.orca'
 const productName = isDev2Build ? 'Orca Dev 2' : 'Orca'
+const packagedMetadata = {
+  ...(devChannelBuildVersion
+    ? { version: devChannelBuildVersion }
+    : localBuildVersion
+      ? { version: localBuildVersion }
+      : {}),
+  ...(isDev2Build ? { productName } : {})
+}
 const featureWallResources = {
   from: 'resources/onboarding/feature-wall',
   to: 'onboarding/feature-wall'
@@ -93,11 +101,7 @@ const winSpeechNativeResource = {
 module.exports = {
   appId,
   productName,
-  ...(devChannelBuildVersion
-    ? { extraMetadata: { version: devChannelBuildVersion } }
-    : localBuildVersion
-      ? { extraMetadata: { version: localBuildVersion } }
-      : {}),
+  ...(Object.keys(packagedMetadata).length > 0 ? { extraMetadata: packagedMetadata } : {}),
   directories: {
     buildResources: 'resources/build'
   },

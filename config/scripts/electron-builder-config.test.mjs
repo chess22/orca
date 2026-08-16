@@ -293,6 +293,34 @@ describe('electron-builder config', () => {
     }
   })
 
+  it('packages DEV2 with a dedicated safeStorage-driving product name', () => {
+    const configPath = require.resolve('../electron-builder.config.cjs')
+    const originalDev2Build = process.env.ORCA_DEV2_BUILD
+    const originalLocalVersion = process.env.ORCA_LOCAL_BUILD_VERSION
+    try {
+      delete require.cache[configPath]
+      process.env.ORCA_DEV2_BUILD = '1'
+      process.env.ORCA_LOCAL_BUILD_VERSION = '1.4.183-dev2.2'
+      expect(require('../electron-builder.config.cjs').extraMetadata).toEqual({
+        version: '1.4.183-dev2.2',
+        productName: 'Orca Dev 2'
+      })
+    } finally {
+      if (originalDev2Build === undefined) {
+        delete process.env.ORCA_DEV2_BUILD
+      } else {
+        process.env.ORCA_DEV2_BUILD = originalDev2Build
+      }
+      if (originalLocalVersion === undefined) {
+        delete process.env.ORCA_LOCAL_BUILD_VERSION
+      } else {
+        process.env.ORCA_LOCAL_BUILD_VERSION = originalLocalVersion
+      }
+      delete require.cache[configPath]
+      require('../electron-builder.config.cjs')
+    }
+  })
+
   it('uses Orca native rebuild hook instead of electron-builder default rebuild', () => {
     expect(electronBuilderConfig.beforeBuild).toBe(electronBuilderNativeRebuild)
     expect(electronBuilderConfig.npmRebuild).toBe(true)
