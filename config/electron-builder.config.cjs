@@ -45,6 +45,9 @@ const winSpeechNativeResource = {
 module.exports = {
   appId: 'com.stablyai.orca',
   productName: 'Orca',
+  // Why: Linear and other standard web surfaces need an OS-routable Orca link;
+  // main still validates each route before claiming the activation event.
+  protocols: [{ name: 'Orca', schemes: ['orca'] }],
   directories: {
     buildResources: 'resources/build'
   },

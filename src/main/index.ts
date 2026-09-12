@@ -186,6 +186,12 @@ import { preserveAgentAuthBeforeRestart } from './agent-auth-restart-preservatio
 import { CliInstaller } from './cli/cli-installer'
 import { installLinuxBareOrcaDispatcher } from './cli/linux-bare-orca-dispatcher'
 import { selfHealRuntimeEnvironmentFocus } from './runtime-environment-focus-self-heal'
+import { SessionDeepLinkState } from './startup/session-deep-link-state'
+import { registerSessionDeepLinkRoute } from './startup/session-deep-link-route'
+import {
+  openSessionDeepLink,
+  type SessionDeepLinkOpenResult
+} from './startup/session-deep-link-opener'
 
 let mainWindow: BrowserWindow | null = null
 /** Whether a manual app.quit() (Cmd+Q, etc.) is in progress. Shared with the
@@ -216,6 +222,8 @@ let watcherShutdownPromise: Promise<void> | null = null
 let watcherShutdownDone = false
 let automations: AutomationService | null = null
 let keybindings: KeybindingService | null = null
+const sessionDeepLinks = new SessionDeepLinkState()
+let sessionDeepLinkOpenQueue: Promise<void> = Promise.resolve()
 // Why: a reload/teardown intent set for one renderer must not leak to a later load.
 // The recovery reload re-fires did-finish-load, so its flag lets the local-PTY orphan
 // sweep spare live sessions across that one reload (#5787).
@@ -446,6 +454,73 @@ function focusExistingWindow(): void {
   })
 }
 
+function showSessionDeepLinkResult(
+  sessionId: string,
+  result: Exclude<SessionDeepLinkOpenResult, { status: 'active' }>
+): void {
+  const detail =
+    result.status === 'inactive'
+      ? 'This session is in Orca history, but it does not have an active terminal.'
+      : result.status === 'ambiguous'
+        ? 'More than one active terminal reports this session ID, so Orca did not switch tabs.'
+        : 'Orca could not find this session in the current session history.'
+  const targetWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined
+  const options = {
+    type: 'info',
+    title: 'Session is not active',
+    message: 'Orca could not open an active terminal for this session.',
+    detail: `${detail}\n\nSession ID: ${sessionId}`
+  } as const
+  if (targetWindow) {
+    void dialog.showMessageBox(targetWindow, options)
+  } else {
+    void dialog.showMessageBox(options)
+  }
+}
+
+async function drainSessionDeepLinks(): Promise<void> {
+  let sessionId = sessionDeepLinks.consume()
+  while (sessionId) {
+    const currentRuntime = runtime
+    if (!currentRuntime) {
+      sessionDeepLinks.restore(sessionId)
+      return
+    }
+    const result = await openSessionDeepLink(sessionId, agentHookServer.getStatusSnapshot(), {
+      getHandleForPaneKey: (paneKey) =>
+        currentRuntime.getAgentStatusTerminalHandleForPaneKey(paneKey),
+      isHandleActive: async (handle) => {
+        try {
+          return (await currentRuntime.showTerminal(handle)).connected
+        } catch {
+          return false
+        }
+      },
+      focusHandle: async (handle) => {
+        await currentRuntime.focusTerminal(handle)
+      }
+    })
+    if (result.status !== 'active') {
+      showSessionDeepLinkResult(sessionId, result)
+    }
+    sessionId = sessionDeepLinks.consume()
+  }
+}
+
+function scheduleSessionDeepLinkOpen(): void {
+  sessionDeepLinkOpenQueue = sessionDeepLinkOpenQueue.then(drainSessionDeepLinks).catch((error) => {
+    console.warn('[session-deep-link] Failed to open session:', error)
+  })
+}
+
+function requestDesktopActivation(argv: readonly string[] = []): void {
+  const hasSessionLink = sessionDeepLinks.capture(argv)
+  focusExistingWindow()
+  if (hasSessionLink) {
+    scheduleSessionDeepLinkOpen()
+  }
+}
+
 // Why: a webContents-scoped flag that auto-expires so an intent set for one renderer
 // can't leak to a later load. `consume` clears on a positive match for one-shot
 // signals (the recovery reload fires exactly one did-finish-load).
@@ -546,7 +621,7 @@ const hasSingleInstanceLock =
     ? true
     : bypassSingleInstanceLock
       ? true
-      : acquireSingleInstanceLock(app, focusExistingWindow)
+      : acquireSingleInstanceLock(app, requestDesktopActivation)
 if (startupDiagnosticsEnabled) {
   logStartupDiagnostic('single-instance-lock-result', {
     acquired: hasSingleInstanceLock,
@@ -559,6 +634,11 @@ if (!hasSingleInstanceLock) {
   // otherwise look like silent crashes. `open --stderr` can capture this line.
   logSingleInstanceLockFailure()
   app.quit()
+}
+
+if (hasSingleInstanceLock) {
+  registerSessionDeepLinkRoute(app, (url) => requestDesktopActivation([url]))
+  sessionDeepLinks.capture(process.argv)
 }
 
 // Why: when the lock is held by another process, we've already called
@@ -2141,6 +2221,7 @@ app.whenReady().then(async () => {
       console.error('[runtime] Failed to start local RPC transport:', error)
     })
   ])
+  scheduleSessionDeepLinkOpen()
 
   // Why: the macOS notification permission dialog must fire after the window
   // is visible and focused. If it fires before the window exists, the system

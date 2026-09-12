@@ -55,7 +55,7 @@ describe('acquireSingleInstanceLock', () => {
     expect(acquired).toBe(true)
     expect(fake.requestSingleInstanceLock).toHaveBeenCalledTimes(1)
     expect(fake.on).toHaveBeenCalledTimes(1)
-    expect(fake.on).toHaveBeenCalledWith('second-instance', onSecondInstance)
+    expect(fake.on).toHaveBeenCalledWith('second-instance', expect.any(Function))
     expect(fake.listeners['second-instance']).toHaveLength(1)
   })
 
@@ -67,9 +67,9 @@ describe('acquireSingleInstanceLock', () => {
 
     const [registered] = fake.listeners['second-instance'] ?? []
     expect(registered).toBeDefined()
-    registered?.()
+    registered?.({}, ['Orca', 'orca://session/session_abc'])
 
-    expect(onSecondInstance).toHaveBeenCalledTimes(1)
+    expect(onSecondInstance).toHaveBeenCalledWith(['Orca', 'orca://session/session_abc'])
   })
 })
 
