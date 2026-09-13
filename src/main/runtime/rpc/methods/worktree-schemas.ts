@@ -184,6 +184,18 @@ export const WorktreeSet = WorktreeSelector.extend({
   linkedLinearIssue: z.union([z.string(), z.null()]).optional(),
   linkedLinearIssueWorkspaceId: z.union([z.string(), z.null()]).optional(),
   linkedLinearIssueOrganizationUrlKey: z.union([z.string(), z.null()]).optional(),
+  linkedPlaneWorkItem: z
+    .object({
+      provider: z.literal('plane'),
+      baseUrl: z.string().url(),
+      workspaceSlug: z.string().min(1),
+      projectId: z.string().min(1),
+      workItemId: z.string().min(1),
+      identifier: z.string().optional(),
+      url: z.string().url()
+    })
+    .nullable()
+    .optional(),
   linkedGitLabMR: TriStateLinkedIssue,
   linkedGitLabIssue: TriStateLinkedIssue,
   linkedBitbucketPR: TriStateLinkedIssue,

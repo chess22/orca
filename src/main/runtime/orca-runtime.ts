@@ -101,6 +101,8 @@ import type {
   JiraIssueFilter,
   JiraIssueUpdate,
   JiraSiteSelection,
+  PlaneWorkItemCreate,
+  PlaneWorkItemUpdate,
   LinearIssueUpdate,
   LinearProjectSummary,
   LinearWorkspaceSelection,
@@ -530,6 +532,7 @@ import {
   searchIssues as searchJiraIssues,
   updateIssue as updateJiraIssue
 } from '../jira/issues'
+import { createPlaneRuntimeService, getPlaneRuntimeStatus } from '../plane/runtime-service'
 import {
   clearProjectItemFieldValue,
   getProjectViewTable,
@@ -1448,6 +1451,7 @@ function mergeRuntimeFolderWorkspace(repo: Repo, worktreeId: string, meta: Workt
     linkedLinearIssue: meta.linkedLinearIssue ?? null,
     linkedLinearIssueWorkspaceId: meta.linkedLinearIssueWorkspaceId ?? null,
     linkedLinearIssueOrganizationUrlKey: meta.linkedLinearIssueOrganizationUrlKey ?? null,
+    linkedPlaneWorkItem: meta.linkedPlaneWorkItem ?? null,
     linkedGitLabMR: meta.linkedGitLabMR ?? null,
     linkedGitLabIssue: meta.linkedGitLabIssue ?? null,
     linkedBitbucketPR: meta.linkedBitbucketPR ?? null,
@@ -22120,6 +22124,44 @@ export class OrcaRuntimeService {
 
   jiraListTransitions(key: string, siteId?: string): ReturnType<typeof listJiraTransitions> {
     return listJiraTransitions(key, siteId)
+  }
+
+  // ── Plane integration ──
+
+  planeStatus(): ReturnType<typeof getPlaneRuntimeStatus> {
+    return getPlaneRuntimeStatus()
+  }
+
+  planeListWorkItems(limit = 50) {
+    return createPlaneRuntimeService().listWorkItems(Math.min(Math.max(1, limit), 100))
+  }
+
+  planeGetWorkItem(workItemId: string) {
+    return createPlaneRuntimeService().getWorkItem(workItemId)
+  }
+
+  planeCreateWorkItem(input: PlaneWorkItemCreate) {
+    return createPlaneRuntimeService().createWorkItem(input)
+  }
+
+  planeUpdateWorkItem(workItemId: string, update: PlaneWorkItemUpdate) {
+    return createPlaneRuntimeService().updateWorkItem(workItemId, update)
+  }
+
+  planeSetWorkItemState(workItemId: string, stateId: string) {
+    return createPlaneRuntimeService().setWorkItemState(workItemId, stateId)
+  }
+
+  planeListStates() {
+    return createPlaneRuntimeService().listStates()
+  }
+
+  planeListComments(workItemId: string) {
+    return createPlaneRuntimeService().listComments(workItemId)
+  }
+
+  planeAddComment(workItemId: string, commentHtml: string) {
+    return createPlaneRuntimeService().addComment(workItemId, commentHtml)
   }
 
   // ── Browser automation ──

@@ -159,6 +159,7 @@ export const WORKTREE_METHODS: RpcMethod[] = [
         linkedLinearIssue: params.linkedLinearIssue,
         linkedLinearIssueWorkspaceId: params.linkedLinearIssueWorkspaceId,
         linkedLinearIssueOrganizationUrlKey: params.linkedLinearIssueOrganizationUrlKey,
+        linkedPlaneWorkItem: params.linkedPlaneWorkItem,
         linkedGitLabMR: params.linkedGitLabMR,
         linkedGitLabIssue: params.linkedGitLabIssue,
         linkedBitbucketPR: params.linkedBitbucketPR,

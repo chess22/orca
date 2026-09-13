@@ -14,6 +14,7 @@ import type { WorkspaceCleanupUIState } from './workspace-cleanup'
 import type { LargeDiffRenderLimit } from './large-diff-render-limit'
 import type { GitLabProjectSettings } from './gitlab-types'
 import type { TaskProvider } from './task-providers'
+import type { PlaneWorkItemLink } from './plane-types'
 import type { FeatureTipId } from './feature-tips'
 import type { ContextualTourId } from './contextual-tours'
 import type {
@@ -459,6 +460,7 @@ export type Worktree = {
   linkedLinearIssue: string | null
   linkedLinearIssueWorkspaceId?: string | null
   linkedLinearIssueOrganizationUrlKey?: string | null
+  linkedPlaneWorkItem?: PlaneWorkItemLink | null
   // Why: parallel slots for non-GitHub work-item references. Kept as separate
   // fields (rather than reusing linkedIssue / linkedPR with a provider
   // discriminator) so the persistence layer is unambiguous when a user
@@ -571,6 +573,7 @@ export type WorktreeMeta = {
   linkedLinearIssue: string | null
   linkedLinearIssueWorkspaceId?: string | null
   linkedLinearIssueOrganizationUrlKey?: string | null
+  linkedPlaneWorkItem?: PlaneWorkItemLink | null
   /** Optional for backward compatibility — see Worktree.linkedGitLabMR. */
   linkedGitLabMR?: number | null
   /** Optional for backward compatibility — see Worktree.linkedGitLabIssue. */
@@ -1848,6 +1851,19 @@ export type {
   JiraUser,
   JiraViewer
 } from './jira-types'
+export type {
+  PlaneActorContext,
+  PlaneComment,
+  PlaneConnection,
+  PlaneRuntimeStatus,
+  PlaneState,
+  PlaneStateGroup,
+  PlaneWorkItem,
+  PlaneWorkItemCreate,
+  PlaneWorkItemLink,
+  PlaneWorkItemUpdate,
+  PlaneWorkspaceMember
+} from './plane-types'
 
 /**
  * GitHub API rate-limit buckets surfaced in the TaskPage header so users can

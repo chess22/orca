@@ -112,6 +112,17 @@ Computer Use:
 Linear:
   linear                    Read Linear ticket context for agents
 
+Plane:
+  plane status              Show Plane runtime configuration status
+  plane list                List Plane work items
+  plane issue               Retrieve a Plane work item
+  plane create              Create a Plane work item
+  plane update              Update Plane work item fields except state
+  plane state list          List Plane project states
+  plane state set           Move a Plane work item through the guarded state boundary
+  plane comment list        List Plane work item comments
+  plane comment add         Add an internal Plane work item comment
+
 Mobile Emulator (iOS Simulator):
   emulator list             List available/running emulators (Orca-managed + raw serve-sim)
   emulator attach <device>  Attach/start helper and make active for the worktree
@@ -481,6 +492,8 @@ export function formatFlagHelp(flag: string): string {
     issue: '--issue <number|null>  Linked GitHub issue number',
     'linear-issue':
       '--linear-issue <id|url|null> Linked Linear issue identifier or URL; null clears on set',
+    'plane-work-item':
+      '--plane-work-item <url|null> Linked Plane work item REST/browse URL; null clears on set',
     json: '--json                 Emit machine-readable JSON',
     key: '--key <key>            Key argument for this command',
     limit: '--limit <n>            Maximum number of rows to return',

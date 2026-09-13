@@ -22,6 +22,7 @@ import { AGENT_HOOK_HANDLERS } from './handlers/agent-hooks'
 import { DIAGNOSTICS_HANDLERS } from './handlers/diagnostics'
 import { EMULATOR_HANDLERS } from './handlers/emulator'
 import { LINEAR_HANDLERS } from './handlers/linear'
+import { PLANE_HANDLERS } from './handlers/plane'
 import { VM_HANDLERS } from './handlers/vm'
 
 export type HandlerContext = {
@@ -59,6 +60,7 @@ function buildHandlers(): Map<string, CommandHandler> {
     DIAGNOSTICS_HANDLERS,
     ENVIRONMENT_HANDLERS,
     LINEAR_HANDLERS,
+    PLANE_HANDLERS,
     VM_HANDLERS
   ]
   for (const group of groups) {

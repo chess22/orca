@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  isCommandGroup,
   REPEATED_FLAG_SEPARATOR,
   normalizeCommandPositionals,
   parseArgs,
@@ -97,6 +98,16 @@ describe('parseArgs', () => {
 describe('supportsBrowserPageFlag', () => {
   it('does not expose browser page targeting on orchestration commands', () => {
     expect(supportsBrowserPageFlag(['orchestration', 'send'])).toBe(false)
+  })
+
+  it('does not expose browser page targeting on Plane commands', () => {
+    expect(supportsBrowserPageFlag(['plane', 'list'])).toBe(false)
+  })
+})
+
+describe('isCommandGroup', () => {
+  it('recognizes Plane so group help remains discoverable', () => {
+    expect(isCommandGroup(['plane'])).toBe(true)
   })
 })
 

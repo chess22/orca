@@ -714,6 +714,33 @@ describe('worktree RPC methods', () => {
     )
   })
 
+  it('forwards a provider-scoped Plane work item link through worktree.set', async () => {
+    const runtime = {
+      getRuntimeId: () => 'test-runtime',
+      updateManagedWorktreeMeta: vi.fn().mockResolvedValue({ id: 'wt-1' })
+    } as unknown as OrcaRuntimeService
+    const dispatcher = new RpcDispatcher({ runtime, methods: WORKTREE_METHODS })
+    const linkedPlaneWorkItem = {
+      provider: 'plane' as const,
+      baseUrl: 'https://plane.example',
+      workspaceSlug: 'team',
+      projectId: 'project-id',
+      workItemId: 'item-id',
+      identifier: 'ORCA-42',
+      url: 'https://plane.example/team/browse/item-id?project=project-id'
+    }
+
+    const response = await dispatcher.dispatch(
+      makeRequest('worktree.set', { worktree: 'id:wt-1', linkedPlaneWorkItem })
+    )
+
+    expect(response).toMatchObject({ ok: true })
+    expect(runtime.updateManagedWorktreeMeta).toHaveBeenCalledWith(
+      'id:wt-1',
+      expect.objectContaining({ linkedPlaneWorkItem })
+    )
+  })
+
   it('rejects worktree.set when both parent and no-parent are supplied', async () => {
     const runtime = {
       getRuntimeId: () => 'test-runtime',
