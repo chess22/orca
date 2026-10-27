@@ -1,13 +1,23 @@
 import { spawnSync } from 'node:child_process'
-import { chmodSync, copyFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const repoRoot = path.resolve(import.meta.dirname, '../..')
 const packagePath = path.join(repoRoot, 'native', 'computer-use-macos')
 const binaryPath = path.join(packagePath, '.build', 'release', 'orca-computer-use-macos')
 const appPath = path.join(packagePath, '.build', 'release', 'Orca Computer Use.app')
-const appExecutablePath = path.join(appPath, 'Contents', 'MacOS', 'orca-computer-use-macos')
-const appIconPath = path.join(appPath, 'Contents', 'Resources', 'AppIcon.icns')
 const entitlementsPath = path.join(
   repoRoot,
   'resources',
@@ -16,40 +26,218 @@ const entitlementsPath = path.join(
 )
 const bundleId = process.env.ORCA_COMPUTER_MACOS_BUNDLE_ID ?? 'com.stablyai.orca.computer-use'
 const displayName = 'Orca Computer Use'
-const signingIdentity = resolveSigningIdentity()
-const universalTriples = ['arm64-apple-macosx', 'x86_64-apple-macosx']
+const universalSlices = [
+  { architecture: 'arm64', triple: 'arm64-apple-macosx' },
+  { architecture: 'x86_64', triple: 'x86_64-apple-macosx' }
+]
 
-if (process.platform !== 'darwin') {
-  process.exit(0)
-}
-
-buildUniversalBinary()
-chmodSync(binaryPath, 0o755)
-createHelperApp()
-
-function buildUniversalBinary() {
-  const builtBinaries = universalTriples.map((triple) => {
-    run('swift', ['build', '-c', 'release', '--package-path', packagePath, '--triple', triple])
-    return path.join(packagePath, '.build', triple, 'release', 'orca-computer-use-macos')
-  })
-  mkdirSync(path.dirname(binaryPath), { recursive: true })
-  run('lipo', ['-create', ...builtBinaries, '-output', binaryPath])
-}
-
-function createHelperApp() {
-  rmSync(appPath, { recursive: true, force: true })
-  mkdirSync(path.dirname(appExecutablePath), { recursive: true })
-  mkdirSync(path.join(appPath, 'Contents', 'Resources'), { recursive: true })
-  copyFileSync(binaryPath, appExecutablePath)
-  copyFileSync(path.join(repoRoot, 'resources', 'build', 'icon.icns'), appIconPath)
-  chmodSync(appExecutablePath, 0o755)
-  writeFileSync(path.join(appPath, 'Contents', 'Info.plist'), infoPlist(), 'utf8')
-  const signer = spawnSync('codesign', codesignArgs(signingIdentity, appPath), { stdio: 'inherit' })
-  if (signer.signal) {
-    process.kill(process.pid, signer.signal)
+class CommandFailure extends Error {
+  constructor(command, result) {
+    super(`${command} failed${result.status === null ? '' : ` with exit code ${result.status}`}`)
+    this.status = result.status
+    this.signal = result.signal
+    this.stderr = result.stderr
   }
-  if (signer.status !== 0) {
-    process.exit(signer.status ?? 1)
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  try {
+    if (shouldBuildComputerMacos(process.platform)) {
+      buildComputerMacosArtifacts()
+    }
+  } catch (error) {
+    if (!(error instanceof CommandFailure)) {
+      throw error
+    }
+    if (error.stderr) {
+      process.stderr.write(error.stderr)
+    }
+    if (error.signal) {
+      process.kill(process.pid, error.signal)
+    } else {
+      process.exitCode = error.status ?? 1
+    }
+  }
+}
+
+export function shouldBuildComputerMacos(platform) {
+  return platform === 'darwin'
+}
+
+export function buildComputerMacosArtifacts({
+  packageDirectory = packagePath,
+  outputBinary = binaryPath,
+  outputApp = appPath,
+  iconPath = path.join(repoRoot, 'resources', 'build', 'icon.icns'),
+  signingIdentity = resolveSigningIdentity(),
+  runCommand = run,
+  captureCommand = capture,
+  renameArtifact = renameSync
+} = {}) {
+  const buildDirectory = path.join(packageDirectory, '.build')
+  mkdirSync(buildDirectory, { recursive: true })
+  const releaseRoot = path.join(buildDirectory, 'release')
+  mkdirSync(releaseRoot, { recursive: true })
+  const canonicalOutputs = validateCanonicalOutputs(releaseRoot, outputBinary, outputApp)
+  const scratchRoot = mkdtempSync(path.join(buildDirectory, 'orca-computer-use-universal-'))
+  try {
+    const builtBinaries = universalSlices.map((slice) =>
+      buildSlice(packageDirectory, scratchRoot, slice, runCommand, captureCommand)
+    )
+    const stagedBinary = path.join(scratchRoot, 'staged', 'orca-computer-use-macos')
+    mkdirSync(path.dirname(stagedBinary), { recursive: true })
+    runCommand('lipo', ['-create', ...builtBinaries, '-output', stagedBinary])
+    assertRegularNonSymlink(stagedBinary)
+    assertExactArchitectures(
+      stagedBinary,
+      universalSlices.map(({ architecture }) => architecture),
+      captureCommand
+    )
+    chmodSync(stagedBinary, 0o755)
+    const stagedApp = path.join(scratchRoot, 'staged', 'Orca Computer Use.app')
+    createHelperApp(stagedBinary, stagedApp, iconPath, signingIdentity, runCommand, captureCommand)
+    publishArtifacts(
+      {
+        stagedBinary,
+        stagedApp,
+        outputBinary: canonicalOutputs.binary,
+        outputApp: canonicalOutputs.app,
+        scratchRoot
+      },
+      renameArtifact
+    )
+  } finally {
+    rmSync(scratchRoot, { recursive: true, force: true })
+  }
+}
+
+function validateCanonicalOutputs(releaseRoot, outputBinary, outputApp) {
+  if (!path.isAbsolute(outputBinary) || !path.isAbsolute(outputApp)) {
+    throw new Error('Canonical computer helper outputs must use absolute paths')
+  }
+  const realReleaseRoot = realpathSync(releaseRoot)
+  const binary = canonicalOutputPath(realReleaseRoot, outputBinary, 'binary')
+  const app = canonicalOutputPath(realReleaseRoot, outputApp, 'app')
+  if (binary === app) {
+    throw new Error('Canonical computer helper binary and app outputs must be distinct')
+  }
+  return { binary, app }
+}
+
+function canonicalOutputPath(realReleaseRoot, output, label) {
+  const realParent = realpathSync(path.dirname(output))
+  assertContained(realReleaseRoot, realParent, `Canonical ${label} output`, 'release directory')
+  return path.join(realParent, path.basename(output))
+}
+
+function buildSlice(packageDirectory, scratchRoot, slice, runCommand, captureCommand) {
+  const scratchPath = path.join(scratchRoot, slice.architecture)
+  const args = [
+    'build',
+    '-c',
+    'release',
+    '--package-path',
+    packageDirectory,
+    '--triple',
+    slice.triple,
+    '--scratch-path',
+    scratchPath
+  ]
+  runCommand('swift', args)
+  const rawBinPath = captureCommand('swift', [...args, '--show-bin-path'])
+  const reportedBinPath = rawBinPath.trim()
+  if (/\r|\n/.test(reportedBinPath)) {
+    throw new Error('Swift binary output path must contain exactly one line')
+  }
+  if (!path.isAbsolute(reportedBinPath)) {
+    throw new Error(`Swift binary output path is not absolute: ${reportedBinPath || '<empty>'}`)
+  }
+  const realScratchPath = realpathSync(scratchPath)
+  const realBinPath = realpathSync(reportedBinPath)
+  assertContained(realScratchPath, realBinPath, 'Swift binary output')
+  const builtBinary = path.join(reportedBinPath, 'orca-computer-use-macos')
+  assertRegularNonSymlink(builtBinary)
+  assertContained(realScratchPath, realpathSync(builtBinary), 'Swift slice binary')
+  assertExactArchitectures(builtBinary, [slice.architecture], captureCommand)
+  return builtBinary
+}
+
+function assertContained(root, target, label, boundary = 'architecture scratch directory') {
+  const relative = path.relative(root, target)
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error(`${label} escapes its ${boundary}: ${target}`)
+  }
+}
+
+function assertRegularNonSymlink(file) {
+  const stat = lstatSync(file)
+  if (stat.isSymbolicLink() || !stat.isFile()) {
+    throw new Error(`Expected a regular non-symlink file: ${file}`)
+  }
+}
+
+function assertExactArchitectures(binary, expected, captureCommand) {
+  const actual = captureCommand('lipo', ['-archs', binary]).trim().split(/\s+/).filter(Boolean)
+  if (actual.length !== expected.length || expected.some((arch) => !actual.includes(arch))) {
+    throw new Error(
+      `Unexpected architectures for ${binary}: expected ${expected.join(' ')}, got ${actual.join(' ') || 'none'}`
+    )
+  }
+}
+
+function createHelperApp(binary, targetApp, icon, signingIdentity, runCommand, captureCommand) {
+  const executable = path.join(targetApp, 'Contents', 'MacOS', 'orca-computer-use-macos')
+  const targetIcon = path.join(targetApp, 'Contents', 'Resources', 'AppIcon.icns')
+  mkdirSync(path.dirname(executable), { recursive: true })
+  mkdirSync(path.dirname(targetIcon), { recursive: true })
+  copyFileSync(binary, executable)
+  copyFileSync(icon, targetIcon)
+  chmodSync(executable, 0o755)
+  writeFileSync(path.join(targetApp, 'Contents', 'Info.plist'), infoPlist(), 'utf8')
+  assertRegularNonSymlink(executable)
+  assertExactArchitectures(
+    executable,
+    universalSlices.map(({ architecture }) => architecture),
+    captureCommand
+  )
+  runCommand('codesign', codesignArgs(signingIdentity, targetApp))
+  runCommand('codesign', ['--verify', '--deep', '--strict', targetApp])
+}
+
+function publishArtifacts(artifacts, renameArtifact) {
+  const backupDirectory = path.join(artifacts.scratchRoot, 'previous')
+  mkdirSync(backupDirectory, { recursive: true })
+  const previousBinary = path.join(backupDirectory, 'orca-computer-use-macos')
+  const previousApp = path.join(backupDirectory, 'Orca Computer Use.app')
+  const hadBinary = existsSync(artifacts.outputBinary)
+  const hadApp = existsSync(artifacts.outputApp)
+  let publishedBinary = false
+  let publishedApp = false
+  try {
+    if (hadBinary) {
+      renameArtifact(artifacts.outputBinary, previousBinary)
+    }
+    if (hadApp) {
+      renameArtifact(artifacts.outputApp, previousApp)
+    }
+    renameArtifact(artifacts.stagedBinary, artifacts.outputBinary)
+    publishedBinary = true
+    renameArtifact(artifacts.stagedApp, artifacts.outputApp)
+    publishedApp = true
+  } catch (error) {
+    if (publishedApp) {
+      rmSync(artifacts.outputApp, { recursive: true, force: true })
+    }
+    if (publishedBinary) {
+      rmSync(artifacts.outputBinary, { force: true })
+    }
+    if (hadBinary && existsSync(previousBinary)) {
+      renameArtifact(previousBinary, artifacts.outputBinary)
+    }
+    if (hadApp && existsSync(previousApp)) {
+      renameArtifact(previousApp, artifacts.outputApp)
+    }
+    throw error
   }
 }
 
@@ -85,12 +273,17 @@ function resolveSigningIdentity() {
 
 function run(command, args) {
   const result = spawnSync(command, args, { stdio: 'inherit' })
-  if (result.signal) {
-    process.kill(process.pid, result.signal)
+  if (result.signal || result.status !== 0) {
+    throw new CommandFailure(command, result)
   }
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1)
+}
+
+function capture(command, args) {
+  const result = spawnSync(command, args, { encoding: 'utf8' })
+  if (result.signal || result.status !== 0) {
+    throw new CommandFailure(command, result)
   }
+  return result.stdout
 }
 
 function infoPlist() {
