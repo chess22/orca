@@ -2,18 +2,21 @@ import type { Session } from './session'
 import type { InternalCreateOrAttachOptions } from './terminal-host-agent-session-claim'
 import type { CreateOrAttachResult } from './terminal-host-create-contract'
 import type { TerminalConditionalRespawnResult } from '../../shared/terminal-conditional-respawn'
+import {
+  conditionalRespawnFingerprint,
+  type TerminalConditionalRespawnLedger
+} from './terminal-host-conditional-respawn-ledger'
 
 export type ConditionalRespawnIdentity = InternalCreateOrAttachOptions & {
   mutationId: string
   expectedIncarnationId: string
+  expectedRootProcessId: number
   mutationRefusal: () => string | null
   beginExitFence: () => (replacementPublished: boolean) => void
 }
 
-type LedgerEntry = { fingerprint: string; promise: Promise<TerminalConditionalRespawnResult> }
-
 type ConditionalRespawnHost = {
-  conditionalRespawns: Map<string, LedgerEntry>
+  conditionalRespawns: TerminalConditionalRespawnLedger
   sessions: Map<string, Session>
   agentSessionOwners: { listForPty(id: string): unknown[] }
   suppressedReapNotifications: Set<string>
@@ -77,6 +80,13 @@ export async function respawnTerminalHostIfMatch(
         reason: 'incarnation_changed'
       }
     }
+    if (session.pid !== opts.expectedRootProcessId) {
+      return {
+        outcome: 'precondition_failed' as const,
+        mutationId: opts.mutationId,
+        reason: 'root_process_changed'
+      }
+    }
     if (owner.agentSessionOwners.listForPty(opts.sessionId).length > 0) {
       return {
         outcome: 'precondition_failed' as const,
@@ -107,11 +117,11 @@ export async function respawnTerminalHostIfMatch(
       const postStopRefusal = opts.mutationRefusal()
       if (postStopRefusal) {
         return {
-          outcome: 'partial' as const,
+          outcome: 'indeterminate' as const,
           mutationId: opts.mutationId,
           reason: postStopRefusal,
           oldStopped: true,
-          replacementStarted: false,
+          replacementStarted: true,
           replacementPublished: false
         }
       }
@@ -144,21 +154,25 @@ export async function respawnTerminalHostIfMatch(
         }
       } catch (error) {
         const liveReplacement = owner.sessions.get(opts.sessionId)
-        const replacementStarted = Boolean(liveReplacement?.isAlive)
-        if (replacementStarted && liveReplacement) {
+        const retiredReplacement = owner.retiredIncarnations.get(opts.sessionId)
+        const replacementIncarnationId =
+          liveReplacement?.incarnationId ??
+          (retiredReplacement?.incarnationId !== opts.expectedIncarnationId
+            ? retiredReplacement?.incarnationId
+            : undefined)
+        if (replacementIncarnationId) {
           return await owner.reapUnpublishedConditionalReplacement(
             opts,
-            liveReplacement.incarnationId,
+            replacementIncarnationId,
             error instanceof Error ? error.message : String(error)
           )
         }
         return {
-          outcome: 'partial' as const,
+          outcome: 'indeterminate' as const,
           mutationId: opts.mutationId,
           reason: error instanceof Error ? error.message : String(error),
           oldStopped: true,
-          replacementStarted: false,
-          replacementPublished: false
+          replacementStarted: true
         }
       }
     } finally {
@@ -169,7 +183,22 @@ export async function respawnTerminalHostIfMatch(
       }
     }
   })
-  const entry = { fingerprint: conditionalRespawnFingerprint(owner, opts), promise: operation }
+  const entry = {
+    fingerprint: conditionalRespawnFingerprint(opts),
+    promise: operation,
+    identity: {
+      sessionId: opts.sessionId,
+      expectedIncarnationId: opts.expectedIncarnationId,
+      expectedRootProcessId: opts.expectedRootProcessId,
+      command: opts.command,
+      cwd: opts.cwd,
+      cols: opts.cols,
+      rows: opts.rows,
+      clientId: opts.spawnAdmission?.clientId ?? null,
+      env: opts.env,
+      envToDelete: opts.envToDelete
+    }
+  }
   owner.conditionalRespawns.set(opts.mutationId, entry)
   return await operation
 }
@@ -182,7 +211,7 @@ export function replayConditionalRespawn(
   if (!replay) {
     return null
   }
-  if (replay.fingerprint !== conditionalRespawnFingerprint(owner, opts)) {
+  if (replay.fingerprint !== conditionalRespawnFingerprint(opts)) {
     return Promise.resolve({
       outcome: 'precondition_failed' as const,
       mutationId: opts.mutationId,
@@ -190,23 +219,6 @@ export function replayConditionalRespawn(
     })
   }
   return replay.promise.then((result) => ({ ...result, replayed: true }))
-}
-
-function conditionalRespawnFingerprint(
-  _owner: ConditionalRespawnHost,
-  opts: ConditionalRespawnIdentity
-): string {
-  return JSON.stringify([
-    opts.spawnAdmission?.clientId ?? null,
-    opts.sessionId,
-    opts.expectedIncarnationId,
-    opts.cols,
-    opts.rows,
-    opts.cwd ?? null,
-    opts.command ?? null,
-    opts.env ?? null,
-    opts.envToDelete ?? null
-  ])
 }
 
 export async function reapUnpublishedConditionalReplacement(

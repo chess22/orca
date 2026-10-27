@@ -17,6 +17,11 @@ export const HANDLER_GROUPS: readonly HandlerGroup[] = [
   LINEAR_HANDLER_GROUP,
   REFERENCE_HANDLER_GROUP,
   {
+    name: 'updater',
+    keys: ['updater local-build start', 'updater local-build get'],
+    load: async () => (await import('./handlers/updater.js')).UPDATER_HANDLERS
+  },
+  {
     name: 'core',
     keys: ['claude-teams', 'open', 'serve', 'status'],
     load: async () => (await import('./handlers/core.js')).CORE_HANDLERS
@@ -118,6 +123,7 @@ export const HANDLER_GROUPS: readonly HandlerGroup[] = [
       'terminal switch',
       'terminal close',
       'terminal respawn-if-match',
+      'terminal recover-empty-leaf-if-match',
       'terminal split'
     ],
     load: async () => (await import('./handlers/terminal.js')).TERMINAL_HANDLERS

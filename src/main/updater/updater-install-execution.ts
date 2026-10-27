@@ -16,6 +16,11 @@ import { requestServeUpdateHandoff, failServeUpdateHandoff } from '../serve-upda
 import { UpdaterMacInstallPreflight } from './updater-mac-install-preflight'
 import { prepareThisProcessShipItStaging } from './shipit-leftover-recovery'
 import { MAC_DEFERRED_STAGING_TIMEOUT_MS } from './updater-state'
+import { app } from 'electron'
+import {
+  clearHeadlessLocalBuildRelaunch,
+  stageHeadlessLocalBuildRelaunch
+} from '../local-builds/headless-local-build-relaunch'
 
 export abstract class UpdaterInstallExecution extends UpdaterMacInstallPreflight {
   protected async performQuitAndInstall(): Promise<void> {
@@ -124,6 +129,10 @@ export abstract class UpdaterInstallExecution extends UpdaterMacInstallPreflight
         // Why: mark before the call so a sync 'error' during quitAndInstall can recover; pre-native errors must not look like install failure.
         setMacInstallPreflightInProgress(false)
         this.quitAndInstallNativeInvoked = true
+        if (this.headlessLocalBuildInstall.get()?.current.phase === 'installing') {
+          stageHeadlessLocalBuildRelaunch(app.getPath('userData'), pendingVersion)
+          this.headlessLocalBuildInstall.markRelaunching()
+        }
         // Why: invoke before killAllPty/removing close listeners so a sync 'error' can recover while windows and PTYs are intact.
         const supervisorOwnsRelaunch = this.updateInstallMode === 'supervised-headless-serve'
         runWithLaunchPath(() =>
@@ -188,6 +197,9 @@ export abstract class UpdaterInstallExecution extends UpdaterMacInstallPreflight
         return
       }
       const quitAndInstallNativeInvokedBeforeReset = this.quitAndInstallNativeInvoked
+      if (this.headlessLocalBuildInstall.get()) {
+        clearHeadlessLocalBuildRelaunch(app.getPath('userData'))
+      }
       failServeUpdateHandoff('Could not invoke the native updater.')
       this.resetQuitForUpdateState()
       recordUpdaterLifecycle(
@@ -273,6 +285,9 @@ export abstract class UpdaterInstallExecution extends UpdaterMacInstallPreflight
       return false
     }
     failServeUpdateHandoff('The native updater rejected the install request.')
+    if (this.headlessLocalBuildInstall.get()) {
+      clearHeadlessLocalBuildRelaunch(app.getPath('userData'))
+    }
     this.resetQuitForUpdateState()
     recordUpdaterLifecycle(
       'quit_and_install_failed_via_event',

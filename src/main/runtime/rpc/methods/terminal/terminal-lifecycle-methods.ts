@@ -14,6 +14,7 @@ import {
   TerminalFocus,
   TerminalHandle,
   TerminalReveal,
+  TerminalRecoverEmptyLeafIfMatch,
   TerminalRespawnIfMatch,
   TerminalSplit,
   TerminalWait
@@ -166,6 +167,14 @@ export const TERMINAL_LIFECYCLE_METHODS = [
     params: TerminalRespawnIfMatch,
     handler: async (params, { runtime }) => ({
       respawn: await runtime.respawnTerminalIfMatch(params)
+    })
+  }),
+  defineMethod({
+    name: 'terminal.recoverEmptyLeafIfMatch',
+    permission: 'workspace',
+    params: TerminalRecoverEmptyLeafIfMatch,
+    handler: async (params, { runtime }) => ({
+      recovery: await runtime.recoverTerminalEmptyLeafIfMatch(params)
     })
   }),
   ...TERMINAL_WORKSPACE_STOP_METHODS,

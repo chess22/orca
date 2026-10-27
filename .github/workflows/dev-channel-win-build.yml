@@ -67,6 +67,10 @@ on:
         description: Restore this run's shared dev JavaScript instead of rebuilding it
         type: string
         default: ''
+      javascript_build_id:
+        description: Build ID embedded in the shared dev JavaScript artifact
+        type: string
+        default: ''
       orcad_template:
         description: Ship the orcad-template artifact the calling run built
         required: false
@@ -226,6 +230,9 @@ jobs:
           upper="$(printf '%s' "$CHANNEL" | tr '[:lower:]' '[:upper:]')"
           echo "ORCA_WIN_${upper}=1" >>"$GITHUB_ENV"
           echo "ORCA_${upper}_BUILD_VERSION=${VERSION}" >>"$GITHUB_ENV"
+          echo "ORCA_BUILD_SOURCE_COMMIT=$(git rev-parse HEAD)" >>"$GITHUB_ENV"
+          echo "ORCA_BUILD_TARGET_ARCH=x64" >>"$GITHUB_ENV"
+          echo "ORCA_BUILD_ID=gh-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-win-${CHANNEL}" >>"$GITHUB_ENV"
           if [[ ! -f config/scripts/verify-dev-channel-packaging.mjs ]]; then
             echo "::error::$TAG was built from a commit with no config/scripts/verify-dev-channel-packaging.mjs; that commit predates Windows dev builds, so it cannot produce one."
             exit 1
@@ -301,6 +308,7 @@ jobs:
           fi
         env:
           ORCA_RELEASE_JAVASCRIPT_SOURCE_SHA: ${{ inputs.javascript_source_sha }}
+          ORCA_BUILD_ID: ${{ inputs.javascript_source_sha != '' && inputs.javascript_build_id || format('gh-{0}-{1}-win-{2}', github.run_id, github.run_attempt, inputs.channel) }}
           ORCA_RELEASE_JAVASCRIPT_BUILD_IDENTITY: dev
           # Why unset ORCA_BUILD_IDENTITY: telemetry's transport gate accepts only
           # 'stable' or 'rc', so leaving it unset keeps dev builds silent — which

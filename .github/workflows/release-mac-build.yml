@@ -23,6 +23,11 @@ on:
         required: false
         default: ''
         type: string
+      javascript_build_id:
+        description: Build ID embedded in the shared JavaScript artifact
+        required: false
+        default: ''
+        type: string
 
 permissions:
   # actions: read downloads the orcad template the parent release-cut run built.
@@ -80,7 +85,14 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --no-tags --depth=1 origin "$WORKFLOW_SHA"
-          git checkout "$WORKFLOW_SHA" -- config/scripts/assert-github-release-is-draft.mjs
+          tools_dir="$RUNNER_TEMP/orca-workflow-tools"
+          mkdir -p "$tools_dir"
+          git show "$WORKFLOW_SHA:config/scripts/assert-github-release-is-draft.mjs" > "$tools_dir/assert-github-release-is-draft.mjs"
+          echo "ORCA_WORKFLOW_TOOLS_DIR=$tools_dir" >> "$GITHUB_ENV"
+
+      - name: Pin checked-out source provenance
+        shell: bash
+        run: echo "ORCA_BUILD_SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Setup pnpm
         uses: pnpm/setup@v2
@@ -199,6 +211,8 @@ jobs:
           # the macOS release runner, leaving v1.4.2-rc.8 as an incomplete draft.
           NODE_OPTIONS: --max-old-space-size=4096
           ORCA_BUILD_IDENTITY: ${{ steps.tag-classify.outputs.identity }}
+          ORCA_BUILD_TARGET_ARCH: ${{ runner.arch == 'ARM64' && 'arm64' || 'x64' }}
+          ORCA_BUILD_ID: ${{ inputs.javascript_source_sha != '' && inputs.javascript_build_id || format('gh-{0}-{1}-{2}-{3}', github.run_id, github.run_attempt, github.job, runner.arch) }}
           ORCA_RELEASE_JAVASCRIPT_SOURCE_SHA: ${{ inputs.javascript_source_sha }}
           ORCA_DIAGNOSTICS_TOKEN_URL: https://www.onorca.dev/diagnostics/token
           ORCA_POSTHOG_WRITE_KEY: ${{ secrets.ORCA_POSTHOG_WRITE_KEY }}
@@ -228,6 +242,8 @@ jobs:
         # public with only a partial mac upload.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ORCA_BUILD_TARGET_ARCH: ${{ runner.arch == 'ARM64' && 'arm64' || 'x64' }}
+          ORCA_BUILD_ID: ${{ inputs.javascript_source_sha != '' && inputs.javascript_build_id || format('gh-{0}-{1}-{2}-{3}', github.run_id, github.run_attempt, github.job, runner.arch) }}
           PARENT_RUN: ${{ inputs.release_run_id }}
         run: |
           set -euo pipefail
@@ -263,7 +279,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.tag }}
-        run: node config/scripts/assert-github-release-is-draft.mjs "${{ inputs.tag }}"
+        run: node "$ORCA_WORKFLOW_TOOLS_DIR/assert-github-release-is-draft.mjs" "${{ inputs.tag }}"
 
       # Why post-publish for macOS: electron-builder packs and uploads in a
       # single `--publish always` invocation, so there is no cheap insertion

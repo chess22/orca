@@ -41,6 +41,7 @@ import {
   listProcessesWithHostScopeFromRuntimeController
 } from './inventory-operations'
 import { respawnPtyIfMatch } from './conditional-respawn'
+import { completePtyEmptyLeafRecovery, recoverPtyEmptyLeafIfMatch } from './empty-leaf-recovery'
 
 export function installPtyRuntimeController(deps: PtyRuntimeControllerDeps): void {
   const { runtime, adoptStablePane, requestSerializedBuffer } = deps
@@ -61,8 +62,23 @@ export function installPtyRuntimeController(deps: PtyRuntimeControllerDeps): voi
       return adopted
     },
     spawn: async (args) => spawnPtyFromRuntimeController(deps, args),
-    respawnIfMatch: (ptyId, expectedIncarnationId, mutationId, replacement) =>
-      respawnPtyIfMatch(ptyId, expectedIncarnationId, mutationId, replacement),
+    respawnIfMatch: (
+      ptyId,
+      expectedIncarnationId,
+      expectedRootProcessId,
+      mutationId,
+      replacement
+    ) =>
+      respawnPtyIfMatch(
+        ptyId,
+        expectedIncarnationId,
+        expectedRootProcessId,
+        mutationId,
+        replacement
+      ),
+    recoverEmptyLeafIfMatch: (request) => recoverPtyEmptyLeafIfMatch(request),
+    completeEmptyLeafRecovery: (recoveryId, ptyId, incarnationId, commit) =>
+      completePtyEmptyLeafRecovery(recoveryId, ptyId, incarnationId, commit),
     // Automatic-work gates belong to the local provider; SSH runtimes own theirs.
     getAutomaticWorkStatus: () => getLocalAutomaticWorkStatus(localProvider),
     resumeAutomaticWork: () => resumeLocalAutomaticWork(localProvider),

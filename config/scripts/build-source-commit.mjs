@@ -20,3 +20,21 @@ export function resolveBuildSourceCommit() {
   }
   return commit
 }
+
+/** A provenance-bearing package must not describe uncommitted bytes as its HEAD commit. */
+export function resolveBuildSourceState() {
+  const commit = resolveBuildSourceCommit()
+  let dirtyOutput = ''
+  try {
+    dirtyOutput = execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], {
+      encoding: 'utf8'
+    }).trim()
+  } catch (error) {
+    throw new Error(
+      `Could not inspect the source tree with \`git status --porcelain\`: ${
+        error instanceof Error ? error.message : String(error)
+      }.`
+    )
+  }
+  return { commit, dirty: dirtyOutput.length > 0 }
+}

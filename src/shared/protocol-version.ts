@@ -25,6 +25,7 @@ import { SKILL_RUNTIME_CAPABILITIES } from './skill-install-capability'
 import { SOURCE_CONTROL_RUNTIME_CAPABILITIES } from './source-control-runtime-capabilities'
 import { TASK_SOURCE_RUNTIME_CAPABILITIES } from './task-source-runtime-capabilities'
 import { TERMINAL_RUNTIME_CAPABILITIES } from './terminal-runtime-capabilities'
+import { UPDATER_RUNTIME_CAPABILITIES } from './updater-runtime-capabilities'
 import { WORKSPACE_PORTS_RUNTIME_CAPABILITIES } from './workspace-ports-runtime-capabilities'
 import {
   REPO_SEARCH_QUALIFIED_REFS_RUNTIME_CAPABILITY,
@@ -65,6 +66,7 @@ export * from './ai-vault-runtime-capabilities'
 export * from './browser-runtime-capabilities'
 export * from './files-runtime-capabilities'
 export * from './host-runtime-capabilities'
+export * from './updater-runtime-capabilities'
 
 export * from './mobile-runtime-capabilities'
 export * from './preflight-runtime-capabilities'
@@ -150,6 +152,7 @@ export const RUNTIME_CAPABILITIES = [
   ...WORKSPACE_PORTS_RUNTIME_CAPABILITIES,
   ...SESSION_TABS_RUNTIME_CAPABILITIES,
   ...TERMINAL_RUNTIME_CAPABILITIES,
+  ...UPDATER_RUNTIME_CAPABILITIES,
   ...FILES_RUNTIME_CAPABILITIES,
   ...BROWSER_RUNTIME_CAPABILITIES,
   ...SOURCE_CONTROL_RUNTIME_CAPABILITIES,

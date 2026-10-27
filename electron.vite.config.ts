@@ -11,7 +11,8 @@ import { createProcessHostDevRebuildPlugin } from './config/build-plugins/proces
 import { createViteCacheRetentionPlugin } from './config/build-plugins/vite-cache-retention'
 import { MAIN_BUILD_ENTRY_POINTS } from './config/build-plugins/main-build-entry-points'
 import { createPlainNodeEntryGuardPlugin } from './config/build-plugins/plain-node-entry-guard'
-import { resolveBuildSourceCommit } from './config/scripts/build-source-commit.mjs'
+import { resolveBuildSourceState } from './config/scripts/build-source-commit.mjs'
+import { createRuntimeBuildProvenanceBundle } from './config/scripts/build-runtime-provenance.mjs'
 
 const BUNDLED_MAIN_DEPENDENCIES = new Set([
   'stream-json',
@@ -44,16 +45,12 @@ const ORCA_BUILD_IDENTITY_LITERAL =
   orcaBuildIdentity === 'stable' || orcaBuildIdentity === 'rc'
     ? JSON.stringify(orcaBuildIdentity)
     : 'null'
-const orcaPostHogWriteKey = process.env.ORCA_POSTHOG_WRITE_KEY
-const ORCA_POSTHOG_WRITE_KEY_LITERAL =
-  typeof orcaPostHogWriteKey === 'string' && orcaPostHogWriteKey.length > 0
-    ? JSON.stringify(orcaPostHogWriteKey)
-    : 'null'
-const orcaDiagnosticsTokenUrl = process.env.ORCA_DIAGNOSTICS_TOKEN_URL
-const ORCA_DIAGNOSTICS_TOKEN_URL_LITERAL =
-  typeof orcaDiagnosticsTokenUrl === 'string' && orcaDiagnosticsTokenUrl.length > 0
-    ? JSON.stringify(orcaDiagnosticsTokenUrl)
-    : 'null'
+
+function envLiteral(value: string | undefined): string {
+  return value ? JSON.stringify(value) : 'null'
+}
+const ORCA_POSTHOG_WRITE_KEY_LITERAL = envLiteral(process.env.ORCA_POSTHOG_WRITE_KEY)
+const ORCA_DIAGNOSTICS_TOKEN_URL_LITERAL = envLiteral(process.env.ORCA_DIAGNOSTICS_TOKEN_URL)
 
 const darkBuildSwitches: {
   darkBuildDefines: () => Record<string, string>
@@ -75,7 +72,19 @@ function createDarkBuildMarkerPlugin(): Plugin {
 
 // Why: official skill installs pin to the commit the build came from, so they match the
 // bundled skills on every channel. Main runs the installer; the renderer prints the command.
-const ORCA_BUILD_COMMIT_LITERAL = JSON.stringify(resolveBuildSourceCommit())
+const sourceState = resolveBuildSourceState()
+const ORCA_BUILD_COMMIT_LITERAL = JSON.stringify(sourceState.commit)
+const packageJson = createRequire(import.meta.url)('./package.json') as {
+  name: string
+  version: string
+}
+const runtimeBuildProvenanceBundle = createRuntimeBuildProvenanceBundle({
+  sourceCommit: sourceState.commit,
+  sourceDirty: sourceState.dirty,
+  packageName: packageJson.name,
+  packageVersion: packageJson.version
+})
+const ORCA_RUNTIME_BUILD_PROVENANCE_LITERAL = runtimeBuildProvenanceBundle.literal
 
 function createStartupDiagnosticsBanner(chunkName: string): string {
   return `
@@ -257,7 +266,8 @@ export const electronViteConfig: UserConfig = {
           createMainBootstrapPlugin(),
           createPlainNodeEntryGuardPlugin(),
           createProcessHostDevRebuildPlugin(),
-          createDarkBuildMarkerPlugin()
+          createDarkBuildMarkerPlugin(),
+          runtimeBuildProvenanceBundle.assetPlugin
         ]
       }
     },
@@ -268,6 +278,7 @@ export const electronViteConfig: UserConfig = {
       ORCA_POSTHOG_WRITE_KEY: ORCA_POSTHOG_WRITE_KEY_LITERAL,
       ORCA_DIAGNOSTICS_TOKEN_URL: ORCA_DIAGNOSTICS_TOKEN_URL_LITERAL,
       ORCA_BUILD_COMMIT: ORCA_BUILD_COMMIT_LITERAL,
+      ORCA_RUNTIME_BUILD_PROVENANCE: ORCA_RUNTIME_BUILD_PROVENANCE_LITERAL,
       ...DARK_BUILD_DEFINES
     },
     // Why: @xterm/headless declares "exports": null in package.json, which
@@ -282,13 +293,7 @@ export const electronViteConfig: UserConfig = {
       }
     }
   },
-  preload: {
-    build: {
-      externalizeDeps: {
-        exclude: ['zod']
-      }
-    }
-  },
+  preload: { build: { externalizeDeps: { exclude: ['zod'] } } },
   renderer: {
     // Shared node_modules installs must not share dependency optimization state across worktrees.
     cacheDir: resolve('.cache/vite/renderer'),

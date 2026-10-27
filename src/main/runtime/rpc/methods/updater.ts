@@ -1,11 +1,28 @@
-import { defineMethod } from '../core'
+import { defineMethod, type RpcContext } from '../core'
 import {
   checkRemoteServerUpdater,
   downloadRemoteServerUpdater,
+  getLocalBuildInstallStatus,
   getRemoteServerUpdaterSnapshot,
-  installRemoteServerUpdater
+  installRemoteServerUpdater,
+  startLocalBuildInstall
 } from '../../remote-server-updater'
-import { UpdaterCheckParams } from '../../../../shared/rpc-contract/updater-params'
+import {
+  LocalBuildInstallStartParams,
+  UpdaterCheckParams
+} from '../../../../shared/rpc-contract/updater-params'
+
+function assertLocalMacDesktop(context: Pick<RpcContext, 'caller' | 'clientKind'>): void {
+  if (
+    context.clientKind !== undefined ||
+    (context.caller?.kind !== 'local-cli' && context.caller?.kind !== 'desktop')
+  ) {
+    throw new Error('Local build installation is only available to this Mac host.')
+  }
+  if (process.platform !== 'darwin') {
+    throw new Error('Local build installation is only supported on macOS.')
+  }
+}
 
 export const UPDATER_METHODS = [
   defineMethod({
@@ -31,5 +48,23 @@ export const UPDATER_METHODS = [
     permission: 'host-admin',
     params: null,
     handler: (_params, { runtime }) => installRemoteServerUpdater(runtime.getRuntimeId())
+  }),
+  defineMethod({
+    name: 'updater.localBuild.start',
+    permission: 'host-admin',
+    params: LocalBuildInstallStartParams,
+    handler: async (params, context) => {
+      assertLocalMacDesktop(context)
+      return await startLocalBuildInstall(params)
+    }
+  }),
+  defineMethod({
+    name: 'updater.localBuild.get',
+    permission: 'host-admin',
+    params: null,
+    handler: async (_params, context) => {
+      assertLocalMacDesktop(context)
+      return getLocalBuildInstallStatus()
+    }
   })
 ]

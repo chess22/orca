@@ -38,9 +38,31 @@ const METHOD_CASES: readonly (readonly [string, unknown, boolean])[] = [
         leafId: 'leaf',
         ptyId: 'pty',
         ptyGeneration: 1,
-        incarnationId: 'incarnation'
+        incarnationId: 'incarnation',
+        rootProcessId: 4242
       },
       replacement: { cols: 80, rows: 24 }
+    },
+    false
+  ],
+  [
+    'terminal.recoverEmptyLeafIfMatch',
+    {
+      originalMutationId: 'mutation',
+      recoveryId: 'recovery',
+      terminal: 'term',
+      expected: {
+        worktreeId: 'worktree',
+        tabId: 'tab',
+        leafId: 'leaf',
+        ptyId: 'pty',
+        ptyGeneration: 1,
+        retiredIncarnationId: 'incarnation',
+        layoutEpoch: 2,
+        persistedBindingVersion: 1,
+        tombstoneId: '["pty","incarnation"]'
+      },
+      replacement: { cols: 80, rows: 24, cwd: '/repo', command: 'exec relay' }
     },
     false
   ],
@@ -88,11 +110,11 @@ async function invoke(name: string, params: unknown, runtime: Partial<OrcaRuntim
 
 describe('terminal RPC manifest characterization', () => {
   it('preserves all method names, order, streaming flags, and parseable minimum inputs', () => {
-    expect(TERMINAL_METHODS).toHaveLength(41)
+    expect(TERMINAL_METHODS).toHaveLength(42)
     expect(TERMINAL_METHODS.map((method) => [method.name, 'stream' in method])).toEqual(
       METHOD_CASES.map(([name, _params, stream]) => [name, stream])
     )
-    expect(new Set(TERMINAL_METHODS.map((method) => method.name)).size).toBe(41)
+    expect(new Set(TERMINAL_METHODS.map((method) => method.name)).size).toBe(42)
     for (const [name, params] of METHOD_CASES) {
       expect(() => schemaFor(name).parse(params), name).not.toThrow()
     }
@@ -135,6 +157,44 @@ describe('terminal RPC manifest characterization', () => {
         viewport: { cols: 1001, rows: 501 }
       })
     ).not.toThrow()
+  })
+
+  it('requires a positive safe root process id for conditional respawn', () => {
+    const base = METHOD_CASES.find(([name]) => name === 'terminal.respawnIfMatch')?.[1] as {
+      expected: Record<string, unknown>
+    }
+    const withoutRootProcessId = {
+      ...base,
+      expected: { ...base.expected, rootProcessId: undefined }
+    }
+
+    expect(() => schemaFor('terminal.respawnIfMatch').parse(withoutRootProcessId)).toThrow()
+    expect(() =>
+      schemaFor('terminal.respawnIfMatch').parse({
+        ...base,
+        expected: { ...base.expected, rootProcessId: 0 }
+      })
+    ).toThrow()
+  })
+
+  it('routes empty-leaf recovery through the production runtime method', async () => {
+    const params = METHOD_CASES.find(([name]) => name === 'terminal.recoverEmptyLeafIfMatch')?.[1]
+    const recoverTerminalEmptyLeafIfMatch = vi.fn(async () => ({
+      outcome: 'precondition_failed' as const,
+      recoveryId: 'recovery',
+      reason: 'terminal_live'
+    }))
+
+    await expect(
+      invoke('terminal.recoverEmptyLeafIfMatch', params, { recoverTerminalEmptyLeafIfMatch })
+    ).resolves.toEqual({
+      recovery: {
+        outcome: 'precondition_failed',
+        recoveryId: 'recovery',
+        reason: 'terminal_live'
+      }
+    })
+    expect(recoverTerminalEmptyLeafIfMatch).toHaveBeenCalledExactlyOnceWith(params)
   })
 
   it('keeps multiplex control objects strict while subscribe remains skew-tolerant', () => {

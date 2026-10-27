@@ -7,6 +7,7 @@ import type {
 export async function respawnPtyIfMatch(
   ptyId: string,
   expectedIncarnationId: string,
+  expectedRootProcessId: number,
   mutationId: string,
   replacement: TerminalRespawnReplacement
 ): Promise<TerminalConditionalRespawnResult> {
@@ -20,7 +21,13 @@ export async function respawnPtyIfMatch(
     return { outcome: 'unsupported', mutationId, reason: 'provider' }
   }
   try {
-    return await provider.respawnIfMatch(ptyId, expectedIncarnationId, mutationId, replacement)
+    return await provider.respawnIfMatch(
+      ptyId,
+      expectedIncarnationId,
+      expectedRootProcessId,
+      mutationId,
+      replacement
+    )
   } catch {
     return { outcome: 'indeterminate', mutationId, reason: 'provider_response_lost' }
   }

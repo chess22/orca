@@ -295,7 +295,7 @@ describe('terminal close CLI', () => {
 
     const help = String(log.mock.calls[0]?.[0])
     expect(help).toContain('close')
-    expect(help).not.toContain('stop')
+    expect(help).not.toMatch(/^\s+stop\s/m)
   })
 
   it('keeps root help aligned with the canonical close command', () => {

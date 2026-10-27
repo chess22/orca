@@ -10,6 +10,7 @@ const reaped = vi.fn<(sessionId: string) => void>()
 let handles: ReturnType<typeof createMockSubprocess>[]
 let spawnSubprocess: ReturnType<typeof vi.fn<TerminalHostOptions['spawnSubprocess']>>
 let host: TerminalHost
+const ROOT_PROCESS_ID = 999_999_999
 
 beforeEach(() => {
   handles = []
@@ -49,6 +50,7 @@ function respawn(
     sessionId: 'pty',
     mutationId,
     expectedIncarnationId,
+    expectedRootProcessId: ROOT_PROCESS_ID,
     cols: 100,
     rows: 30,
     streamClient: streamClient(),
@@ -68,6 +70,57 @@ describe('TerminalHost conditional respawn', () => {
     })
     expect(spawnSubprocess).toHaveBeenCalledOnce()
     expect(handles[0]!.forceKill).not.toHaveBeenCalled()
+  })
+
+  it('rejects a changed root process without stopping or spawning', async () => {
+    const original = await create()
+
+    await expect(
+      host.respawnIfMatch({
+        sessionId: 'pty',
+        mutationId: 'mutation-stale-root-process',
+        expectedIncarnationId: original.incarnationId,
+        expectedRootProcessId: ROOT_PROCESS_ID + 1,
+        cols: 100,
+        rows: 30,
+        streamClient: streamClient(),
+        mutationRefusal: () => null,
+        beginExitFence: () => () => {},
+        onReplacementPublished: publish
+      })
+    ).resolves.toEqual({
+      outcome: 'precondition_failed',
+      mutationId: 'mutation-stale-root-process',
+      reason: 'root_process_changed'
+    })
+    expect(spawnSubprocess).toHaveBeenCalledOnce()
+    expect(handles[0]!.forceKill).not.toHaveBeenCalled()
+  })
+
+  it('rejects root-process drift when replaying the same mutation id', async () => {
+    const original = await create()
+    await expect(respawn(original.incarnationId, 'mutation-root-replay')).resolves.toMatchObject({
+      outcome: 'respawned'
+    })
+
+    await expect(
+      host.respawnIfMatch({
+        sessionId: 'pty',
+        mutationId: 'mutation-root-replay',
+        expectedIncarnationId: original.incarnationId,
+        expectedRootProcessId: ROOT_PROCESS_ID + 1,
+        cols: 100,
+        rows: 30,
+        streamClient: streamClient(),
+        mutationRefusal: () => null,
+        beginExitFence: () => () => {},
+        onReplacementPublished: publish
+      })
+    ).resolves.toMatchObject({
+      outcome: 'precondition_failed',
+      reason: 'mutation_id_reused'
+    })
+    expect(spawnSubprocess).toHaveBeenCalledTimes(2)
   })
 
   it('serializes concurrent replacements so exactly one wins', async () => {
@@ -130,10 +183,10 @@ describe('TerminalHost conditional respawn', () => {
         () => finishExitFence
       )
     ).resolves.toMatchObject({
-      outcome: 'partial',
+      outcome: 'indeterminate',
       reason: 'daemon_unavailable',
       oldStopped: true,
-      replacementStarted: false,
+      replacementStarted: true,
       replacementPublished: false
     })
     expect(spawnSubprocess).toHaveBeenCalledOnce()
@@ -257,7 +310,7 @@ describe('TerminalHost conditional respawn', () => {
     expect(host.listSessions()).toMatchObject([{ state: 'running' }])
   })
 
-  it('reports partial when replacement spawn fails after the old process stops', async () => {
+  it('reports an indeterminate replacement when spawn fails without an observed incarnation', async () => {
     const original = await create()
     const finishExitFence = vi.fn()
     spawnSubprocess.mockImplementationOnce(() => {
@@ -272,10 +325,9 @@ describe('TerminalHost conditional respawn', () => {
         () => finishExitFence
       )
     ).resolves.toMatchObject({
-      outcome: 'partial',
+      outcome: 'indeterminate',
       oldStopped: true,
-      replacementStarted: false,
-      replacementPublished: false,
+      replacementStarted: true,
       reason: 'replacement spawn failed'
     })
     expect(spawnSubprocess).toHaveBeenCalledTimes(2)

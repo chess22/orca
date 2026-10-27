@@ -28,19 +28,35 @@ export function getLocalBuildIdentity() {
   }
 }
 
+export function localMacBuildEnvironment(identity, architecture = process.arch) {
+  if (architecture !== 'arm64' && architecture !== 'x64') {
+    throw new Error(`Unsupported local macOS build architecture: ${architecture}`)
+  }
+  return {
+    ...process.env,
+    ORCA_BUILD_COMMIT: identity.commit,
+    ORCA_BUILD_SOURCE_COMMIT: execFileSync('git', ['rev-parse', 'HEAD'], {
+      encoding: 'utf8'
+    }).trim(),
+    ORCA_BUILD_TARGET_ARCH: architecture,
+    ORCA_BUILD_ID: `local-${identity.version}-${architecture}`,
+    ORCA_LOCAL_BUILD_VERSION: identity.version
+  }
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename)) {
   const identity = getLocalBuildIdentity()
   console.log(`[build:mac] local update version ${identity.version}`)
-  execFileSync(
-    process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
-    ['exec', 'electron-builder', '--config', 'config/electron-builder.config.cjs', '--mac'],
-    {
-      env: {
-        ...process.env,
-        ORCA_BUILD_COMMIT: identity.commit,
-        ORCA_LOCAL_BUILD_VERSION: identity.version
-      },
-      stdio: 'inherit'
-    }
-  )
+  const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
+  const env = localMacBuildEnvironment(identity)
+  for (const args of [
+    ['run', 'build:desktop'],
+    ['run', 'build:computer-macos'],
+    ['run', 'build:keyboard-layout-macos'],
+    ['run', 'build:notification-status-macos'],
+    ['run', 'ensure:electron-runtime'],
+    ['exec', 'electron-builder', '--config', 'config/electron-builder.config.cjs', '--mac']
+  ]) {
+    execFileSync(pnpm, args, { env, stdio: 'inherit' })
+  }
 }

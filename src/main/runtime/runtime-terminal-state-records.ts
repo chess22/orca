@@ -76,6 +76,7 @@ export type RuntimePtyWorktreeRecord = RuntimeTerminalTailState & {
   launchIncarnationId: PtyIncarnationId | null
   launchAgent: TuiAgent | null
   agentSessionOwners: AgentSessionOwnerBinding[]
+  agentSessionOwnershipKnown?: boolean
   /** Conversations the `incarnationId` execution reported; a later row can't hide them. In memory only. */
   cliConversations?: {
     incarnationId: PtyIncarnationId | null

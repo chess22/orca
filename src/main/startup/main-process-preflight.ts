@@ -25,13 +25,7 @@ import {
 } from './main-process-error-guards'
 import { hydrateShellPath, mergePathSegments } from './hydrate-shell-path'
 import { configureRemoteServerUpdater } from '../runtime/remote-server-updater'
-import {
-  getRemoteServerUpdaterSnapshot,
-  checkForRemoteServerUpdate,
-  downloadRemoteServerUpdate,
-  installRemoteServerUpdate,
-  isQuittingForUpdate
-} from '../updater'
+import { getRuntimeUpdaterAdapter, isQuittingForUpdate } from '../updater'
 import { getDevInstanceIdentity, shouldApplyPreReadyAppName } from './dev-instance-identity'
 import { enableRendererHeapHeadroom } from './renderer-heap-headroom'
 import { configureLinuxDevShmUsage } from './linux-dev-shm-policy'
@@ -111,6 +105,7 @@ import {
   handleMainProcessPreflightFailure
 } from './main-process-preflight-failure'
 import { ensureWindowsAppDataPath } from './windows-app-data-path'
+import { consumeHeadlessLocalBuildRelaunch } from '../local-builds/headless-local-build-relaunch'
 
 export type MainProcessPreflightOptions = {
   focusExistingWindow: () => void
@@ -182,12 +177,7 @@ function initializeMainProcessPreflight(options: MainProcessPreflightOptions): b
   installUnhandledRejectionLogging()
   // Why: expose the app version via process.env so main and the forked daemon can set TERM_PROGRAM_VERSION without importing electron.
   process.env.ORCA_APP_VERSION = app.getVersion()
-  configureRemoteServerUpdater({
-    getSnapshot: getRemoteServerUpdaterSnapshot,
-    check: checkForRemoteServerUpdate,
-    download: downloadRemoteServerUpdate,
-    install: installRemoteServerUpdate
-  })
+  configureRemoteServerUpdater(getRuntimeUpdaterAdapter())
   patchPackagedProcessPath()
   // Why: the sync seed above covers early IPC (homebrew/nix); the async login-shell probe below (packaged only) then adds the user's rc PATH.
   if (app.isPackaged && process.platform !== 'win32') {
@@ -220,6 +210,11 @@ function initializeMainProcessPreflight(options: MainProcessPreflightOptions): b
   // Why captured now: after the dev/E2E override above, and before app.setName('Orca') (whenReady)
   // changes how userData resolves on a case-sensitive filesystem. See persistence.ts:20-28.
   initDataPath()
+  // Consume before Electron ready, activation policy, or window creation. The rename-backed claim
+  // makes this a strict one-shot even if two replacement processes race during Squirrel relaunch.
+  if (process.platform === 'darwin' && app.isPackaged) {
+    consumeHeadlessLocalBuildRelaunch(getCanonicalUserDataPath(), app.getVersion())
+  }
   startEventLoopDelayProbe('main', getCanonicalUserDataPath())
   antigravityHookService.setWindowsRuntimePathProvider(
     () => getRelocatedDaemonHost()?.execPath ?? process.execPath

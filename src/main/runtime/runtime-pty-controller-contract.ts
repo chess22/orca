@@ -31,6 +31,10 @@ import type {
   TerminalConditionalRespawnResult,
   TerminalRespawnReplacement
 } from '../../shared/terminal-conditional-respawn'
+import type {
+  TerminalEmptyLeafRecoveryRequest,
+  TerminalEmptyLeafRecoveryResult
+} from '../../shared/terminal-empty-leaf-recovery'
 
 export type PtyInventoryRefreshOptions = {
   includeForegroundProcessEvidence?: boolean
@@ -133,9 +137,19 @@ export type RuntimePtyController = {
   respawnIfMatch?(
     ptyId: string,
     expectedIncarnationId: string,
+    expectedRootProcessId: number,
     mutationId: string,
     replacement: TerminalRespawnReplacement
   ): Promise<TerminalConditionalRespawnResult>
+  recoverEmptyLeafIfMatch?(
+    request: TerminalEmptyLeafRecoveryRequest
+  ): Promise<TerminalEmptyLeafRecoveryResult>
+  completeEmptyLeafRecovery?(
+    recoveryId: string,
+    ptyId: string,
+    incarnationId: string,
+    commit: boolean
+  ): Promise<boolean>
   /** The local terminal owner's automatic-restore state; null when it has no fork gate. */
   getAutomaticWorkStatus?(): Promise<AutomaticWorkStatus | null>
   resumeAutomaticWork?(): Promise<AutomaticWorkResumeOutcome>

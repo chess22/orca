@@ -201,7 +201,8 @@ describe('spawn commit and conditional respawn serialization', () => {
         leafId: LEAF,
         ptyId: OLD_PTY,
         ptyGeneration: shown.ptyGeneration!,
-        incarnationId: 'inc-old'
+        incarnationId: 'inc-old',
+        rootProcessId: 4242
       },
       replacement: {}
     })

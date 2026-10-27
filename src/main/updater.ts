@@ -13,10 +13,36 @@ import type { ReleaseBuild, ReleaseChannel } from '../shared/release-channel'
 import type { ReleaseBuildListOptions } from './updater-release-build-cache'
 import { UpdaterSetup, type UpdaterSetupOptions } from './updater/updater-setup'
 import type { PreQuitCleanupFailureMode, UpdateInstallMode } from './updater/updater-state'
+import type {
+  HeadlessLocalBuildInstallRequest,
+  HeadlessLocalBuildInstallSnapshot
+} from './local-builds/headless-local-build-install'
 
 const updater = new UpdaterSetup()
 
 export type { PreQuitCleanupFailureMode, UpdateInstallMode, UpdaterSetupOptions }
+export type { HeadlessLocalBuildInstallRequest, HeadlessLocalBuildInstallSnapshot }
+
+export function startHeadlessLocalBuildInstall(
+  request: HeadlessLocalBuildInstallRequest
+): Promise<HeadlessLocalBuildInstallSnapshot> {
+  return updater.startHeadlessLocalBuildInstall(request)
+}
+
+export function getHeadlessLocalBuildInstallStatus(): HeadlessLocalBuildInstallSnapshot | null {
+  return updater.getHeadlessLocalBuildInstallStatus()
+}
+
+export function getRuntimeUpdaterAdapter() {
+  return {
+    getSnapshot: getRemoteServerUpdaterSnapshot,
+    check: checkForRemoteServerUpdate,
+    download: downloadRemoteServerUpdate,
+    install: installRemoteServerUpdate,
+    startLocalBuildInstall: startHeadlessLocalBuildInstall,
+    getLocalBuildInstallStatus: getHeadlessLocalBuildInstallStatus
+  }
+}
 
 export function resolveUpdateInstallMode(isServeMode: boolean): UpdateInstallMode {
   return updater.resolveUpdateInstallMode(isServeMode)

@@ -301,6 +301,11 @@ jobs:
         run: pnpm build:release
         env:
           NODE_OPTIONS: --max-old-space-size=4096
+          ORCA_DAILY_BUILD_VERSION: ${{ steps.daily.outputs.version }}
+          ORCA_BUILD_COMMIT: ${{ steps.daily.outputs.commit }}
+          ORCA_BUILD_SOURCE_COMMIT: ${{ steps.freshness.outputs.head_sha }}
+          ORCA_BUILD_TARGET_ARCH: ${{ runner.arch == 'ARM64' && 'arm64' || 'x64' }}
+          ORCA_BUILD_ID: gh-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ runner.arch }}
           # Why: daily builds are not an official channel — telemetry's transport
           # gate accepts only 'stable' or 'rc', so leaving this unset keeps them
           # silent, which is correct for unvetted dev artifacts.
@@ -398,6 +403,9 @@ jobs:
           GH_TOKEN: ${{ steps.app_token_publish.outputs.token }}
           ORCA_DAILY_BUILD_VERSION: ${{ steps.daily.outputs.version }}
           ORCA_BUILD_COMMIT: ${{ steps.daily.outputs.commit }}
+          ORCA_BUILD_SOURCE_COMMIT: ${{ steps.freshness.outputs.head_sha }}
+          ORCA_BUILD_TARGET_ARCH: ${{ runner.arch == 'ARM64' && 'arm64' || 'x64' }}
+          ORCA_BUILD_ID: gh-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ runner.arch }}
           # beforePack and afterPack fail the package when the template is absent.
           ORCA_REQUIRE_ORCAD_TEMPLATE: '1'
           CSC_LINK: ${{ secrets.MAC_CERTS }}

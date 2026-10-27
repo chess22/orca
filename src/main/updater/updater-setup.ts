@@ -21,6 +21,10 @@ import { AUTO_UPDATE_CHECK_INTERVAL_MS } from './updater-state'
 import { UpdaterDownloadInstall } from './updater-download-install'
 import { configureMacShipItScheduling } from './macos-shipit-scheduling'
 import type { PreQuitCleanupFailureMode, UpdateInstallMode } from './updater-state'
+import type {
+  HeadlessLocalBuildInstallRequest,
+  HeadlessLocalBuildInstallSnapshot
+} from '../local-builds/headless-local-build-install'
 
 export type UpdaterSetupOptions = {
   getLastUpdateCheckAt?: () => number | null
@@ -37,6 +41,16 @@ export type UpdaterSetupOptions = {
 
 /** Initializes electron-updater and attaches lifecycle/event bridges. */
 export class UpdaterSetup extends UpdaterDownloadInstall {
+  startHeadlessLocalBuildInstall(
+    request: HeadlessLocalBuildInstallRequest
+  ): Promise<HeadlessLocalBuildInstallSnapshot> {
+    return super.startHeadlessLocalBuildInstall(request)
+  }
+
+  getHeadlessLocalBuildInstallStatus(): HeadlessLocalBuildInstallSnapshot | null {
+    return super.getHeadlessLocalBuildInstallStatus()
+  }
+
   checkForUpdates(): void {
     this.checkForUpdatesInBackground()
   }
@@ -45,12 +59,12 @@ export class UpdaterSetup extends UpdaterDownloadInstall {
     super.checkForUpdatesFromMenu(options)
   }
 
-  downloadUpdate(): void {
-    super.downloadUpdate()
+  downloadUpdate(): boolean {
+    return super.downloadUpdate()
   }
 
-  quitAndInstall(): void {
-    super.quitAndInstall()
+  quitAndInstall(): boolean {
+    return super.quitAndInstall()
   }
 
   isQuittingForUpdate(): boolean {

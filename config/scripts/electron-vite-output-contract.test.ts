@@ -79,6 +79,27 @@ const electronBuilderConfig = require('../electron-builder.config.cjs')
 const { FileMatcher } = require('app-builder-lib/out/fileMatcher')
 
 describe('Electron Vite output contract', () => {
+  it('injects runtime provenance into the main-process artifact', () => {
+    const define = electronViteConfig.main?.define as Record<string, string>
+    const provenance = JSON.parse(define.ORCA_RUNTIME_BUILD_PROVENANCE!) as {
+      commit: string
+      sourceCommit: string
+      buildId: string
+      packageName: string
+      packageVersion: string
+      attestation: string
+    }
+
+    expect(provenance.sourceCommit).toMatch(/^[0-9a-f]{40}$/)
+    expect(provenance.commit).toBeTruthy()
+    expect(provenance.buildId).toBeTruthy()
+    expect(provenance).not.toHaveProperty('artifactIdentity')
+    expect(provenance).not.toHaveProperty('targetArchitecture')
+    expect(provenance.packageName).toBe('orca')
+    expect(provenance.packageVersion).toBeTruthy()
+    expect(['attested', 'unattested']).toContain(provenance.attestation)
+  })
+
   it('skips main maps only for explicit check builds and always keeps official release maps', async () => {
     try {
       for (const [setting, identity, expected] of [

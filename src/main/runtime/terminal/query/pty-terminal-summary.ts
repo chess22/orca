@@ -60,6 +60,12 @@ export abstract class OrcaRuntimeWithBuildPtyTerminalSummary extends OrcaRuntime
       handle: this.issuePtyHandle(pty),
       ptyId: pty.ptyId,
       incarnationId: pty.incarnationId,
+      agentOwnership: pty.agentSessionOwnershipKnown
+        ? pty.agentSessionOwners.length > 0
+          ? 'present'
+          : 'absent'
+        : 'unknown',
+      ...(pty.agentSessionOwnershipKnown ? { agentOwnerCount: pty.agentSessionOwners.length } : {}),
       orphaned,
       ...(orphaned && pane && pane.tabId === recorded.tabId && recorded.paneKey
         ? { recordedPaneKey: recorded.paneKey }

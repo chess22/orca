@@ -1,6 +1,7 @@
 import type { BrowserWindow } from 'electron'
 import type { ElectronAutoUpdater } from '../electron-updater-loader'
 import type { LocalBuildFeed } from '../local-builds/local-build-feed-server'
+import { HeadlessLocalBuildInstallTracker } from '../local-builds/headless-local-build-install'
 import type { UpdateSource, UpdateStatus } from '../../shared/update-status-types'
 import type { ReleaseChannel } from '../../shared/release-channel'
 import type { PrimaryEventSuppression, UpdateCheckVariant } from './updater-types'
@@ -113,6 +114,7 @@ export abstract class UpdaterState {
   protected activeUpdateSource: 'release' | UpdateSource = 'release'
   protected activeLocalBuildFeed: LocalBuildFeed | null = null
   protected localBuildSelectionInProgress = false
+  protected readonly headlessLocalBuildInstall = new HeadlessLocalBuildInstallTracker()
   // Why: a dev channel/tag jump may target an older build, so it needs allowDowngrade
   // like local builds — but off a real release feed, not a loopback server.
   protected pinnedBuildSelectionInProgress = false

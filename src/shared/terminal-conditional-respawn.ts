@@ -17,6 +17,7 @@ export type TerminalConditionalRespawnRequest = {
     ptyId: string
     ptyGeneration: number
     incarnationId: string
+    rootProcessId: number
   }
   replacement: TerminalRespawnReplacement
 }

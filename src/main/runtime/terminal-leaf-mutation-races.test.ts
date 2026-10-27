@@ -119,7 +119,8 @@ async function pendingRespawn() {
       leafId: LEAF,
       ptyId: PTY,
       ptyGeneration: shown.ptyGeneration!,
-      incarnationId: 'inc-1'
+      incarnationId: 'inc-1',
+      rootProcessId: 4242
     },
     replacement: {}
   })
@@ -161,7 +162,8 @@ describe('terminal leaf mutation serialization', () => {
           leafId: LEAF,
           ptyId: PTY,
           ptyGeneration: shown.ptyGeneration!,
-          incarnationId: 'inc-1'
+          incarnationId: 'inc-1',
+          rootProcessId: 4242
         },
         replacement: {}
       })
@@ -224,7 +226,8 @@ describe('terminal leaf mutation serialization', () => {
           leafId: LEAF,
           ptyId: PTY,
           ptyGeneration: shown.ptyGeneration!,
-          incarnationId: 'inc-1'
+          incarnationId: 'inc-1',
+          rootProcessId: 4242
         },
         replacement: {}
       })
@@ -269,7 +272,8 @@ describe('terminal leaf mutation serialization', () => {
         leafId: LEAF,
         ptyId: PTY,
         ptyGeneration: shown.ptyGeneration!,
-        incarnationId: 'inc-1'
+        incarnationId: 'inc-1',
+        rootProcessId: 4242
       },
       replacement: {}
     })
@@ -395,7 +399,8 @@ describe('terminal leaf mutation serialization', () => {
         leafId: LEAF,
         ptyId: PTY,
         ptyGeneration: shown.ptyGeneration!,
-        incarnationId: 'inc-1'
+        incarnationId: 'inc-1',
+        rootProcessId: 4242
       },
       replacement: {}
     })

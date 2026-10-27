@@ -6,7 +6,12 @@ import type { SessionInfo, TakePendingOutputResult, TerminalSnapshot } from './t
 import type { CreateOrAttachResult } from './terminal-host-create-contract'
 import type { TerminalHostOptions } from './terminal-host-options'
 import { disposeTerminalHostSessions } from './terminal-host-disposal'
-import { getAliveTerminalHostSession } from './terminal-host-session-access'
+import {
+  detachTerminalHostClients,
+  getAliveTerminalHostSession,
+  getTerminalHostForegroundProcess,
+  reapTerminalHostSession
+} from './terminal-host-session-access'
 import { TerminalSessionTeardown } from './terminal-session-teardown'
 import { ClaimedAgentPtyOwnerRegistry } from '../../shared/claimed-agent-pty-owner'
 import type { InternalCreateOrAttachOptions } from './terminal-host-agent-session-claim'
@@ -30,12 +35,19 @@ import {
   takeTerminalHostPendingOutput
 } from './terminal-host-session-inspection-operations'
 import type { TerminalConditionalRespawnResult } from '../../shared/terminal-conditional-respawn'
+import type {
+  TerminalEmptyLeafRecoveryRequest,
+  TerminalEmptyLeafRecoveryResult
+} from '../../shared/terminal-empty-leaf-recovery'
+import { recoverTerminalHostEmptyLeafIfMatch } from './terminal-host-empty-leaf-recovery'
+import type { TerminalEmptyLeafRecoveryLedger } from './terminal-host-empty-leaf-recovery'
 import {
   reapUnpublishedConditionalReplacement,
   replayConditionalRespawn,
   respawnTerminalHostIfMatch,
   type ConditionalRespawnIdentity
 } from './terminal-host-conditional-respawn'
+import type { TerminalConditionalRespawnLedger } from './terminal-host-conditional-respawn-ledger'
 import {
   assertTerminalHostCreateAllowed,
   createReservedTerminalHostSession,
@@ -72,13 +84,8 @@ export class TerminalHost {
     string,
     { incarnationId: string; code: number; expiresAt: number }
   >()
-  private readonly conditionalRespawns = new Map<
-    string,
-    {
-      fingerprint: string
-      promise: Promise<TerminalConditionalRespawnResult>
-    }
-  >()
+  private readonly conditionalRespawns: TerminalConditionalRespawnLedger = new Map()
+  private readonly emptyLeafRecoveries: TerminalEmptyLeafRecoveryLedger = new Map()
   private readonly suppressedReapNotifications = new Set<string>()
   private readonly deferredReapNotifications = new Set<string>()
 
@@ -103,6 +110,7 @@ export class TerminalHost {
       agentSessionGenerations: this.agentSessionGenerations,
       retiredIncarnations: this.retiredIncarnations,
       conditionalRespawns: this.conditionalRespawns,
+      emptyLeafRecoveries: this.emptyLeafRecoveries,
       suppressedReapNotifications: this.suppressedReapNotifications,
       deferredReapNotifications: this.deferredReapNotifications,
       onSessionReaped: this.onSessionReaped,
@@ -110,8 +118,25 @@ export class TerminalHost {
       withSessionCreationReservation: this.withSessionCreationReservation.bind(this),
       killReserved: this.killReserved.bind(this),
       createOrAttachReserved: this.createOrAttachReserved.bind(this),
-      reapUnpublishedConditionalReplacement: this.reapUnpublishedConditionalReplacement.bind(this),
-      reapSession: this.reapSession.bind(this)
+      reapUnpublishedConditionalReplacement: (
+        opts: ConditionalRespawnIdentity,
+        replacementIncarnationId: string,
+        reason: string
+      ) =>
+        reapUnpublishedConditionalReplacement(
+          this.helperHost(),
+          opts,
+          replacementIncarnationId,
+          reason
+        ),
+      reapSession: (sessionId: string) =>
+        reapTerminalHostSession({
+          sessions: this.sessions,
+          suppressedNotifications: this.suppressedReapNotifications,
+          deferredNotifications: this.deferredReapNotifications,
+          onSessionReaped: this.onSessionReaped,
+          sessionId
+        })
     }
   }
 
@@ -126,23 +151,17 @@ export class TerminalHost {
     return respawnTerminalHostIfMatch(this.helperHost(), opts)
   }
 
+  recoverEmptyLeafIfMatch(
+    request: TerminalEmptyLeafRecoveryRequest,
+    opts: InternalCreateOrAttachOptions & { onReplacementPublished: (attachToken: symbol) => void }
+  ): Promise<TerminalEmptyLeafRecoveryResult> {
+    return recoverTerminalHostEmptyLeafIfMatch(this.helperHost(), request, opts)
+  }
+
   conditionalRespawnReplay(
     opts: ConditionalRespawnIdentity
   ): Promise<TerminalConditionalRespawnResult> | null {
     return replayConditionalRespawn(this.helperHost(), opts)
-  }
-
-  private reapUnpublishedConditionalReplacement(
-    opts: ConditionalRespawnIdentity,
-    replacementIncarnationId: string,
-    reason: string
-  ): Promise<TerminalConditionalRespawnResult> {
-    return reapUnpublishedConditionalReplacement(
-      this.helperHost(),
-      opts,
-      replacementIncarnationId,
-      reason
-    )
   }
 
   private async withSessionCreationReservation<T>(
@@ -207,21 +226,6 @@ export class TerminalHost {
     })
   }
 
-  // Reap the emulator so dead sessions do not retain scrollback for the daemon’s lifetime.
-  private reapSession(sessionId: string): void {
-    const session = this.sessions.get(sessionId)
-    if (!session || session.isAlive) {
-      return
-    }
-    session.dispose()
-    this.sessions.delete(sessionId)
-    if (!this.suppressedReapNotifications.has(sessionId)) {
-      this.onSessionReaped?.(sessionId)
-    } else {
-      this.deferredReapNotifications.add(sessionId)
-    }
-  }
-
   signal(sessionId: string, sig: string): void {
     getAliveTerminalHostSession(this.sessions, sessionId).signal(sig)
   }
@@ -231,9 +235,7 @@ export class TerminalHost {
   }
 
   detachClients(attachments: readonly { sessionId: string; token: symbol }[]): void {
-    for (const { sessionId, token } of attachments) {
-      this.sessions.get(sessionId)?.detachClient(token)
-    }
+    detachTerminalHostClients(this.sessions, attachments)
   }
 
   async getCwd(sessionId: string): Promise<string | null> {
@@ -243,11 +245,7 @@ export class TerminalHost {
   }
 
   getForegroundProcess(sessionId: string): string | null {
-    const session = this.sessions.get(sessionId)
-    if (!session || !session.isAlive) {
-      return null
-    }
-    return session.getForegroundProcess()
+    return getTerminalHostForegroundProcess(this.sessions, sessionId)
   }
 
   inspectProcess(

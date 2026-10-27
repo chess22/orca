@@ -17,9 +17,13 @@ function compatibility(): LocalBuildCompatibility {
   return {
     formatVersion: 1,
     appId: 'com.stablyai.orca',
-    buildId: '1.2.3-local.1-abc-arm64',
+    buildId: 'local-build-fixture',
     version: '1.2.3-local.1',
-    commit: 'abc',
+    commit: 'abcdef012345',
+    sourceCommit: 'abcdef0123456789abcdef0123456789abcdef01',
+    packageName: 'orca',
+    artifactIdentity: 'orca@1.2.3-local.1:darwin-arm64',
+    attestation: 'attested',
     stateSchemaVersion: 1,
     readableStateSchemaVersions: [1],
     daemonProtocolVersion: 28,
@@ -66,14 +70,75 @@ afterEach(async () => {
 
 describe('loadLocalBuildCandidate', () => {
   it('returns a sanitized, architecture-specific feed after hash validation', async () => {
-    const { manifestPath } = await fixture()
+    const { artifactPath, manifestPath } = await fixture()
+    const [manifest, artifact] = await Promise.all([readFile(manifestPath), readFile(artifactPath)])
     const candidate = await loadLocalBuildCandidate(manifestPath, 'arm64', {
-      readCompatibility: async () => compatibility()
+      readCompatibility: async () => compatibility(),
+      expectedManifestSha256: createHash('sha256').update(manifest).digest('hex'),
+      expectedArtifactSha256: createHash('sha256').update(artifact).digest('hex')
     })
 
     expect(candidate.version).toBe('1.2.3-local.1')
     expect([...candidate.artifacts.keys()]).toEqual(['orca-macos-arm64.zip'])
     expect(candidate.manifestContent).toContain('orca-macos-arm64.zip')
+    await candidate.close()
+  })
+
+  it('rejects mismatched expected SHA-256 identities', async () => {
+    const { artifactPath, manifestPath } = await fixture()
+    const [manifest, artifact] = await Promise.all([readFile(manifestPath), readFile(artifactPath)])
+
+    await expect(
+      loadLocalBuildCandidate(manifestPath, 'arm64', {
+        readCompatibility: async () => compatibility(),
+        expectedManifestSha256: createHash('sha256').update(manifest).digest('hex'),
+        expectedArtifactSha256: '0'.repeat(64)
+      })
+    ).rejects.toThrow('SHA-256 verification failed for orca-macos-arm64.zip')
+
+    await expect(
+      loadLocalBuildCandidate(manifestPath, 'arm64', {
+        readCompatibility: async () => compatibility(),
+        expectedManifestSha256: '0'.repeat(64),
+        expectedArtifactSha256: createHash('sha256').update(artifact).digest('hex')
+      })
+    ).rejects.toThrow('SHA-256 verification failed for latest-mac.yml')
+  })
+
+  it.each([
+    ['missing attestation', { attestation: undefined }],
+    ['unattested build', { attestation: 'unattested' }],
+    ['missing full source commit', { sourceCommit: undefined }],
+    ['unrelated legacy commit', { commit: '1234567' }],
+    ['wrong package', { packageName: 'other' }],
+    ['wrong artifact identity', { artifactIdentity: 'orca@1.2.3-local.1:darwin-x64' }],
+    ['missing build id', { buildId: '' }]
+  ] as const)('rejects %s at exact-hash headless admission', async (_name, overrides) => {
+    const { artifactPath, manifestPath } = await fixture()
+    const [manifest, artifact] = await Promise.all([readFile(manifestPath), readFile(artifactPath)])
+
+    await expect(
+      loadLocalBuildCandidate(manifestPath, 'arm64', {
+        readCompatibility: async () => ({ ...compatibility(), ...overrides }),
+        expectedManifestSha256: createHash('sha256').update(manifest).digest('hex'),
+        expectedArtifactSha256: createHash('sha256').update(artifact).digest('hex')
+      })
+    ).rejects.toThrow(/invalid attested build provenance|invalid compatibility metadata/)
+  })
+
+  it('keeps legacy metadata readable outside exact-hash headless admission', async () => {
+    const { manifestPath } = await fixture()
+    const legacy = {
+      ...compatibility(),
+      attestation: undefined,
+      sourceCommit: undefined,
+      packageName: undefined,
+      artifactIdentity: undefined
+    }
+    const candidate = await loadLocalBuildCandidate(manifestPath, 'arm64', {
+      readCompatibility: async () => legacy
+    })
+    expect(candidate.compatibility).toEqual(legacy)
     await candidate.close()
   })
 

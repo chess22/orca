@@ -24,4 +24,13 @@ declare const ORCA_DIAGNOSTICS_TOKEN_URL: string | null
 // Full commit the build was made from (`git rev-parse HEAD`); official skill installs pin to it.
 declare const ORCA_BUILD_COMMIT: string
 
+declare const ORCA_RUNTIME_BUILD_PROVENANCE: {
+  commit: string
+  sourceCommit: string
+  buildId: string
+  packageName: string
+  packageVersion: string
+  attestation: 'attested' | 'unattested'
+}
+
 // ORCA_LAYOUT_OWNER is declared and read in one place: src/shared/layout-owner-switch.ts.

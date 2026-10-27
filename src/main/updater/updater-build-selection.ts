@@ -14,6 +14,11 @@ import { profileStateBuildCompatibilityError } from '../../shared/profile-state-
 import { listReleaseBuilds, resolveTargetBuild } from '../updater-release-builds'
 import { ReleaseBuildListCache, type ReleaseBuildListOptions } from '../updater-release-build-cache'
 import { UpdaterMenuChecks } from './updater-menu-checks'
+import type {
+  HeadlessLocalBuildInstallRequest,
+  HeadlessLocalBuildInstallSnapshot
+} from '../local-builds/headless-local-build-install'
+import { assertHeadlessLocalBuildInstallRequest } from '../local-builds/headless-local-build-install'
 
 /** Handles local-build selection and exact release-channel/tag jumps. */
 export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
@@ -75,6 +80,108 @@ export abstract class UpdaterBuildSelection extends UpdaterMenuChecks {
     } catch (error) {
       this.userInitiatedCheck = false
       this.sendLocalBuildErrorAndRestore(String((error as Error)?.message ?? error), true)
+    } finally {
+      this.localBuildSelectionInProgress = false
+    }
+  }
+
+  protected getHeadlessLocalBuildInstallStatus(): HeadlessLocalBuildInstallSnapshot | null {
+    return this.headlessLocalBuildInstall.get()
+  }
+
+  protected async startHeadlessLocalBuildInstall(
+    request: HeadlessLocalBuildInstallRequest
+  ): Promise<HeadlessLocalBuildInstallSnapshot> {
+    assertHeadlessLocalBuildInstallRequest(request)
+    const previous = this.headlessLocalBuildInstall.get()
+    if (
+      previous &&
+      previous.current.phase !== 'failed' &&
+      previous.current.phase !== 'relaunching'
+    ) {
+      throw new Error('A headless local build installation is already in progress.')
+    }
+    const initial = this.headlessLocalBuildInstall.begin(request)
+    if (process.platform !== 'darwin') {
+      const error = new Error('Headless local build installation is available only on macOS.')
+      this.headlessLocalBuildInstall.fail(error)
+      throw error
+    }
+    if (!app.isPackaged) {
+      const error = new Error('Headless local build installation requires a packaged Orca app.')
+      this.headlessLocalBuildInstall.fail(error)
+      throw error
+    }
+    if (
+      this.localBuildSelectionInProgress ||
+      this.pinnedBuildSelectionInProgress ||
+      this.pendingQuitAndInstallTimer ||
+      this.quitAndInstallInProgress ||
+      this.currentStatus.state === 'checking' ||
+      this.currentStatus.state === 'downloading'
+    ) {
+      const error = new Error('Another update selection or transfer is already in progress.')
+      this.headlessLocalBuildInstall.fail(error)
+      throw error
+    }
+
+    this.localBuildSelectionInProgress = true
+    try {
+      const [
+        { loadLocalBuildCandidate },
+        { assertLocalBuildCompatibility },
+        { startLocalBuildFeed }
+      ] = await Promise.all([
+        import('../local-builds/local-build-candidate'),
+        import('../local-builds/local-build-compatibility'),
+        import('../local-builds/local-build-feed-server')
+      ])
+      const candidate = await loadLocalBuildCandidate(request.manifestPath, process.arch, {
+        expectedManifestSha256: request.expectedManifestSha256,
+        expectedArtifactSha256: request.expectedArtifactSha256
+      })
+      try {
+        const compatibilityError = profileStateBuildCompatibilityError(
+          app.getVersion(),
+          candidate.version
+        )
+        if (compatibilityError) {
+          throw new Error(compatibilityError)
+        }
+        await assertLocalBuildCompatibility(candidate.compatibility)
+      } catch (error) {
+        await candidate.close()
+        throw error
+      }
+
+      this.closeLocalBuildFeed()
+      const feed = await startLocalBuildFeed(candidate).catch(async (error) => {
+        await candidate.close()
+        throw error
+      })
+      this.activeLocalBuildFeed = feed
+      this.activeUpdateSource = 'local'
+      this.clearPrereleaseFallbackContext()
+      this.clearPublishingWindowLastGoodCheck()
+      this.clearAvailableUpdateContext()
+      this.activeUpdateNudgeId = null
+      this.userInitiatedCheck = false
+      this.headlessLocalBuildInstall.markChecking(candidate.version)
+      this.sendStatus({ state: 'checking' })
+
+      const updater = this.getAutoUpdater()
+      updater.allowDowngrade = true
+      updater.disableDifferentialDownload = true
+      updater.setFeedURL({ provider: 'generic', url: feed.url })
+      const attemptId = this.beginUpdateCheckAttempt()
+      this.markUpdateCheckLaunched(attemptId)
+      await updater.checkForUpdates()
+      this.handleSettledUpdateCheckPromise(attemptId)
+      return this.headlessLocalBuildInstall.get() ?? initial
+    } catch (error) {
+      this.headlessLocalBuildInstall.fail(error)
+      this.sendLocalBuildErrorAndRestore(String((error as Error)?.message ?? error))
+      throw error
     } finally {
       this.localBuildSelectionInProgress = false
     }

@@ -5,6 +5,7 @@ import {
 } from '../../shared/pty-fenced-termination'
 import {
   CONDITIONAL_RESPAWN_PROTOCOL_VERSION,
+  EMPTY_LEAF_RECOVERY_PROTOCOL_VERSION,
   FENCED_TERMINATION_PROTOCOL_VERSION
 } from './daemon-protocol-version'
 import { DaemonPtyDaemonRecovery } from './daemon-pty-daemon-recovery'
@@ -12,8 +13,7 @@ import type {
   DaemonPtyAdapterOptions,
   PendingDaemonSpawnOperation
 } from './daemon-pty-runtime-state'
-import { createPtyExitPayload, emitPtyListeners } from './daemon-pty-listener-emission'
-import { supportsMode2031UnsubscribeFact, type DaemonEvent } from './types'
+import { routeDaemonPtyEvent } from './daemon-pty-adapter-event-routing'
 import type { DaemonEndpointIdentity } from './daemon-hello-protocol'
 import type { IPtyProvider } from '../providers/pty-provider-contract'
 import type { DeveloperPermissionStatus } from '../../shared/developer-permissions-types'
@@ -30,10 +30,15 @@ import type {
   TerminalConditionalRespawnResult,
   TerminalRespawnReplacement
 } from '../../shared/terminal-conditional-respawn'
+import { respawnDaemonPtyIfMatch } from './daemon-pty-adapter-conditional-respawn'
+import type {
+  TerminalEmptyLeafRecoveryRequest,
+  TerminalEmptyLeafRecoveryResult
+} from '../../shared/terminal-empty-leaf-recovery'
 import {
-  recordConditionalRespawnExit,
-  respawnDaemonPtyIfMatch
-} from './daemon-pty-adapter-conditional-respawn'
+  completeDaemonPtyEmptyLeafRecovery,
+  recoverDaemonPtyEmptyLeafIfMatch
+} from './daemon-pty-adapter-empty-leaf-recovery'
 
 export class DaemonPtyAdapter extends DaemonPtyDaemonRecovery implements IPtyProvider {
   private readonly uncertainConditionalRespawns = new Map<
@@ -53,6 +58,7 @@ export class DaemonPtyAdapter extends DaemonPtyDaemonRecovery implements IPtyPro
   async respawnIfMatch(
     id: string,
     expectedIncarnationId: string,
+    expectedRootProcessId: number,
     mutationId: string,
     replacement: TerminalRespawnReplacement
   ): Promise<TerminalConditionalRespawnResult> {
@@ -73,8 +79,45 @@ export class DaemonPtyAdapter extends DaemonPtyDaemonRecovery implements IPtyPro
       CONDITIONAL_RESPAWN_PROTOCOL_VERSION,
       id,
       expectedIncarnationId,
+      expectedRootProcessId,
       mutationId,
       replacement
+    )
+  }
+
+  async recoverEmptyLeafIfMatch(
+    request: TerminalEmptyLeafRecoveryRequest
+  ): Promise<TerminalEmptyLeafRecoveryResult> {
+    return await recoverDaemonPtyEmptyLeafIfMatch(
+      {
+        protocolVersion: this.protocolVersion,
+        withHistorySpawnLock: this.withHistorySpawnLock.bind(this),
+        ensureConnected: this.ensureConnected.bind(this),
+        client: this.client,
+        sessionIncarnations: this.sessionIncarnations,
+        activeSessionIds: this.activeSessionIds
+      },
+      EMPTY_LEAF_RECOVERY_PROTOCOL_VERSION,
+      request
+    )
+  }
+
+  async completeEmptyLeafRecovery(
+    recoveryId: string,
+    ptyId: string,
+    incarnationId: string,
+    commit: boolean
+  ): Promise<boolean> {
+    return completeDaemonPtyEmptyLeafRecovery(
+      {
+        client: this.client,
+        sessionIncarnations: this.sessionIncarnations,
+        activeSessionIds: this.activeSessionIds
+      },
+      recoveryId,
+      ptyId,
+      incarnationId,
+      commit
     )
   }
 
@@ -172,109 +215,19 @@ export class DaemonPtyAdapter extends DaemonPtyDaemonRecovery implements IPtyPro
     if (this.removeEventListener) {
       return
     }
-
-    this.removeEventListener = this.client.onEvent((raw) => {
-      const event = raw as DaemonEvent
-      if (event.type !== 'event') {
-        return
-      }
-
-      if (event.event === 'data') {
-        this.markSessionDirty(event.sessionId)
-        emitPtyListeners(this.dataListeners, (listener) =>
-          listener({
-            id: event.sessionId,
-            data: event.payload.data,
-            ...((event.payload.rawLength ?? event.payload.sequenceChars) === undefined
-              ? {}
-              : { sequenceChars: event.payload.rawLength ?? event.payload.sequenceChars }),
-            ...(event.payload.transformed ? { transformed: true } : {}),
-            ...(event.payload.seq === undefined ? {} : { seq: event.payload.seq })
-          })
-        )
-      } else if (event.event === 'sessionBackgroundMarker') {
-        this.emitBackgroundStreamEvent({
-          id: event.sessionId,
-          kind: 'backgroundMarker',
-          background: event.payload.background,
-          ...(event.payload.scanSeedAnsi !== undefined
-            ? { scanSeedAnsi: event.payload.scanSeedAnsi }
-            : {}),
-          ...(event.payload.mode2031PendingSubscribe
-            ? { mode2031PendingSubscribe: true as const }
-            : {})
-        })
-      } else if (event.event === 'dataGap') {
-        this.emitBackgroundStreamEvent({
-          id: event.sessionId,
-          kind: 'dataGap',
-          droppedChars: event.payload.droppedChars,
-          ...(event.payload.sequenceChars === undefined
-            ? {}
-            : { sequenceChars: event.payload.sequenceChars })
-        })
-      } else if (event.event === 'transientFact') {
-        // Why (#9993): a preserved pre-v29 daemon can retain a stale relay tracker. Its
-        // unretractable subscribe is harmful; an unsubscribe is always safe to forward.
-        if (
-          event.payload.kind === '2031-subscribe' &&
-          !supportsMode2031UnsubscribeFact(this.protocolVersion)
-        ) {
-          return
-        }
-        this.emitBackgroundStreamEvent({
-          id: event.sessionId,
-          kind: 'transientFact',
-          fact: event.payload
-        })
-      } else if (event.event === 'exit') {
-        const currentIncarnationId = this.sessionIncarnations.get(event.sessionId)
-        const pendingOperations = new Set([
-          ...(this.pendingSpawnOperationsBySessionId.get(event.sessionId) ?? []),
-          ...this.pendingClaimSpawnOperations
-        ])
-        if (
-          event.payload.incarnationId !== undefined &&
-          [...pendingOperations].some(
-            (operation) =>
-              operation.conditionalRespawnOldIncarnationId === event.payload.incarnationId
-          )
-        ) {
-          return
-        }
-        for (const operation of pendingOperations) {
-          if (operation.ignoreNextExit) {
-            operation.ignoreNextExit = false
-            continue
-          }
-          if (recordConditionalRespawnExit(operation, event.sessionId, event.payload)) {
-            continue
-          }
-          const exits = operation.exitsBySessionId.get(event.sessionId) ?? []
-          exits.push(
-            event.payload.incarnationId
-              ? { code: event.payload.code, incarnationId: event.payload.incarnationId }
-              : { code: event.payload.code }
-          )
-          operation.exitsBySessionId.set(event.sessionId, exits)
-        }
-        // Retain raced exits for pending spawns; only this adapter's published incarnation may clear state or notify.
-        if (
-          currentIncarnationId !== undefined &&
-          event.payload.incarnationId !== currentIncarnationId
-        ) {
-          return
-        }
-        this.clearExitedSessionState(
-          event.sessionId,
-          event.payload.code,
-          event.payload.incarnationId
-        )
-        emitPtyListeners(this.exitListeners, (listener) =>
-          listener(createPtyExitPayload(event.sessionId, event.payload))
-        )
-      }
-    })
+    this.removeEventListener = this.client.onEvent((event) =>
+      routeDaemonPtyEvent(event, {
+        protocolVersion: this.protocolVersion,
+        dataListeners: this.dataListeners,
+        exitListeners: this.exitListeners,
+        sessionIncarnations: this.sessionIncarnations,
+        pendingSpawnOperationsBySessionId: this.pendingSpawnOperationsBySessionId,
+        pendingClaimSpawnOperations: this.pendingClaimSpawnOperations,
+        markSessionDirty: this.markSessionDirty.bind(this),
+        emitBackgroundStreamEvent: this.emitBackgroundStreamEvent.bind(this),
+        clearExitedSessionState: this.clearExitedSessionState.bind(this)
+      })
+    )
   }
 
   async getAutomaticWorkStatus(): Promise<AutomaticWorkStatus | null> {

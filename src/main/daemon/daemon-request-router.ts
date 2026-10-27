@@ -66,6 +66,12 @@ export class DaemonRequestRouter {
         return this.options.admission.createOrAttach(clientId, request)
       case 'respawnIfMatch':
         return this.options.admission.respawnIfMatch(clientId, request)
+      case 'recoverEmptyLeafIfMatch':
+        return this.options.admission.recoverEmptyLeafIfMatch(clientId, request)
+      case 'commitEmptyLeafRecovery':
+        return this.options.admission.completeEmptyLeafRecovery(clientId, request.payload, true)
+      case 'abortEmptyLeafRecovery':
+        return this.options.admission.completeEmptyLeafRecovery(clientId, request.payload, false)
       case 'cancelCreateOrAttach':
         return {
           canceled: this.options.preparations.cancel(request.payload.sessionId, {

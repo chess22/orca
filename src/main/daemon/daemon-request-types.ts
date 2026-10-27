@@ -22,6 +22,7 @@ import type {
 import type * as HistorySeedProtocol from './terminal-history-seed-transfer-protocol'
 import type * as PtyOwnerQueryProtocol from './daemon-pty-owner-query-protocol'
 import type { TerminalSnapshot } from './terminal-snapshot'
+import type { TerminalEmptyLeafRecoveryRequest } from '../../shared/terminal-empty-leaf-recovery'
 
 export type CreateOrAttachRequest = {
   id: string
@@ -66,6 +67,7 @@ export type RespawnIfMatchRequest = {
     sessionId: string
     mutationId: string
     expectedIncarnationId: string
+    expectedRootProcessId: number
     cols: number
     rows: number
     cwd?: string
@@ -74,6 +76,18 @@ export type RespawnIfMatchRequest = {
     command?: string
     cancelAfterMs?: number
   }
+}
+
+export type RecoverEmptyLeafIfMatchRequest = {
+  id: string
+  type: 'recoverEmptyLeafIfMatch'
+  payload: TerminalEmptyLeafRecoveryRequest
+}
+
+export type CompleteEmptyLeafRecoveryRequest = {
+  id: string
+  type: 'commitEmptyLeafRecovery' | 'abortEmptyLeafRecovery'
+  payload: { recoveryId: string; ptyId: string; incarnationId: string }
 }
 
 export type CancelCreateOrAttachRequest = {
@@ -242,6 +256,8 @@ export type TakePendingOutputResult = {
 export type DaemonRequest =
   | CreateOrAttachRequest
   | RespawnIfMatchRequest
+  | RecoverEmptyLeafIfMatchRequest
+  | CompleteEmptyLeafRecoveryRequest
   | HistorySeedProtocol.TerminalHistorySeedTransferRequest
   | CancelCreateOrAttachRequest
   | WriteRequest

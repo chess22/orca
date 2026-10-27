@@ -13,7 +13,44 @@ import { prepareThisProcessShipItStaging } from './shipit-leftover-recovery'
 
 /** Coordinates renderer-facing download/install actions and their duplicate guards. */
 export abstract class UpdaterDownloadInstall extends UpdaterRemoteStatus {
-  protected quitAndInstall(): void {
+  protected scheduleHeadlessLocalBuildInstallAction(action: 'download' | 'install'): void {
+    const queued = this.headlessLocalBuildInstall.getQueuedAction(action)
+    if (!queued) {
+      this.headlessLocalBuildInstall.fail(new Error(`The queued ${action} action was unavailable.`))
+      return
+    }
+    setTimeout(() => {
+      const observedVersion =
+        this.currentStatus.state === 'available' ||
+        this.currentStatus.state === 'downloading' ||
+        this.currentStatus.state === 'downloaded' ||
+        this.currentStatus.state === 'error'
+          ? (this.currentStatus.version ?? null)
+          : null
+      const take = this.headlessLocalBuildInstall.takeAction(queued, {
+        version: observedVersion,
+        source: this.activeUpdateSource,
+        feedIdentity: this.activeLocalBuildFeed?.url ?? null
+      })
+      if (take === 'missing') {
+        return
+      }
+      if (take === 'drifted') {
+        this.headlessLocalBuildInstall.fail(
+          new Error(`The queued ${action} action no longer matches the verified build feed.`)
+        )
+        return
+      }
+      const accepted = action === 'download' ? this.downloadUpdate() : this.quitAndInstall()
+      if (!accepted) {
+        this.headlessLocalBuildInstall.fail(
+          new Error(`The updater refused the queued ${action} action.`)
+        )
+      }
+    }, 0)
+  }
+
+  protected quitAndInstall(): boolean {
     if (
       this.localBuildSelectionInProgress ||
       this.pinnedBuildSelectionInProgress ||
@@ -21,11 +58,11 @@ export abstract class UpdaterDownloadInstall extends UpdaterRemoteStatus {
       this.quitAndInstallInProgress ||
       isMacInstallRequested()
     ) {
-      return
+      return false
     }
 
     if (this.deferHeadlessServeInstall('install', this.getPendingInstallVersion())) {
-      return
+      return false
     }
     // A queued check must not repoint the feed while native staging or installation is pending.
     this.finishActiveUpdateCheckAttempt()
@@ -39,19 +76,21 @@ export abstract class UpdaterDownloadInstall extends UpdaterRemoteStatus {
         (status) => this.sendStatus(status)
       )
     ) {
-      return
+      return false
     }
 
     if (process.platform === 'darwin') {
       setMacInstallPreflightInProgress(true)
     }
+    this.headlessLocalBuildInstall.markInstalling()
     // Why: defer the quit a tick so the renderer can flush dismissals/state before windows start closing.
     this.pendingQuitAndInstallTimer = setTimeout(() => {
       void this.performQuitAndInstall()
     }, QUIT_AND_INSTALL_DELAY_MS)
+    return true
   }
 
-  protected downloadUpdate(): void {
+  protected downloadUpdate(): boolean {
     if (
       this.localBuildSelectionInProgress ||
       this.pinnedBuildSelectionInProgress ||
@@ -60,19 +99,19 @@ export abstract class UpdaterDownloadInstall extends UpdaterRemoteStatus {
       isMacInstallRequested() ||
       this.downloadInFlight
     ) {
-      return
+      return false
     }
     // Why: allow retry from 'error' (availableVersion stays cached) so the error card's Retry Download button works.
     const canStart =
       this.currentStatus.state === 'available' ||
       (this.currentStatus.state === 'error' && this.hasInstallableDownloadedVersion())
     if (!canStart) {
-      return
+      return false
     }
     const version =
       this.currentStatus.state === 'available' ? this.currentStatus.version : this.availableVersion
     if (!version) {
-      return
+      return false
     }
     // Why: main owns this verdict, not the card — an older renderer or a direct IPC call must not be
     // able to spend a package download that this host could never install.
@@ -91,10 +130,10 @@ export abstract class UpdaterDownloadInstall extends UpdaterRemoteStatus {
         version,
         retryable: false
       })
-      return
+      return false
     }
     if (this.deferHeadlessServeInstall('download', version)) {
-      return
+      return false
     }
     this.downloadInFlight = true
     const localBuildDownload = this.activeUpdateSource === 'local'
@@ -123,6 +162,7 @@ export abstract class UpdaterDownloadInstall extends UpdaterRemoteStatus {
     } else {
       startDownload()
     }
+    return true
   }
 
   protected isQuittingForUpdate(): boolean {

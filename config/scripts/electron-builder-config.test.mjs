@@ -14,11 +14,45 @@ const { copyFiles, FileMatcher } = require('app-builder-lib/out/fileMatcher')
 const FpmTarget = require('app-builder-lib/out/targets/FpmTarget').default
 const electronBuilderNativeRebuild = require('./electron-builder-native-rebuild.cjs')
 
+function withReloadedBuilderConfig(environment, assertion) {
+  const configPath = require.resolve('../electron-builder.config.cjs')
+  const originalEnvironment = Object.fromEntries(
+    Object.keys(environment).map((key) => [key, process.env[key]])
+  )
+  try {
+    delete require.cache[configPath]
+    for (const [key, value] of Object.entries(environment)) {
+      if (value === undefined) {
+        delete process.env[key]
+      } else {
+        process.env[key] = value
+      }
+    }
+    assertion(require('../electron-builder.config.cjs'))
+  } finally {
+    for (const [key, value] of Object.entries(originalEnvironment)) {
+      if (value === undefined) {
+        delete process.env[key]
+      } else {
+        process.env[key] = value
+      }
+    }
+    delete require.cache[configPath]
+    require('../electron-builder.config.cjs')
+  }
+}
+
 describe('electron-builder config', () => {
   it('keeps the packaged app identity aligned with local-build validation', () => {
     expect(electronBuilderConfig.appId).toBe(
       require('../../src/shared/local-build-compatibility-contract.json').appId
     )
+  })
+
+  it('retains both macOS package slices from one architecture-neutral bundle', () => {
+    for (const target of electronBuilderConfig.mac.target) {
+      expect(target.arch).toEqual(['x64', 'arm64'])
+    }
   })
 
   it('excludes repo-only source trees from app.asar', () => {
@@ -492,75 +526,26 @@ describe('electron-builder config', () => {
     }
   })
   it('uses a distinct AppImage name for Linux arm64 release uploads', () => {
-    const configPath = require.resolve('../electron-builder.config.cjs')
-    const original = process.env.ORCA_LINUX_ARM64_RELEASE
-    try {
-      delete require.cache[configPath]
-      process.env.ORCA_LINUX_ARM64_RELEASE = '1'
-      expect(require('../electron-builder.config.cjs').appImage.artifactName).toBe(
-        'orca-linux-arm64.${ext}'
-      )
-    } finally {
-      if (original === undefined) {
-        delete process.env.ORCA_LINUX_ARM64_RELEASE
-      } else {
-        process.env.ORCA_LINUX_ARM64_RELEASE = original
-      }
-      delete require.cache[configPath]
-      require('../electron-builder.config.cjs')
-    }
+    withReloadedBuilderConfig({ ORCA_LINUX_ARM64_RELEASE: '1' }, (config) => {
+      expect(config.appImage.artifactName).toBe('orca-linux-arm64.${ext}')
+    })
   })
 
   it('overrides packaged semver only for local macOS builds', () => {
-    const configPath = require.resolve('../electron-builder.config.cjs')
-    const original = process.env.ORCA_LOCAL_BUILD_VERSION
-    const originalMacRelease = process.env.ORCA_MAC_RELEASE
-    try {
-      delete require.cache[configPath]
-      delete process.env.ORCA_MAC_RELEASE
-      process.env.ORCA_LOCAL_BUILD_VERSION = '1.4.159-rc.0.local.123.abc'
-      expect(require('../electron-builder.config.cjs').extraMetadata).toEqual({
-        version: '1.4.159-rc.0.local.123.abc'
-      })
-    } finally {
-      if (originalMacRelease === undefined) {
-        delete process.env.ORCA_MAC_RELEASE
-      } else {
-        process.env.ORCA_MAC_RELEASE = originalMacRelease
-      }
-      if (original === undefined) {
-        delete process.env.ORCA_LOCAL_BUILD_VERSION
-      } else {
-        process.env.ORCA_LOCAL_BUILD_VERSION = original
-      }
-      delete require.cache[configPath]
-      require('../electron-builder.config.cjs')
-    }
+    withReloadedBuilderConfig(
+      { ORCA_MAC_RELEASE: undefined, ORCA_LOCAL_BUILD_VERSION: '1.4.159-rc.0.local.123.abc' },
+      (config) =>
+        expect(config.extraMetadata).toEqual({
+          version: '1.4.159-rc.0.local.123.abc'
+        })
+    )
   })
 
   it('never applies local semver to release packaging', () => {
-    const configPath = require.resolve('../electron-builder.config.cjs')
-    const originalLocalVersion = process.env.ORCA_LOCAL_BUILD_VERSION
-    const originalMacRelease = process.env.ORCA_MAC_RELEASE
-    try {
-      delete require.cache[configPath]
-      process.env.ORCA_LOCAL_BUILD_VERSION = '1.4.159-local.123.abc'
-      process.env.ORCA_MAC_RELEASE = '1'
-      expect(require('../electron-builder.config.cjs').extraMetadata).toBeUndefined()
-    } finally {
-      if (originalLocalVersion === undefined) {
-        delete process.env.ORCA_LOCAL_BUILD_VERSION
-      } else {
-        process.env.ORCA_LOCAL_BUILD_VERSION = originalLocalVersion
-      }
-      if (originalMacRelease === undefined) {
-        delete process.env.ORCA_MAC_RELEASE
-      } else {
-        process.env.ORCA_MAC_RELEASE = originalMacRelease
-      }
-      delete require.cache[configPath]
-      require('../electron-builder.config.cjs')
-    }
+    withReloadedBuilderConfig(
+      { ORCA_LOCAL_BUILD_VERSION: '1.4.159-local.123.abc', ORCA_MAC_RELEASE: '1' },
+      (config) => expect(config.extraMetadata).toBeUndefined()
+    )
   })
 
   it('uses Orca native rebuild hook instead of electron-builder default rebuild', () => {
@@ -595,6 +580,8 @@ describe('arch-aware packaging guard', () => {
     electronBuilderConfig.beforePack(
       { electronPlatformName: process.platform, arch },
       bundleDir,
+      () => undefined,
+      undefined,
       () => undefined
     )
 
@@ -668,7 +655,13 @@ describe('arch-aware packaging guard', () => {
       (resource) => resource.to === join('node_modules', '@vscode', 'windows-process-tree')
     )
     const packWindows = () =>
-      electronBuilderConfig.beforePack({ electronPlatformName: 'win32', arch: 1 }, bundleDir)
+      electronBuilderConfig.beforePack(
+        { electronPlatformName: 'win32', arch: 1 },
+        bundleDir,
+        undefined,
+        undefined,
+        () => undefined
+      )
     if (process.platform === 'win32' || windowsAddon) {
       expect(packWindows).not.toThrow()
     } else {

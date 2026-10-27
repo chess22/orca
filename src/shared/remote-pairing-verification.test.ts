@@ -65,4 +65,22 @@ describe('verifyRemotePairingRuntimeStatus', () => {
   it('accepts a compatible runtime status', () => {
     expect(verifyRemotePairingRuntimeStatus(runtimeStatus())).toMatchObject({ ok: true })
   })
+
+  it('keeps mixed-version status compatible with absent or additive build provenance', () => {
+    expect(verifyRemotePairingRuntimeStatus(runtimeStatus())).toMatchObject({ ok: true })
+    expect(
+      verifyRemotePairingRuntimeStatus(
+        runtimeStatus({
+          build: {
+            commit: '0123456789ab',
+            sourceCommit: '0123456789abcdef0123456789abcdef01234567',
+            buildId: 'build-1',
+            artifactIdentity: 'orca@1.4.239:darwin-arm64',
+            targetArchitecture: 'arm64',
+            attestation: 'attested'
+          }
+        })
+      )
+    ).toMatchObject({ ok: true })
+  })
 })

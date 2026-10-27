@@ -603,6 +603,7 @@ import {
   TerminalListParams,
   TerminalRead,
   TerminalReadKittyFile,
+  TerminalRecoverEmptyLeafIfMatch,
   TerminalRecoverPane,
   TerminalRename,
   TerminalResolveActive,
@@ -623,7 +624,7 @@ import {
   TerminalUnsubscribe,
   TerminalUpdateViewport
 } from './terminal-viewport-schemas-params'
-import { UpdaterCheckParams } from './updater-params'
+import { LocalBuildInstallStartParams, UpdaterCheckParams } from './updater-params'
 import {
   UsageCredentialApiKeyParams,
   UsageCredentialSessionCookieParams
@@ -1390,6 +1391,7 @@ export const RPC_PARAMS_BY_METHOD = {
   'terminal.multiplex': TerminalMultiplex,
   'terminal.read': TerminalRead,
   'terminal.readKittyFile': TerminalReadKittyFile,
+  'terminal.recoverEmptyLeafIfMatch': TerminalRecoverEmptyLeafIfMatch,
   'terminal.recoverPane': TerminalRecoverPane,
   'terminal.rename': TerminalRename,
   'terminal.resetInputModes': TerminalHandle,
@@ -1428,6 +1430,8 @@ export const RPC_PARAMS_BY_METHOD = {
   'updater.download': null,
   'updater.getStatus': null,
   'updater.install': null,
+  'updater.localBuild.get': null,
+  'updater.localBuild.start': LocalBuildInstallStartParams,
   'workspacePorts.kill': WorkspacePortKillParams,
   'workspacePorts.killHost': WorkspacePortKillHostParams,
   'workspacePorts.probePage': WorkspacePortProbePageParams,

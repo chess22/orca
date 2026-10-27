@@ -13,6 +13,10 @@ export type LocalBuildCompatibility = {
   buildId: string
   version: string
   commit: string
+  attestation?: 'attested' | 'unattested'
+  sourceCommit?: string
+  packageName?: string
+  artifactIdentity?: string
   stateSchemaVersion: number
   readableStateSchemaVersions: number[]
   daemonProtocolVersion: number
@@ -48,6 +52,15 @@ export function parseLocalBuildCompatibility(value: unknown): LocalBuildCompatib
     typeof record.commit !== 'string' ||
     record.commit.length === 0 ||
     record.commit.length > 100 ||
+    (record.attestation !== undefined &&
+      record.attestation !== 'attested' &&
+      record.attestation !== 'unattested') ||
+    (record.sourceCommit !== undefined &&
+      (typeof record.sourceCommit !== 'string' || record.sourceCommit.length > 100)) ||
+    (record.packageName !== undefined &&
+      (typeof record.packageName !== 'string' || record.packageName.length > 200)) ||
+    (record.artifactIdentity !== undefined &&
+      (typeof record.artifactIdentity !== 'string' || record.artifactIdentity.length > 512)) ||
     !Number.isSafeInteger(record.stateSchemaVersion) ||
     Number(record.stateSchemaVersion) <= 0 ||
     !isIntegerArray(record.readableStateSchemaVersions) ||
@@ -75,8 +88,15 @@ export function parseLocalBuildCompatibility(value: unknown): LocalBuildCompatib
 export function getLocalBuildCompatibilityError(
   target: LocalBuildCompatibility,
   currentStateSchemaVersion: number,
-  liveDaemonProtocols: readonly number[]
+  liveDaemonProtocols: readonly number[],
+  options: { requireAttestedProvenance?: boolean } = {}
 ): string | null {
+  if (
+    target.attestation === 'unattested' ||
+    (options.requireAttestedProvenance && target.attestation !== 'attested')
+  ) {
+    return 'This local build is unattested and cannot be applied to a running Orca instance.'
+  }
   if (!target.readableStateSchemaVersions.includes(currentStateSchemaVersion)) {
     return `This build cannot read Orca workspace state schema ${currentStateSchemaVersion}. Your workspace was not changed.`
   }

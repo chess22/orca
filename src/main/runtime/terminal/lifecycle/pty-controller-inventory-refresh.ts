@@ -8,10 +8,6 @@ import {
   LOCAL_EXECUTION_HOST_ID,
   parseExecutionHostId
 } from '../../../../shared/execution-host'
-import {
-  PTY_CONTROLLER_LIST_PROVIDER_MARGIN_MS,
-  PTY_CONTROLLER_LIST_TIMEOUT_MS
-} from '../../orca-runtime-postlude'
 import { pruneOldestMapEntry } from '../../prune-oldest-map-entry'
 import { withTimeoutResult } from '../../runtime-async-boundaries'
 import { getPtyExecutionHost } from '../../../../shared/terminal-execution-host'
@@ -33,6 +29,7 @@ import { retireOrchestrationAuthorityAbsentFromInventory } from '../../runtime-r
 import { worktreeIdsEqual } from '../../../../shared/worktree/id'
 import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../../../shared/layout-owner-switch'
 import { exitingPtyIdsOf } from '../adoption/unshown-live-terminal-placement'
+import { ptyControllerInventoryRequest } from './pty-controller-inventory-request'
 
 export abstract class OrcaRuntimeWithRefreshPtyWorktreeRecordsWithControllerInventory extends OrcaRuntimeWithRefreshPtyWorktreeRecordsFromController {
   protected async refreshPtyWorktreeRecordsWithControllerInventory(
@@ -66,21 +63,18 @@ export abstract class OrcaRuntimeWithRefreshPtyWorktreeRecordsWithControllerInve
       this.ptyControllerInventoryGenerationByProvider.set(providerKey, inventoryGeneration)
       pruneOldestMapEntry(this.ptyControllerInventoryGenerationByProvider, 512)
     }
-    const listBudgetMs =
-      deadline === undefined
-        ? PTY_CONTROLLER_LIST_TIMEOUT_MS
-        : Math.max(1, Math.min(PTY_CONTROLLER_LIST_TIMEOUT_MS, deadline - Date.now()))
-    const providerListOpts = {
-      deadlineMs: Date.now() + Math.max(1, listBudgetMs - PTY_CONTROLLER_LIST_PROVIDER_MARGIN_MS),
-      ...(inventoryOptions?.includeForegroundProcessEvidence === undefined
-        ? {}
-        : { includeForegroundProcessEvidence: inventoryOptions.includeForegroundProcessEvidence })
-    }
+    const { listBudgetMs, providerListOptions } = ptyControllerInventoryRequest(
+      deadline,
+      inventoryOptions
+    )
     const processInventory =
       connectionId === undefined && this.ptyController.listProcessesWithHostScope
-        ? this.ptyController.listProcessesWithHostScope(providerListOpts)
+        ? this.ptyController.listProcessesWithHostScope(providerListOptions)
         : this.ptyController
-            .listProcesses(connectionId === undefined ? undefined : providerKey, providerListOpts)
+            .listProcesses(
+              connectionId === undefined ? undefined : providerKey,
+              providerListOptions
+            )
             .then((processes) => ({ processes, hostIds: [providerKey] }))
     const sessionsResult = await withTimeoutResult(processInventory, listBudgetMs)
     if (!sessionsResult.ok) {
@@ -209,6 +203,8 @@ export abstract class OrcaRuntimeWithRefreshPtyWorktreeRecordsWithControllerInve
           connected: true,
           ...(session.incarnationId ? { incarnationId: session.incarnationId } : {}),
           agentSessionOwners: session.incarnationId ? (session.agentSessionOwners ?? []) : [],
+          agentSessionOwnershipKnown:
+            Boolean(session.incarnationId) && session.agentSessionOwners !== undefined,
           ...(session.wslDistro !== undefined
             ? { isWsl: Boolean(session.wslDistro), wslDistro: session.wslDistro }
             : {}),
@@ -281,6 +277,7 @@ export abstract class OrcaRuntimeWithRefreshPtyWorktreeRecordsWithControllerInve
         }
         this.setPtyConnected(pty, false)
         pty.agentSessionOwners = []
+        pty.agentSessionOwnershipKnown = false
         // Why: this list only enumerates registered providers, so a dropped relay
         // clears `connected` for every one of its PTYs at once. Only `false` here
         // is an observed absence; `null` means no provider could be asked.

@@ -14,6 +14,10 @@ export type RuntimeTerminalSummary = {
   /** Exact owning-provider process for this PTY incarnation; absent when it cannot be proven. */
   rootProcessId?: number
   incarnationId?: string | null
+  /** Execution-host ownership evidence for this exact PTY incarnation. */
+  agentOwnership?: 'absent' | 'present' | 'unknown'
+  /** Present only when agentOwnership is authoritative. */
+  agentOwnerCount?: number
   orphaned?: boolean
   /**
    * Orphaned only: the pane the host last recorded for this PTY, which the renderer owning it can

@@ -2,7 +2,7 @@ import { terminateResolvedDaemonSession } from './daemon-fenced-termination'
 import type { PtyFencedTerminationRequest } from '../../shared/pty-fenced-termination'
 import { reconcileDaemonRouterSessions } from './daemon-router-session-reconciliation'
 import type { DaemonPtyAdapter } from './daemon-pty-adapter'
-import { DaemonPtyAdapterSubscriptionFanout } from './daemon-pty-adapter-subscription-fanout'
+import type { DaemonPtyAdapterSubscriptionFanout } from './daemon-pty-adapter-subscription-fanout'
 import type {
   IPtyProvider,
   PtyBackgroundStreamEvent,
@@ -14,18 +14,36 @@ import type { PtyProcessInspection } from '../providers/pty-process-inspection'
 import { LegacyDaemonExitProof } from './daemon-legacy-exit-proof'
 import { shutdownRoutedDaemonSession } from './daemon-routed-session-shutdown'
 import type { DaemonPtyRouterDataEvent, DaemonPtyRouterExitEvent } from './daemon-pty-router-events'
-import { DaemonSessionOwnerResolver } from './daemon-session-owner-resolution'
+import type { DaemonSessionOwnerResolver } from './daemon-session-owner-resolution'
 import type { DaemonIdleRetirementResult } from './daemon-pty-runtime-state'
 import { DaemonRouterRetirement } from './daemon-router-retirement'
-import { routeSpawnOrHold } from './daemon-router-newer-daemon-hold'
-import { findLegacySessionOwner } from './daemon-router-legacy-owner'
-import { retireExitedLegacyAdapter, type ExitedLegacyVerdict } from './daemon-router-exited-legacy'
 import type { WriteSettlement } from '../../shared/pty-write-settlement'
 import type {
   TerminalConditionalRespawnResult,
   TerminalRespawnReplacement
 } from '../../shared/terminal-conditional-respawn'
 import type { TerminalOscColorQueryReplyColors } from '../../shared/terminal-osc-color-reply'
+import type {
+  TerminalEmptyLeafRecoveryRequest,
+  TerminalEmptyLeafRecoveryResult
+} from '../../shared/terminal-empty-leaf-recovery'
+import {
+  completeRoutedEmptyLeafRecovery,
+  recoverRoutedEmptyLeafIfMatch,
+  respawnRoutedTerminalIfMatch
+} from './daemon-pty-router-terminal-recovery'
+import {
+  createRouterCoordination,
+  discoverRoutedSessions,
+  disposeRoutedAdapters,
+  listRoutedProcesses,
+  retireLegacyAdapter,
+  resolveAdapterForInspection,
+  setRoutedColorQueryReplyColors,
+  spawnRoutedPty,
+  type ExitedLegacyVerdict,
+  type RouterCoreContext
+} from './daemon-pty-router-core'
 
 export class DaemonPtyRouter implements IPtyProvider {
   private current: DaemonPtyAdapter
@@ -35,66 +53,63 @@ export class DaemonPtyRouter implements IPtyProvider {
   private readonly subscriptions: DaemonPtyAdapterSubscriptionFanout
   private readonly legacyExitProof = new LegacyDaemonExitProof()
   readonly retirement = new DaemonRouterRetirement(() => this.allAdapters())
+  private readonly core: RouterCoreContext
 
   constructor(opts: { current: DaemonPtyAdapter; legacy: DaemonPtyAdapter[] }) {
     this.current = opts.current
     this.legacy = opts.legacy
-    this.ownerResolver = new DaemonSessionOwnerResolver(
-      this.allAdapters(),
+    const coordination = createRouterCoordination(
+      this.current,
+      this.legacy,
       this.sessionAdapters,
+      this.retirement,
+      this.legacyExitProof,
       (adapter, error) => this.retireExitedLegacy(adapter, error) !== 'not-exited'
     )
-    this.subscriptions = new DaemonPtyAdapterSubscriptionFanout(
-      this.allAdapters(),
-      // Another generation's exit for a reused ID must not unroute its live owner.
-      (id, adapter) => {
-        this.ownerResolver.forgetRoute(id, adapter)
-      },
-      (adapter) => this.ownerResolver.invalidateProvider(adapter)
-    )
+    this.ownerResolver = coordination.ownerResolver
+    this.subscriptions = coordination.subscriptions
+    this.core = coordination.core
     this.legacyExitProof.record(this.legacy)
   }
 
   async discoverLegacySessions(): Promise<void> {
-    await this.ownerResolver.discoverRoutes()
-    this.legacyExitProof.record(this.legacy)
+    await discoverRoutedSessions(this.core)
   }
 
   async spawn(opts: PtySpawnOptions): Promise<PtySpawnResult> {
-    if (this.retirement.admissionClosed) {
-      throw new Error('Terminal daemon is decommissioning')
-    }
-    // Retirement census must account for spawns that have not published their sessions yet.
-    this.retirement.spawnInFlight++
-    try {
-      if (opts.attachOnly && opts.sessionId) {
-        return await this.ownerResolver.spawnAttachOnly({ ...opts, sessionId: opts.sessionId })
-      }
-      const adapter =
-        (opts.sessionId ? this.sessionAdapters.get(opts.sessionId) : undefined) ??
-        (await findLegacySessionOwner(opts, this.current, this.legacy, this.legacyExitProof))
-      const target = await routeSpawnOrHold(opts, adapter, this.current, this.ownerResolver)
-      const result = await target.spawn(opts)
-      if (!result.exitedBeforeSpawnReply) {
-        this.ownerResolver.recordRoute(result.id, target, result.incarnationId)
-      }
-      return result
-    } finally {
-      this.retirement.spawnInFlight--
-    }
+    return spawnRoutedPty(this.core, opts)
   }
 
   async respawnIfMatch(
     id: string,
     expectedIncarnationId: string,
+    expectedRootProcessId: number,
     mutationId: string,
     replacement: TerminalRespawnReplacement
   ): Promise<TerminalConditionalRespawnResult> {
-    const adapter = this.ownerResolver.getVerifiedRoute(id)
-    if (!adapter?.respawnIfMatch) {
-      return { outcome: 'unsupported', mutationId, reason: 'daemon_owner_unavailable' }
-    }
-    return await adapter.respawnIfMatch(id, expectedIncarnationId, mutationId, replacement)
+    return respawnRoutedTerminalIfMatch(
+      this.core,
+      id,
+      expectedIncarnationId,
+      expectedRootProcessId,
+      mutationId,
+      replacement
+    )
+  }
+
+  async recoverEmptyLeafIfMatch(
+    request: TerminalEmptyLeafRecoveryRequest
+  ): Promise<TerminalEmptyLeafRecoveryResult> {
+    return recoverRoutedEmptyLeafIfMatch(this.core, request)
+  }
+
+  async completeEmptyLeafRecovery(
+    recoveryId: string,
+    ptyId: string,
+    incarnationId: string,
+    commit: boolean
+  ): Promise<boolean> {
+    return completeRoutedEmptyLeafRecovery(this.core, recoveryId, ptyId, incarnationId, commit)
   }
 
   requestIdleRetirement(): Promise<DaemonIdleRetirementResult> {
@@ -227,9 +242,7 @@ export class DaemonPtyRouter implements IPtyProvider {
   }
 
   setColorQueryReplyColors(colors: TerminalOscColorQueryReplyColors): void {
-    for (const adapter of this.allAdapters()) {
-      adapter.setColorQueryReplyColors(colors)
-    }
+    setRoutedColorQueryReplyColors(this.allAdapters(), colors)
   }
 
   acknowledgeDataEvent(id: string, charCount: number): void {
@@ -268,14 +281,11 @@ export class DaemonPtyRouter implements IPtyProvider {
   }
 
   async listProcesses(opts?: Parameters<IPtyProvider['listProcesses']>[0]) {
-    const processes = await this.ownerResolver.listProcesses(opts)
-    this.legacyExitProof.record(this.legacy)
-    return processes
+    return listRoutedProcesses(this.core, opts)
   }
 
   private retireExitedLegacy(adapter: DaemonPtyAdapter, error: unknown): ExitedLegacyVerdict {
-    const { current, legacy, legacyExitProof: exitProof, subscriptions } = this
-    return retireExitedLegacyAdapter({ adapter, error, current, legacy, exitProof, subscriptions })
+    return retireLegacyAdapter(this.core, this.subscriptions, adapter, error)
   }
 
   async getDefaultShell(): Promise<string> {
@@ -321,10 +331,7 @@ export class DaemonPtyRouter implements IPtyProvider {
   }
 
   dispose(): void {
-    this.subscriptions.dispose()
-    for (const adapter of this.allAdapters()) {
-      adapter.dispose()
-    }
+    disposeRoutedAdapters(this.subscriptions, this.allAdapters())
   }
 
   // Restart reuses legacy adapters; detach subscriptions without disposing those adapters.
@@ -355,14 +362,7 @@ export class DaemonPtyRouter implements IPtyProvider {
   }
 
   private adapterForInspection(sessionId: string): DaemonPtyAdapter {
-    const adapter =
-      this.sessionAdapters.get(sessionId) ??
-      this.allAdapters().find((candidate) => candidate.hasPty(sessionId))
-    if (!adapter) {
-      throw new Error('terminal_gone')
-    }
-    this.sessionAdapters.set(sessionId, adapter)
-    return adapter
+    return resolveAdapterForInspection(this.core, sessionId)
   }
 
   private allAdapters = (): DaemonPtyAdapter[] => [this.current, ...this.legacy]

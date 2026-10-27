@@ -8,6 +8,19 @@ import { TERMINAL_SEND_COMMAND_SPEC } from './terminal-send'
 import { TERMINAL_CLOSE_COMMAND_SPEC } from './terminal-close'
 import { TERMINAL_SET_PANE_TITLE_COMMAND_SPEC } from './terminal-set-pane-title'
 
+const TERMINAL_LEAF_IDENTITY_FLAGS = [
+  'expected-worktree-id',
+  'expected-tab-id',
+  'expected-leaf-id',
+  'expected-pty-id',
+  'expected-pty-generation'
+]
+const TERMINAL_REPLACEMENT_FLAGS = ['command', 'cwd', 'cols', 'rows']
+const WORKTREE_CREATE_FLAGS =
+  'repo project host project-host-setup name agent prompt model effort surface retry-launch base-branch reference reference-site issue pr linear-issue gitlab-issue gitlab-mr comment setup parent-worktree no-parent run-hooks activate'.split(
+    ' '
+  )
+
 export const CORE_COMMAND_SPECS: CommandSpec[] = [
   {
     path: ['open'],
@@ -69,34 +82,7 @@ export const CORE_COMMAND_SPECS: CommandSpec[] = [
     summary: 'Create a new Orca-managed worktree',
     usage:
       'orca worktree create --name <name> [--repo <selector>|--project <id-or-name> [--host <host>]|--project-host-setup <id>] [--agent <id>] [--prompt <text>] [--model <id>] [--effort <level>] [--surface chat|terminal] [--setup run|skip|inherit] [--base-branch <ref>] [--reference <url-or-jira-key>...] [--reference-site <id>] [--issue <number>] [--pr <number>] [--linear-issue <identifier-or-url>] [--gitlab-issue <number-or-url>] [--gitlab-mr <number-or-url>] [--comment <text>] [--parent-worktree <selector>] [--no-parent] [--run-hooks] [--activate] [--retry-launch <operationId>] [--json]',
-    allowedFlags: [
-      ...GLOBAL_FLAGS,
-      'repo',
-      'project',
-      'host',
-      'project-host-setup',
-      'name',
-      'agent',
-      'prompt',
-      'model',
-      'effort',
-      'surface',
-      'retry-launch',
-      'base-branch',
-      'reference',
-      'reference-site',
-      'issue',
-      'pr',
-      'linear-issue',
-      'gitlab-issue',
-      'gitlab-mr',
-      'comment',
-      'setup',
-      'parent-worktree',
-      'no-parent',
-      'run-hooks',
-      'activate'
-    ],
+    allowedFlags: [...GLOBAL_FLAGS, ...WORKTREE_CREATE_FLAGS],
     notes: [
       'Repeat --reference to attach full issue or review URLs, or Jira issue keys, before setup or agent startup. Use --reference-site to choose the Jira site for keys. Other providers require full URLs. Cannot combine with legacy link flags.',
       'This creates a new checkout. For a fresh agent in an existing worktree, use `orca agent launch` instead.',
@@ -261,21 +247,33 @@ export const CORE_COMMAND_SPECS: CommandSpec[] = [
     path: ['terminal', 'respawn-if-match'],
     summary: 'Replace one terminal only while its complete identity still matches',
     usage:
-      'orca terminal respawn-if-match --terminal <handle> --mutation-id <id> --expected-worktree-id <id> --expected-tab-id <id> --expected-leaf-id <id> --expected-pty-id <id> --expected-pty-generation <n> --expected-incarnation-id <id> [--cols <n>] [--rows <n>] [--cwd <path>] [--command <text>] [--json]',
+      'orca terminal respawn-if-match --terminal <handle> --mutation-id <id> --expected-worktree-id <id> --expected-tab-id <id> --expected-leaf-id <id> --expected-pty-id <id> --expected-pty-generation <n> --expected-incarnation-id <id> --expected-root-pid <pid> --cols <n> --rows <n> --cwd <path> --command <text> [--json]',
     allowedFlags: [
       ...GLOBAL_FLAGS,
       'terminal',
       'mutation-id',
-      'expected-worktree-id',
-      'expected-tab-id',
-      'expected-leaf-id',
-      'expected-pty-id',
-      'expected-pty-generation',
+      ...TERMINAL_LEAF_IDENTITY_FLAGS,
       'expected-incarnation-id',
-      'cols',
-      'rows',
-      'cwd',
-      'command'
+      'expected-root-pid',
+      ...TERMINAL_REPLACEMENT_FLAGS
+    ]
+  },
+  {
+    path: ['terminal', 'recover-empty-leaf-if-match'],
+    summary: 'Recover one confirmed post-stop empty terminal leaf while its identity still matches',
+    usage:
+      'orca terminal recover-empty-leaf-if-match --original-mutation-id <id> --recovery-id <id> --terminal <handle> --expected-worktree-id <id> --expected-tab-id <id> --expected-leaf-id <id> --expected-pty-id <id> --expected-pty-generation <n> --retired-incarnation-id <id> --layout-epoch <n> --persisted-binding-version <n> --tombstone-id <id> --command <text> --cwd <path> --cols <n> --rows <n> [--json]',
+    allowedFlags: [
+      ...GLOBAL_FLAGS,
+      'original-mutation-id',
+      'recovery-id',
+      'terminal',
+      ...TERMINAL_LEAF_IDENTITY_FLAGS,
+      'retired-incarnation-id',
+      'layout-epoch',
+      'persisted-binding-version',
+      'tombstone-id',
+      ...TERMINAL_REPLACEMENT_FLAGS
     ]
   },
   {

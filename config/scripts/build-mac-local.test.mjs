@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createLocalBuildVersion } from './build-mac-local.mjs'
+import { createLocalBuildVersion, localMacBuildEnvironment } from './build-mac-local.mjs'
 
 describe('createLocalBuildVersion', () => {
   it('creates unique valid prerelease versions without changing the release base', () => {
@@ -11,5 +11,19 @@ describe('createLocalBuildVersion', () => {
 
   it('sanitizes commit identifiers', () => {
     expect(createLocalBuildVersion('1.0.0', 1, 'abc/def')).toBe('1.0.0-local.1.abcdef')
+  })
+
+  it('pins one identity across compilation and packaging', () => {
+    const env = localMacBuildEnvironment(
+      { commit: 'abc123def456', version: '1.4.159-local.123456.abc123def456' },
+      'x64'
+    )
+    expect(env).toMatchObject({
+      ORCA_BUILD_COMMIT: 'abc123def456',
+      ORCA_BUILD_TARGET_ARCH: 'x64',
+      ORCA_BUILD_ID: 'local-1.4.159-local.123456.abc123def456-x64',
+      ORCA_LOCAL_BUILD_VERSION: '1.4.159-local.123456.abc123def456'
+    })
+    expect(env.ORCA_BUILD_SOURCE_COMMIT).toMatch(/^[0-9a-f]{40}$/)
   })
 })

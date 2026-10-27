@@ -414,7 +414,8 @@ module.exports = {
     context,
     mobileWebBundleDir = MOBILE_WEB_BUNDLE_DIR,
     ensureWaylandClipboard = ensureBundledWaylandClipboard,
-    orcadTemplateDir = join(__dirname, '..', orcadTemplateExtraResource.from)
+    orcadTemplateDir = join(__dirname, '..', orcadTemplateExtraResource.from),
+    assertRuntimeProvenance = assertCanonicalRuntimeBuildProvenance
   ) => {
     // The template is the server every SSH host gets, so a dark test template must never ship.
     assertNotDarkBuild([join(__dirname, '..', 'out', 'main'), mobileWebBundleDir, orcadTemplateDir])
@@ -426,6 +427,7 @@ module.exports = {
     if (context.electronPlatformName === 'linux') {
       ensureWaylandClipboard(context.arch)
     }
+    assertRuntimeProvenance(context)
   },
   afterPack: async (context) => {
     const resourcesDir =
@@ -440,6 +442,19 @@ module.exports = {
     if (!existsSync(resourcesDir)) {
       throw new Error(`Missing packaged resources directory: ${resourcesDir}`)
     }
+    const runtimeArchitecture = macSliceArch(context.arch, 'runtime provenance')
+    const runtimeProvenance = assertCanonicalRuntimeBuildProvenance(context)
+    writeMacBuildCompatibility(resourcesDir, {
+      version: context.packager.appInfo.version,
+      commit: runtimeProvenance.commit,
+      architecture: runtimeArchitecture,
+      buildId: runtimeProvenance.buildId,
+      sourceCommit: runtimeProvenance.sourceCommit,
+      artifactIdentity: runtimeProvenance.artifactIdentity,
+      attestation: runtimeProvenance.attestation,
+      packageName: runtimeProvenance.packageName,
+      platform: context.electronPlatformName
+    })
     // FpmTarget replaces this with deb/rpm while building those artifacts from the shared app tree.
     if (context.electronPlatformName === 'linux') {
       writeFileSync(join(resourcesDir, 'package-type'), 'AppImage')
@@ -452,18 +467,6 @@ module.exports = {
       const architecture = macSliceArch(context.arch, 'local-build compatibility')
       const schedulingAddon = buildMacShipItScheduling(resourcesDir, architecture)
       await signMacStandaloneHelper(schedulingAddon, 'ShipIt scheduling', context.packager)
-      const version = context.packager.appInfo.version
-      let commit = process.env.ORCA_BUILD_COMMIT || process.env.GITHUB_SHA || 'unknown'
-      if (commit === 'unknown') {
-        try {
-          commit = execFileSync('git', ['rev-parse', '--short=12', 'HEAD'], {
-            encoding: 'utf8'
-          }).trim()
-        } catch {
-          // Source archives can still produce a signed build with an explicit version.
-        }
-      }
-      writeMacBuildCompatibility(resourcesDir, { version, commit, architecture })
     }
     stampPackagedCliVersion(resourcesDir, context.packager.appInfo.version)
     prunePackagedRuntimeNodeModules(resourcesDir, context.electronPlatformName, context.arch)
@@ -888,6 +891,44 @@ function macSliceArch(archEnum, purpose) {
     throw new Error(`Unsupported ${purpose} architecture: ${archEnum}`)
   }
   return arch
+}
+
+function assertCanonicalRuntimeBuildProvenance(context) {
+  const provenancePath = resolve('out/main/runtime-build-provenance.json')
+  if (!existsSync(provenancePath)) {
+    throw new Error(`Missing canonical runtime build provenance: ${provenancePath}`)
+  }
+  const provenance = JSON.parse(readFileSync(provenancePath, 'utf8'))
+  const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+  const architecture = macSliceArch(context.arch, 'runtime provenance')
+  const expectedArtifactIdentity = `orca@${context.packager.appInfo.version}:${context.electronPlatformName}-${architecture}`
+  const requiresAttestation =
+    process.env.CI === 'true' || isMacRelease || isWinDevChannel || isLinuxArm64Release
+  const dirtySource = requiresAttestation
+    ? execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], {
+        encoding: 'utf8'
+      }).trim()
+    : ''
+  if (
+    dirtySource ||
+    (requiresAttestation && provenance.attestation !== 'attested') ||
+    (provenance.attestation !== 'attested' && provenance.attestation !== 'unattested') ||
+    !provenance.buildId ||
+    !/^[0-9a-f]{40}$/.test(provenance.sourceCommit) ||
+    provenance.sourceCommit !== sourceCommit ||
+    provenance.packageName !== 'orca' ||
+    provenance.packageVersion !== context.packager.appInfo.version ||
+    (process.env.ORCA_BUILD_ID && provenance.buildId !== process.env.ORCA_BUILD_ID)
+  ) {
+    throw new Error(
+      `Canonical runtime provenance does not match package target ${expectedArtifactIdentity}.`
+    )
+  }
+  return {
+    ...provenance,
+    artifactIdentity: expectedArtifactIdentity,
+    targetArchitecture: architecture
+  }
 }
 
 // Why after the node_modules prune: the helper copies this slice's node-pty.

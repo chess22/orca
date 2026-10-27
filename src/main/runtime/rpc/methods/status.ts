@@ -1,6 +1,7 @@
 import { defineMethod } from '../core'
 import { getRemoteServerUpdaterSnapshot } from '../../remote-server-updater'
 import { getPublishedHostDescriptor } from '../../host-descriptor'
+import { getRuntimeBuildProvenance } from '../../runtime-build-provenance'
 
 export const STATUS_METHODS = [
   defineMethod({
@@ -13,10 +14,12 @@ export const STATUS_METHODS = [
       await runtime.machineNameReady()
       const snapshot = getRemoteServerUpdaterSnapshot(runtime.getRuntimeId())
       const hostDescriptor = getPublishedHostDescriptor(runtime.getRuntimeId())
+      const build = getRuntimeBuildProvenance(snapshot.appVersion)
       return {
         ...runtime.getStatus(),
         ...(hostDescriptor ? { hostDescriptor } : {}),
         ...(pairedDeviceId ? { pairedDeviceId } : {}),
+        ...(build ? { build } : {}),
         appVersion: snapshot.appVersion,
         remoteUpdateSupport: snapshot.support
       }

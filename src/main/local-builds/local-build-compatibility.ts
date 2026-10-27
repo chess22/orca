@@ -50,14 +50,25 @@ async function getLiveDaemonProtocols(): Promise<{
 }
 
 export async function assertLocalBuildCompatibility(
-  target: LocalBuildCompatibility
+  target: LocalBuildCompatibility,
+  options: { requireAttestedProvenance?: boolean } = {}
 ): Promise<LocalBuildCompatibilityResult> {
-  const stateCompatibilityError = getLocalBuildCompatibilityError(target, SCHEMA_VERSION, [])
+  const stateCompatibilityError = getLocalBuildCompatibilityError(
+    target,
+    SCHEMA_VERSION,
+    [],
+    options
+  )
   if (stateCompatibilityError) {
     throw new Error(stateCompatibilityError)
   }
   const live = await getLiveDaemonProtocols()
-  const compatibilityError = getLocalBuildCompatibilityError(target, SCHEMA_VERSION, live.protocols)
+  const compatibilityError = getLocalBuildCompatibilityError(
+    target,
+    SCHEMA_VERSION,
+    live.protocols,
+    options
+  )
   if (compatibilityError) {
     throw new Error(compatibilityError)
   }

@@ -15,3 +15,15 @@ export function getRequiredNonNegativeIntegerFlag(
   }
   return value
 }
+
+export function getRequiredPositiveIntegerFlag(
+  flags: Map<string, string | boolean>,
+  name: string
+): number {
+  const raw = getRequiredStringFlag(flags, name)
+  const value = Number(raw)
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new RuntimeClientError('invalid_argument', `--${name} must be a positive integer`)
+  }
+  return value
+}

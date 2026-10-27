@@ -1,4 +1,3 @@
-import { performance } from 'node:perf_hooks'
 import type { BackgroundTransientFactRelay } from './daemon-background-transient-facts'
 import type { DaemonClientConnections } from './daemon-client-connections'
 import type { DaemonEndpointLifecycle } from './daemon-endpoint-lifecycle'
@@ -9,7 +8,6 @@ import type {
   PendingPtySpawnPreparation
 } from './daemon-pty-spawn-preparations'
 import type { DaemonSessionAttachments } from './daemon-session-attachments'
-import { recordDaemonStreamBacklogEvent } from './daemon-stream-backlog-probe'
 import type { DaemonStreamDataBatcher } from './daemon-stream-data-batcher'
 import type { TerminalHistorySeedTransferRegistry } from './terminal-history-seed-transfer-registry'
 import type { CreateOrAttachOptions, CreateOrAttachResult, TerminalHost } from './terminal-host'
@@ -22,6 +20,7 @@ import {
 } from '../../shared/agent-session-host-authority'
 import {
   type DaemonRequest,
+  type RecoverEmptyLeafIfMatchRequest,
   type RespawnIfMatchRequest,
   TerminalAttachCanceledError
 } from './types'
@@ -29,6 +28,13 @@ import {
   admitConditionalTerminalRespawn,
   resolveSpawnAdmissionDeadline
 } from './daemon-terminal-conditional-respawn-admission'
+import {
+  admitEmptyLeafRecovery,
+  completeEmptyLeafRecoveryAdmission,
+  type CompletedEmptyLeafRecovery,
+  type PreparedEmptyLeafRecovery
+} from './daemon-terminal-empty-leaf-recovery-admission'
+import { createDaemonTerminalStreamClient } from './daemon-terminal-stream-client'
 
 type CreateOrAttachRequest = Extract<DaemonRequest, { type: 'createOrAttach' }>
 
@@ -48,9 +54,9 @@ export type DaemonTerminalAdmissionOptions = {
 }
 
 export class DaemonTerminalAdmission {
-  private static readonly INTERACTIVE_OUTPUT_WINDOW_MS = 100
-  private static readonly INTERACTIVE_OUTPUT_MAX_CHARS = 1024
   private createOrAttachInFlight = 0
+  private readonly preparedEmptyLeafRecoveries = new Map<string, PreparedEmptyLeafRecovery>()
+  private readonly completedEmptyLeafRecoveries = new Map<string, CompletedEmptyLeafRecovery>()
   private readonly conditionalRespawnExitFences = new Map<
     string,
     Map<string, { deferred: (() => void)[] }>
@@ -202,63 +208,47 @@ export class DaemonTerminalAdmission {
     )
   }
 
+  async recoverEmptyLeafIfMatch(
+    clientId: string,
+    request: RecoverEmptyLeafIfMatchRequest
+  ): Promise<unknown> {
+    return await admitEmptyLeafRecovery(this.emptyLeafRecoveryAdmissionOwner(), clientId, request)
+  }
+
+  completeEmptyLeafRecovery(
+    clientId: string,
+    payload: { recoveryId: string; ptyId: string; incarnationId: string },
+    commit: boolean
+  ): { completed: boolean } {
+    return completeEmptyLeafRecoveryAdmission(
+      this.emptyLeafRecoveryAdmissionOwner(),
+      clientId,
+      payload,
+      commit
+    )
+  }
+
+  private emptyLeafRecoveryAdmissionOwner() {
+    return {
+      options: this.options,
+      preparedRecoveries: this.preparedEmptyLeafRecoveries,
+      completedRecoveries: this.completedEmptyLeafRecoveries,
+      incrementInFlight: () => this.createOrAttachInFlight++,
+      decrementInFlight: () => this.createOrAttachInFlight--,
+      createStreamClient: this.createStreamClient.bind(this)
+    }
+  }
+
   private createStreamClient(
     clientId: string,
     sessionId: () => string
   ): CreateOrAttachOptions['streamClient'] {
-    return {
-      onData: (data, rawLength = data.length, transformed = false, seq) => {
-        const routedSessionId = sessionId()
-        this.options.transientFactRelay.onSessionData(routedSessionId, data)
-        const lastInputAt = this.options.attachments.lastInputAt(routedSessionId)
-        const isInteractiveOutput =
-          data.length <= DaemonTerminalAdmission.INTERACTIVE_OUTPUT_MAX_CHARS &&
-          lastInputAt !== undefined &&
-          performance.now() - lastInputAt <= DaemonTerminalAdmission.INTERACTIVE_OUTPUT_WINDOW_MS
-        this.options.streamDataBatcher.enqueue(clientId, routedSessionId, data, {
-          flushImmediately: isInteractiveOutput,
-          flushMaxChars: DaemonTerminalAdmission.INTERACTIVE_OUTPUT_MAX_CHARS,
-          rawLength,
-          transformed,
-          seq
-        })
-      },
-      onExit: (code, incarnationId, cause) => {
-        const routedSessionId = sessionId()
-        const deliver = (): void => {
-          this.options.log.log('session-exited', {
-            sessionId: routedSessionId,
-            code,
-            cause: cause?.kind
-          })
-          this.options.streamDataBatcher.enqueueControlEvent(clientId, routedSessionId, {
-            type: 'event',
-            event: 'exit',
-            sessionId: routedSessionId,
-            payload: { code, incarnationId, ...(cause ? { cause } : {}) }
-          })
-          this.options.streamDataBatcher.flush(clientId)
-          recordDaemonStreamBacklogEvent('sessionExit', {
-            sessionIdSuffix: routedSessionId.slice(-10)
-          })
-          this.options.transientFactRelay.onSessionExit(routedSessionId)
-          this.options.streamDataBatcher.refreshSessionDroppability(routedSessionId)
-          this.options.attachments.release(routedSessionId)
-          this.options.reevaluateIdleShutdown()
-        }
-        if (
-          incarnationId !== undefined &&
-          this.conditionalRespawnExitFences.get(routedSessionId)?.has(incarnationId)
-        ) {
-          this.conditionalRespawnExitFences
-            .get(routedSessionId)
-            ?.get(incarnationId)
-            ?.deferred.push(deliver)
-          return
-        }
-        deliver()
-      }
-    }
+    return createDaemonTerminalStreamClient(
+      this.options,
+      this.conditionalRespawnExitFences,
+      clientId,
+      sessionId
+    )
   }
 
   private beginConditionalRespawnExitFence(

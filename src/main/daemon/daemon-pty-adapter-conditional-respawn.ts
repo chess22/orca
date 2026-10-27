@@ -49,13 +49,19 @@ export async function respawnDaemonPtyIfMatch(
   conditionalRespawnProtocolVersion: number,
   id: string,
   expectedIncarnationId: string,
+  expectedRootProcessId: number,
   mutationId: string,
   replacement: TerminalRespawnReplacement
 ): Promise<TerminalConditionalRespawnResult> {
   if (owner.protocolVersion < conditionalRespawnProtocolVersion) {
     return { outcome: 'unsupported', mutationId, reason: 'daemon_protocol' }
   }
-  const fingerprint = JSON.stringify([id, expectedIncarnationId, replacement])
+  const fingerprint = JSON.stringify([
+    id,
+    expectedIncarnationId,
+    expectedRootProcessId,
+    replacement
+  ])
   const retained = owner.uncertainConditionalRespawns.get(mutationId)
   if (retained && retained.fingerprint !== fingerprint) {
     return { outcome: 'precondition_failed', mutationId, reason: 'mutation_id_reused' }
@@ -82,6 +88,7 @@ export async function respawnDaemonPtyIfMatch(
           response = await owner.client.request<unknown>('respawnIfMatch', {
             sessionId: id,
             expectedIncarnationId,
+            expectedRootProcessId,
             mutationId,
             ...replacement
           })

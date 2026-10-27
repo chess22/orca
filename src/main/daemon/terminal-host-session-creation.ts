@@ -26,7 +26,9 @@ type SessionCreationHost = {
   reapSession(sessionId: string): void
 }
 
-const REMOTE_FOREGROUND_TOMBSTONE_RETENTION_MS = 2_000
+// A confirmed post-stop gap is recovered by a separate RPC round trip. Keep the
+// exact retired-incarnation fence long enough for inspection and an idempotent retry.
+const REMOTE_FOREGROUND_TOMBSTONE_RETENTION_MS = 5 * 60_000
 
 export async function reserveTerminalHostSession<T>(
   owner: SessionCreationHost,

@@ -175,10 +175,18 @@ export abstract class UpdaterStatus extends BaseUpdaterState {
     }
     this.currentStatus = decoratedStatus
     this.mainWindowRef?.webContents.send('updater:status', decoratedStatus)
+    const headlessAction = this.headlessLocalBuildInstall.observeUpdaterStatus(
+      decoratedStatus,
+      this.activeLocalBuildFeed?.url ?? null
+    )
+    if (headlessAction) {
+      this.scheduleHeadlessLocalBuildInstallAction(headlessAction)
+    }
   }
 
   protected abstract finishActiveUpdateCheckAttempt(): void
   protected abstract isUpdateCheckResultState(state: UpdateStatus['state']): boolean
   protected abstract launchPendingUserInitiatedCheckAfterInFlight(variant: UpdateCheckVariant): void
+  protected abstract scheduleHeadlessLocalBuildInstallAction(action: 'download' | 'install'): void
   protected abstract checkForUpdatesFromMenu(options?: UpdateCheckOptions): void
 }

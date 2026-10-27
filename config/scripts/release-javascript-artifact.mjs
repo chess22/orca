@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import {
+  appendFileSync,
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -21,6 +23,7 @@ import { getTarProgram } from './zip-extractor-command.mjs'
 const REQUIRED_FILES = [
   'cli/index.js',
   'main/index.js',
+  'main/runtime-build-provenance.json',
   'preload/index.js',
   'renderer/index.html',
   'renderer/.vite/manifest.json',
@@ -62,7 +65,9 @@ export function releaseJavascriptConfiguration(root, env = process.env) {
       'Release checkout differs from bundle source'
     )
   }
-  const { version, packageManager } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+  const packageJson = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+  const version = env.ORCA_ADHOC_BUILD_VERSION || packageJson.version
+  const packageManager = packageJson.packageManager
   const requestedIdentity = env.ORCA_RELEASE_JAVASCRIPT_BUILD_IDENTITY
   const identity = requestedIdentity === 'dev' ? 'dev' : releaseBuildIdentity(`v${version}`)
   if (requestedIdentity) {
@@ -76,8 +81,23 @@ export function releaseJavascriptConfiguration(root, env = process.env) {
     assert(env.ORCA_POSTHOG_WRITE_KEY, 'Missing release telemetry key')
   }
   assert(env.ORCA_DIAGNOSTICS_TOKEN_URL, 'Missing release diagnostics URL')
+  const provenancePath = join(root, 'out', 'main', 'runtime-build-provenance.json')
+  const provenance = existsSync(provenancePath)
+    ? JSON.parse(readFileSync(provenancePath, 'utf8'))
+    : undefined
+  if (provenance) {
+    assert.equal(provenance.sourceCommit, sourceSha, 'Bundle provenance source differs')
+    assert.equal(provenance.packageName, 'orca', 'Bundle provenance package differs')
+    assert.equal(provenance.packageVersion, version, 'Bundle provenance version differs')
+    if (env.ORCA_BUILD_ID) {
+      assert.equal(provenance.buildId, env.ORCA_BUILD_ID, 'Bundle provenance build ID differs')
+    }
+  }
+  const buildId = env.ORCA_BUILD_ID || provenance?.buildId
+  assert(buildId, 'Missing release JavaScript build ID')
   return {
     sourceSha,
+    buildId,
     version,
     packageManager,
     identity,
@@ -115,11 +135,26 @@ function verifyRequiredFiles(files) {
   }
 }
 
+function verifyRuntimeProvenance(directory, configuration) {
+  const provenance = JSON.parse(
+    readFileSync(join(directory, 'main', 'runtime-build-provenance.json'), 'utf8')
+  )
+  assert.equal(provenance.sourceCommit, configuration.sourceSha, 'Bundle provenance source differs')
+  assert.equal(provenance.packageName, 'orca', 'Bundle provenance package differs')
+  assert.equal(
+    provenance.packageVersion,
+    configuration.version,
+    'Bundle provenance version differs'
+  )
+  assert.equal(provenance.buildId, configuration.buildId, 'Bundle provenance build ID differs')
+}
+
 export function packReleaseJavascript({ root = process.cwd(), artifactDir, configuration }) {
   configuration ??= releaseJavascriptConfiguration(root)
   const out = join(root, 'out')
   const files = javascriptInventory(out)
   verifyRequiredFiles(files)
+  verifyRuntimeProvenance(out, configuration)
   mkdirSync(artifactDir, { recursive: true })
   const archive = join(artifactDir, ARCHIVE_NAME)
   command(getTarProgram(), ['-czf', archive, '-C', root, 'out'], root)
@@ -135,9 +170,12 @@ export function packReleaseJavascript({ root = process.cwd(), artifactDir, confi
 }
 
 export function restoreReleaseJavascript({ root = process.cwd(), artifactDir, configuration }) {
-  configuration ??= releaseJavascriptConfiguration(root)
   const manifest = JSON.parse(readFileSync(join(artifactDir, 'manifest.json'), 'utf8'))
   assert.equal(manifest.schema, 1, 'Unsupported JavaScript artifact schema')
+  configuration ??= releaseJavascriptConfiguration(root, {
+    ...process.env,
+    ORCA_BUILD_ID: process.env.ORCA_BUILD_ID || manifest.configuration.buildId
+  })
   assert.deepEqual(manifest.configuration, configuration, 'JavaScript build configuration differs')
   const archive = join(artifactDir, ARCHIVE_NAME)
   assert.equal(sha256(readFileSync(archive)), manifest.archiveSha256, 'JavaScript archive differs')
@@ -157,6 +195,7 @@ export function restoreReleaseJavascript({ root = process.cwd(), artifactDir, co
     const files = javascriptInventory(staged)
     verifyRequiredFiles(files)
     assert.deepEqual(files, manifest.files, 'JavaScript file inventory differs')
+    verifyRuntimeProvenance(staged, manifest.configuration)
     rmSync(join(root, 'out'), { recursive: true, force: true })
     renameSync(staged, join(root, 'out'))
     if (process.platform !== 'win32') {
@@ -180,6 +219,12 @@ if (isDirectInvocation(import.meta.url, process.argv[1])) {
         : mode === 'restore'
           ? restoreReleaseJavascript({ artifactDir })
           : assert.fail('Expected pack, restore, or identity')
+    if (mode === 'restore' && process.env.GITHUB_ENV) {
+      appendFileSync(
+        process.env.GITHUB_ENV,
+        `ORCA_BUILD_ID=${result.configuration.buildId}\nORCA_BUILD_SOURCE_COMMIT=${result.configuration.sourceSha}\n`
+      )
+    }
     console.log(
       `[release-javascript] ${mode}: ${result.files.length} files, ${result.archiveBytes} archived bytes`
     )

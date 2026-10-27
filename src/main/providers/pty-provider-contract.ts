@@ -24,6 +24,10 @@ import type {
   TerminalConditionalRespawnResult,
   TerminalRespawnReplacement
 } from '../../shared/terminal-conditional-respawn'
+import type {
+  TerminalEmptyLeafRecoveryRequest,
+  TerminalEmptyLeafRecoveryResult
+} from '../../shared/terminal-empty-leaf-recovery'
 
 export type {
   PtyBackgroundStreamEvent,
@@ -148,9 +152,19 @@ export type IPtyProvider = {
   respawnIfMatch?: (
     id: string,
     expectedIncarnationId: PtyIncarnationId,
+    expectedRootProcessId: number,
     mutationId: string,
     replacement: TerminalRespawnReplacement
   ) => Promise<TerminalConditionalRespawnResult>
+  recoverEmptyLeafIfMatch?: (
+    request: TerminalEmptyLeafRecoveryRequest
+  ) => Promise<TerminalEmptyLeafRecoveryResult>
+  completeEmptyLeafRecovery?: (
+    recoveryId: string,
+    ptyId: string,
+    incarnationId: string,
+    commit: boolean
+  ) => Promise<boolean>
   /** Process-owner cleanup for history stored outside the workspace tree. */
   deleteWorktreeHistory?: (worktreeId: string) => Promise<void>
   /** Whether this spawn target can append the Git guard after its final env merge. */

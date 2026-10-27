@@ -4,16 +4,33 @@ const compatibilityContract = require('../../src/shared/local-build-compatibilit
 
 const MAC_BUILD_COMPATIBILITY_FILENAME = 'orca-local-build.json'
 
-function createMacBuildCompatibility({ version, commit, architecture }) {
+function createMacBuildCompatibility({
+  version,
+  commit,
+  architecture,
+  buildId,
+  sourceCommit,
+  artifactIdentity,
+  attestation,
+  packageName = 'orca',
+  platform = 'darwin'
+}) {
   if (architecture !== 'arm64' && architecture !== 'x64') {
     throw new Error(`Unsupported macOS build architecture: ${architecture}`)
   }
+  if (platform !== 'darwin' && platform !== 'linux' && platform !== 'win32') {
+    throw new Error(`Unsupported build platform: ${platform}`)
+  }
   return {
     ...compatibilityContract,
-    buildId: `${version}-${commit}-${architecture}`,
+    buildId: buildId || `${version}-${commit}-${architecture}`,
     version,
     commit,
-    platform: 'darwin',
+    ...(sourceCommit ? { sourceCommit } : {}),
+    ...(artifactIdentity ? { artifactIdentity } : {}),
+    ...(attestation ? { attestation } : {}),
+    packageName,
+    platform,
     architecture
   }
 }

@@ -259,6 +259,7 @@ jobs:
     with:
       ref: ${{ needs.resolve-ref.outputs.sha }}
       dev_build: true
+      package_version: ${{ needs.orcad-template-support.outputs.version }}
       runner: blacksmith-8vcpu-ubuntu-2404
 
   prepare-adhoc-mac-release:
@@ -360,6 +361,11 @@ jobs:
     env:
       JOBS: max
       NODE_OPTIONS: --max-old-space-size=4096
+      ORCA_ADHOC_BUILD_VERSION: ${{ needs.orcad-template-support.outputs.version }}
+      ORCA_BUILD_COMMIT: ${{ needs.orcad-template-support.outputs.commit }}
+      ORCA_BUILD_SOURCE_COMMIT: ${{ needs.resolve-ref.outputs.sha }}
+      ORCA_BUILD_TARGET_ARCH: ${{ matrix.arch }}
+      ORCA_BUILD_ID: ${{ needs.release-javascript.outputs.supported == 'true' && needs.release-javascript.outputs.build_id || format('gh-{0}-{1}-{2}-{3}', github.run_id, github.run_attempt, github.job, matrix.arch) }}
     steps:
       # Why vet before checkout: everything after this step runs the checked-out
       # code with release signing credentials in reach. Branches and tags of this
@@ -788,6 +794,7 @@ jobs:
       stage_only: true
       fast_release: true
       javascript_source_sha: ${{ needs.release-javascript.outputs.supported == 'true' && needs.release-javascript.outputs.source_sha || '' }}
+      javascript_build_id: ${{ needs.release-javascript.outputs.supported == 'true' && needs.release-javascript.outputs.build_id || '' }}
 
   # Prefetch the installer during notarization; the publisher still waits for Mac success.
   publish-adhoc-win:

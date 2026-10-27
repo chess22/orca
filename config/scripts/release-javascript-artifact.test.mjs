@@ -14,6 +14,7 @@ import {
 const directories = []
 const configuration = {
   sourceSha: 'a'.repeat(40),
+  buildId: 'release-javascript-fixture',
   version: '1.2.3-rc.4',
   packageManager: 'pnpm@12.14.0',
   identity: 'rc',
@@ -33,6 +34,7 @@ function fixture() {
   for (const file of [
     'cli/index.js',
     'main/index.js',
+    'main/runtime-build-provenance.json',
     'preload/index.js',
     'renderer/index.html',
     'renderer/.vite/manifest.json',
@@ -45,7 +47,20 @@ function fixture() {
   ]) {
     const destination = join(root, 'out', file)
     mkdirSync(dirname(destination), { recursive: true })
-    writeFileSync(destination, file === 'cli/index.js' ? '#!/usr/bin/env node\n' : file)
+    writeFileSync(
+      destination,
+      file === 'cli/index.js'
+        ? '#!/usr/bin/env node\n'
+        : file === 'main/runtime-build-provenance.json'
+          ? `${JSON.stringify({
+              sourceCommit: configuration.sourceSha,
+              buildId: configuration.buildId,
+              packageName: 'orca',
+              packageVersion: configuration.version,
+              attestation: 'attested'
+            })}\n`
+          : file
+    )
   }
   const artifactDir = join(root, '.build', 'artifact')
   return { root, artifactDir, configuration }
@@ -82,6 +97,7 @@ function configurationFixture(version = '1.2.3') {
     expect(result.code, result.stderr).toBe(0)
   }
   const env = {
+    ORCA_BUILD_ID: 'release-javascript-test',
     ORCA_BUILD_IDENTITY: 'stable',
     ORCA_DIAGNOSTICS_TOKEN_URL: 'https://example.test/diagnostics',
     ORCA_POSTHOG_WRITE_KEY: 'release-key'
@@ -99,6 +115,7 @@ describe('release JavaScript configuration', () => {
     expect(result.identity).toBe(identity)
     expect(result.telemetryKeySha256).toMatch(/^[a-f0-9]{64}$/)
     expect(result.sourceSha).toMatch(/^[a-f0-9]{40}$/)
+    expect(result.buildId).toBe(env.ORCA_BUILD_ID)
   })
 
   it('requires explicit development mode and unset official constants', () => {
@@ -166,6 +183,19 @@ describe('release JavaScript configuration', () => {
       releaseJavascriptConfiguration(root, { ...devEnv, ORCA_DIAGNOSTICS_TOKEN_URL: '' })
     ).toThrow('Missing release diagnostics URL')
   })
+
+  it('uses the adhoc package version as the canonical shared bundle version', () => {
+    const { root, env } = configurationFixture('1.2.3')
+    expect(
+      releaseJavascriptConfiguration(root, {
+        ...env,
+        ORCA_ADHOC_BUILD_VERSION: '1.2.3-adhoc.20261027190000',
+        ORCA_RELEASE_JAVASCRIPT_BUILD_IDENTITY: 'dev',
+        ORCA_BUILD_IDENTITY: '',
+        ORCA_POSTHOG_WRITE_KEY: ''
+      }).version
+    ).toBe('1.2.3-adhoc.20261027190000')
+  })
 })
 
 describe('release JavaScript transfer', () => {
@@ -192,6 +222,7 @@ describe('release JavaScript transfer', () => {
 
   it.each([
     'sourceSha',
+    'buildId',
     'version',
     'packageManager',
     'identity',
@@ -219,6 +250,16 @@ describe('release JavaScript transfer', () => {
     expect(readFileSync(join(options.root, 'out', 'main', 'index.js'), 'utf8')).toBe(
       'main/index.js'
     )
+  })
+
+  it('rejects a manifest build ID that differs from the bundled provenance', () => {
+    const options = fixture()
+    expect(() =>
+      packReleaseJavascript({
+        ...options,
+        configuration: { ...configuration, buildId: 'different' }
+      })
+    ).toThrow('Bundle provenance build ID differs')
   })
 
   it('rejects a file inventory that no longer describes the archive', () => {

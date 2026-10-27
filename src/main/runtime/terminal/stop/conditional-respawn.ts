@@ -3,10 +3,21 @@ import type {
   TerminalConditionalRespawnResult
 } from '../../../../shared/terminal-conditional-respawn'
 import { toSshExecutionHostId } from '../../../../shared/execution-host'
-import { OrcaRuntimeWithConditionalRespawnSupport } from './conditional-respawn-support'
+import { OrcaRuntimeWithEmptyLeafRecovery } from '../recovery/empty-leaf-recovery-runtime'
+import { ConditionalRespawnMutationRecords } from './conditional-respawn-mutation-record'
 
-export abstract class OrcaRuntimeWithConditionalRespawn extends OrcaRuntimeWithConditionalRespawnSupport {
+export abstract class OrcaRuntimeWithConditionalRespawn extends OrcaRuntimeWithEmptyLeafRecovery {
+  private readonly conditionalRespawnMutations = new ConditionalRespawnMutationRecords()
+
   async respawnTerminalIfMatch(
+    request: TerminalConditionalRespawnRequest
+  ): Promise<TerminalConditionalRespawnResult> {
+    return this.conditionalRespawnMutations.run(request, () =>
+      this.respawnTerminalIfMatchOnce(request)
+    )
+  }
+
+  private async respawnTerminalIfMatchOnce(
     request: TerminalConditionalRespawnRequest
   ): Promise<TerminalConditionalRespawnResult> {
     const initial = this.resolveConditionalRespawnCurrent(request)
@@ -86,6 +97,7 @@ export abstract class OrcaRuntimeWithConditionalRespawn extends OrcaRuntimeWithC
         result = await this.ptyController.respawnIfMatch(
           request.expected.ptyId,
           request.expected.incarnationId,
+          request.expected.rootProcessId,
           request.mutationId,
           { ...request.replacement, cols, rows }
         )

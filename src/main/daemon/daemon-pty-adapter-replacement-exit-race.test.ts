@@ -4,6 +4,7 @@ import { adoptStablePane } from '../ipc/pty/pane/adopt-stable'
 import { setLocalPtyProvider } from '../ipc/pty/provider/registry'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { rmSync } from 'node:fs'
+import { installFakeAppEnvironment } from '../../../config/scripts/vitest-host-ports-setup'
 import type { DaemonPtyAdapter } from './daemon-pty-adapter'
 import {
   createMockSubprocess,
@@ -18,6 +19,7 @@ describe('DaemonPtyAdapter replacement exit races', () => {
   let lastSubprocess: ReturnType<typeof createMockSubprocess>
 
   beforeEach(async () => {
+    installFakeAppEnvironment()
     const harness = await startDaemonAdapterHarness(() => {
       lastSubprocess = createMockSubprocess()
       return lastSubprocess

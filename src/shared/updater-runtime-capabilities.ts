@@ -1,0 +1,6 @@
+export const UPDATER_LOCAL_BUILD_INSTALL_RUNTIME_CAPABILITY =
+  'updater.local-build-install.v1' as const
+
+export const UPDATER_RUNTIME_CAPABILITIES = [
+  UPDATER_LOCAL_BUILD_INSTALL_RUNTIME_CAPABILITY
+] as const

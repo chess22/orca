@@ -18,11 +18,8 @@ const MAX_UPDATE_FILES = 8
 const MAX_ZIP_BYTES = 8 * 1024 * 1024 * 1024
 const SAFE_ARTIFACT_NAME = /^[A-Za-z0-9][A-Za-z0-9._ ()+-]*\.zip$/
 
-type ManifestFile = {
-  url: string
-  sha512: string
-  size?: number
-}
+type ManifestFile = { url: string; sha512: string; size?: number }
+type HashRequest = ['sha256' | 'sha512', 'hex' | 'base64']
 
 export type LocalBuildCandidate = {
   version: string
@@ -34,13 +31,35 @@ export type LocalBuildCandidate = {
 
 type LocalBuildCandidateLoaderOptions = {
   readCompatibility?: (zipFile: FileHandle) => Promise<LocalBuildCompatibility>
+  expectedManifestSha256?: string
+  expectedArtifactSha256?: string
+  requireAttestedProvenance?: boolean
 }
 
-function parseManifestFile(value: unknown): ManifestFile {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('The local update manifest contains an invalid file entry.')
+function assertAttestedCandidateProvenance(
+  compatibility: LocalBuildCompatibility,
+  manifestVersion: string
+) {
+  const expectedArtifactIdentity = `orca@${manifestVersion}:darwin-${compatibility.architecture}`
+  if (
+    compatibility.attestation !== 'attested' ||
+    compatibility.packageName !== 'orca' ||
+    compatibility.artifactIdentity !== expectedArtifactIdentity ||
+    typeof compatibility.sourceCommit !== 'string' ||
+    !/^[a-f0-9]{40}$/.test(compatibility.sourceCommit) ||
+    !/^[a-f0-9]{7,40}$/.test(compatibility.commit) ||
+    !compatibility.sourceCommit.startsWith(compatibility.commit) ||
+    !compatibility.buildId
+  ) {
+    throw new Error('The selected ZIP has invalid attested build provenance.')
   }
-  const record = value as Record<string, unknown>
+}
+
+function parseManifestFile(value: unknown) {
+  const record =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {}
   if (
     typeof record.url !== 'string' ||
     !SAFE_ARTIFACT_NAME.test(record.url) ||
@@ -58,22 +77,19 @@ function parseManifestFile(value: unknown): ManifestFile {
   }
 }
 
-function isZipManifestFile(value: unknown): boolean {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return false
-  }
-  const url = (value as Record<string, unknown>).url
-  return typeof url === 'string' && url.toLowerCase().endsWith('.zip')
+function isZipManifestFile(value: unknown) {
+  const url =
+    value && typeof value === 'object' ? (value as Record<string, unknown>).url : undefined
+  return !Array.isArray(value) && typeof url === 'string' && url.toLowerCase().endsWith('.zip')
 }
 
-function parseManifest(value: unknown): { version: string; files: ManifestFile[] } {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('The selected file is not a valid macOS update manifest.')
-  }
-  const record = value as Record<string, unknown>
+function parseManifest(value: unknown) {
+  const record =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {}
   if (
     typeof record.version !== 'string' ||
-    record.version.length === 0 ||
     record.version.length > 100 ||
     !isValidAppVersion(record.version) ||
     !Array.isArray(record.files) ||
@@ -89,18 +105,18 @@ function parseManifest(value: unknown): { version: string; files: ManifestFile[]
   return { version: record.version, files: zipFiles.map(parseManifestFile) }
 }
 
-async function hashFile(file: FileHandle): Promise<string> {
-  const hash = createHash('sha512')
+async function hashFile(file: FileHandle, [algorithm, encoding]: HashRequest) {
+  const hash = createHash(algorithm)
   await new Promise<void>((resolve, reject) => {
     const stream = file.createReadStream({ autoClose: false, start: 0 })
     stream.on('data', (chunk) => hash.update(chunk))
     stream.on('error', reject)
     stream.on('end', resolve)
   })
-  return hash.digest('base64')
+  return hash.digest(encoding)
 }
 
-async function assertContainedRegularFile(rootPath: string, filePath: string): Promise<void> {
+async function assertContainedRegularFile(rootPath: string, filePath: string) {
   const fileInfo = await lstat(filePath)
   if (!fileInfo.isFile() || fileInfo.isSymbolicLink()) {
     throw new Error('Local update artifacts must be regular files, not links.')
@@ -111,8 +127,8 @@ async function assertContainedRegularFile(rootPath: string, filePath: string): P
   }
 }
 
-function extractCompatibility(zipFile: FileHandle): Promise<string> {
-  return new Promise((resolve, reject) => {
+function extractCompatibility(zipFile: FileHandle) {
+  return new Promise<string>((resolve, reject) => {
     const child = spawn(
       '/usr/bin/unzip',
       ['-p', '/dev/fd/3', `Orca.app/Contents/Resources/${LOCAL_BUILD_COMPATIBILITY_FILENAME}`],
@@ -149,7 +165,7 @@ function extractCompatibility(zipFile: FileHandle): Promise<string> {
   })
 }
 
-async function readCompatibility(zipFile: FileHandle): Promise<LocalBuildCompatibility> {
+async function readCompatibility(zipFile: FileHandle) {
   let stdout: string
   try {
     stdout = await extractCompatibility(zipFile)
@@ -173,14 +189,12 @@ async function validateArtifact(
   rootPath: string,
   manifestFile: ManifestFile,
   manifestVersion: string,
-  compatibilityReader: (zipFile: FileHandle) => Promise<LocalBuildCompatibility>
-): Promise<{ compatibility: LocalBuildCompatibility; file: FileHandle; size: number }> {
+  compatibilityReader: (zipFile: FileHandle) => Promise<LocalBuildCompatibility>,
+  requireAttestedProvenance: boolean
+) {
   const filePath = join(rootPath, manifestFile.url)
   await assertContainedRegularFile(rootPath, filePath)
-  const file = await open(
-    filePath,
-    constants.O_RDONLY | (typeof constants.O_NOFOLLOW === 'number' ? constants.O_NOFOLLOW : 0)
-  )
+  const file = await openReadonly(filePath)
   try {
     const fileStats = await file.stat()
     if (!fileStats.isFile() || fileStats.size <= 0 || fileStats.size > MAX_ZIP_BYTES) {
@@ -189,53 +203,72 @@ async function validateArtifact(
     if (manifestFile.size !== undefined && fileStats.size !== manifestFile.size) {
       throw new Error(`Size verification failed for ${manifestFile.url}.`)
     }
-    if ((await hashFile(file)) !== manifestFile.sha512) {
+    if ((await hashFile(file, ['sha512', 'base64'])) !== manifestFile.sha512) {
       throw new Error(`SHA-512 verification failed for ${manifestFile.url}.`)
     }
+    const sha256 = await hashFile(file, ['sha256', 'hex'])
     const compatibility = await compatibilityReader(file)
     if (compatibility.appId !== ORCA_APP_ID || compatibility.version !== manifestVersion) {
       throw new Error('The selected ZIP does not match its update manifest.')
     }
-    return { compatibility, file, size: fileStats.size }
+    if (requireAttestedProvenance) {
+      assertAttestedCandidateProvenance(compatibility, manifestVersion)
+    }
+    return { compatibility, file, sha256, size: fileStats.size }
   } catch (error) {
     await file.close()
     throw error
   }
 }
 
+const openReadonly = (filePath: string) =>
+  open(filePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
+
+async function closeArtifacts(artifacts: Awaited<ReturnType<typeof validateArtifact>>[]) {
+  await Promise.all(artifacts.map((entry) => entry.file.close()))
+}
+
 export async function loadLocalBuildCandidate(
   manifestPath: string,
   architecture: NodeJS.Architecture,
   options: LocalBuildCandidateLoaderOptions = {}
-): Promise<LocalBuildCandidate> {
+) {
   if (basename(manifestPath) !== 'latest-mac.yml') {
     throw new Error('Select the latest-mac.yml generated by pn build:mac.')
   }
   await assertContainedRegularFile(dirname(manifestPath), manifestPath)
-  const manifestFile = await open(
-    manifestPath,
-    constants.O_RDONLY | (typeof constants.O_NOFOLLOW === 'number' ? constants.O_NOFOLLOW : 0)
-  )
+  const manifestFile = await openReadonly(manifestPath)
   let manifestText: string
   try {
     const manifestStats = await manifestFile.stat()
-    if (
-      !manifestStats.isFile() ||
-      manifestStats.size <= 0 ||
-      manifestStats.size > MAX_MANIFEST_BYTES
-    ) {
+    if (manifestStats.size <= 0 || manifestStats.size > MAX_MANIFEST_BYTES) {
       throw new Error('The selected update manifest is too large.')
     }
-    manifestText = await manifestFile.readFile('utf8')
+    const manifestBytes = await manifestFile.readFile()
+    if (
+      options.expectedManifestSha256 !== undefined &&
+      createHash('sha256').update(manifestBytes).digest('hex') !== options.expectedManifestSha256
+    ) {
+      throw new Error('SHA-256 verification failed for latest-mac.yml.')
+    }
+    manifestText = manifestBytes.toString('utf8')
   } finally {
     await manifestFile.close()
   }
   const manifest = parseManifest(parse(manifestText, { maxAliasCount: 0 }))
-  const rootPath = dirname(manifestPath)
   const compatibilityReader = options.readCompatibility ?? readCompatibility
+  const requireAttestedProvenance =
+    options.requireAttestedProvenance ??
+    (options.expectedManifestSha256 !== undefined && options.expectedArtifactSha256 !== undefined)
   const validationResults = await Promise.allSettled(
     manifest.files.map((file) =>
-      validateArtifact(rootPath, file, manifest.version, compatibilityReader)
+      validateArtifact(
+        dirname(manifestPath),
+        file,
+        manifest.version,
+        compatibilityReader,
+        requireAttestedProvenance
+      )
     )
   )
   const validated = validationResults
@@ -243,25 +276,28 @@ export async function loadLocalBuildCandidate(
     .map((result) => result.value)
   const failed = validationResults.find((result) => result.status === 'rejected')
   if (failed?.status === 'rejected') {
-    await Promise.all(validated.map((entry) => entry.file.close()))
+    await closeArtifacts(validated)
     throw failed.reason
   }
   const matching = validated
     .map((entry, index) => ({ ...entry, manifestFile: manifest.files[index] }))
     .filter((entry) => entry.compatibility.architecture === architecture)
   if (matching.length !== 1) {
-    await Promise.all(validated.map((entry) => entry.file.close()))
+    await closeArtifacts(validated)
     throw new Error(`The manifest must contain exactly one ${architecture} Orca ZIP.`)
   }
   const target = matching[0]
+  if (
+    options.expectedArtifactSha256 !== undefined &&
+    target.sha256 !== options.expectedArtifactSha256
+  ) {
+    await closeArtifacts(validated)
+    throw new Error(`SHA-256 verification failed for ${target.manifestFile.url}.`)
+  }
   await Promise.all(
     validated.filter((entry) => entry.file !== target.file).map((entry) => entry.file.close())
   )
-  const sanitizedFile = {
-    url: target.manifestFile.url,
-    sha512: target.manifestFile.sha512,
-    ...(target.manifestFile.size === undefined ? {} : { size: target.manifestFile.size })
-  }
+  const sanitizedFile = target.manifestFile
   return {
     version: manifest.version,
     compatibility: target.compatibility,
@@ -272,8 +308,6 @@ export async function loadLocalBuildCandidate(
       sha512: sanitizedFile.sha512
     }),
     artifacts: new Map([[target.manifestFile.url, { file: target.file, size: target.size }]]),
-    close: async () => {
-      await target.file.close()
-    }
+    close: () => target.file.close()
   }
 }

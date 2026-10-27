@@ -49,7 +49,12 @@ export async function admitConditionalTerminalRespawn(
   }
   const streamSocket = client.streamSocket
   const payload = request.payload
-  if (!payload.mutationId || !payload.expectedIncarnationId) {
+  if (
+    !payload.mutationId ||
+    !payload.expectedIncarnationId ||
+    !Number.isSafeInteger(payload.expectedRootProcessId) ||
+    payload.expectedRootProcessId <= 0
+  ) {
     return {
       outcome: 'failed_before_mutation',
       mutationId: payload.mutationId,
@@ -59,6 +64,7 @@ export async function admitConditionalTerminalRespawn(
   const respawnIdentity = {
     mutationId: payload.mutationId,
     expectedIncarnationId: payload.expectedIncarnationId,
+    expectedRootProcessId: payload.expectedRootProcessId,
     sessionId: payload.sessionId,
     cols: payload.cols,
     rows: payload.rows,

@@ -66,6 +66,7 @@ export abstract class OrcaRuntimeWithRecordPtyWorktree extends RuntimeWorkspaceR
         | 'wslDistro'
         | 'incarnationId'
         | 'agentSessionOwners'
+        | 'agentSessionOwnershipKnown'
       >
     > = {}
   ): RuntimePtyWorktreeRecord {
@@ -114,6 +115,7 @@ export abstract class OrcaRuntimeWithRecordPtyWorktree extends RuntimeWorkspaceR
         launchIncarnationId: null,
         launchAgent: null,
         agentSessionOwners: (state.agentSessionOwners ?? []).map(cloneAgentSessionOwnerBinding),
+        agentSessionOwnershipKnown: state.agentSessionOwnershipKnown ?? false,
         foregroundAgent: null,
         connected: state.connected ?? true,
         disconnectedAt: state.connected === false ? Date.now() : null,
@@ -168,6 +170,7 @@ export abstract class OrcaRuntimeWithRecordPtyWorktree extends RuntimeWorkspaceR
       state.incarnationId !== pty.incarnationId
     ) {
       pty.agentSessionOwners = []
+      pty.agentSessionOwnershipKnown = false
     }
     // Switch point: a new process under a reused id has not exited, so an exit wait cannot settle
     // on the old process's code.
@@ -188,6 +191,9 @@ export abstract class OrcaRuntimeWithRecordPtyWorktree extends RuntimeWorkspaceR
     }
     if (state.agentSessionOwners !== undefined) {
       pty.agentSessionOwners = state.agentSessionOwners.map(cloneAgentSessionOwnerBinding)
+    }
+    if (state.agentSessionOwnershipKnown !== undefined) {
+      pty.agentSessionOwnershipKnown = state.agentSessionOwnershipKnown
     }
     if (state.connectionId !== undefined) {
       pty.connectionId = state.connectionId

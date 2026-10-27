@@ -1,4 +1,6 @@
 // Why: daemons survive app updates, so wire behavior must be version-gated.
+// v54 recovers one exact confirmed post-stop empty leaf under a separate CAS operation.
+// v53 also fences conditional respawn on the exact root process id.
 // v52 atomically replaces one exact terminal incarnation under its daemon owner.
 // v51 checks terminal identity, ownership and attachments before reserving teardown.
 // v50 makes the `codex` function keep Orca's terminal identity under a filtering shell_environment_policy.
@@ -10,8 +12,9 @@
 // v43 dropped it with the revert); v41 stages long startup commands as sourced scripts; v40 rolled
 // the #25130/#24636 shell-wrapper changes and the wider agent list into a fresh daemon; older owners
 // stay attachable.
-export const PROTOCOL_VERSION = 52
-export const CONDITIONAL_RESPAWN_PROTOCOL_VERSION = 52
+export const PROTOCOL_VERSION = 54
+export const CONDITIONAL_RESPAWN_PROTOCOL_VERSION = 53
+export const EMPTY_LEAF_RECOVERY_PROTOCOL_VERSION = 54
 export const FENCED_TERMINATION_PROTOCOL_VERSION = 51
 export const CLAUDE_ACCOUNT_FUNCTION_DAEMON_PROTOCOL_VERSION = 42
 export const CLAUDE_ACCOUNT_FUNCTION_REVERTED_DAEMON_PROTOCOL_VERSION = 43
@@ -46,7 +49,8 @@ export const CLEAN_DISCONNECT_PROTOCOL_VERSION = 24
 export const MODE_2031_UNSUBSCRIBE_FACT_PROTOCOL_VERSION = 29
 export const PREVIOUS_DAEMON_PROTOCOL_VERSIONS = [
   1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
-  28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51
+  28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
+  52, 53
 ] as const
 
 export function supportsColorQueryReplyColors(protocolVersion: number): boolean {

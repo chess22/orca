@@ -24,6 +24,9 @@ function target(overrides: Partial<LocalBuildCompatibility> = {}): LocalBuildCom
 
 describe('local build compatibility', () => {
   it('rejects state and live-terminal protocol incompatibilities', () => {
+    expect(getLocalBuildCompatibilityError(target({ attestation: 'unattested' }), 1, [])).toContain(
+      'unattested'
+    )
     expect(
       getLocalBuildCompatibilityError(target({ readableStateSchemaVersions: [2] }), 1, [])
     ).toContain('cannot read Orca workspace state schema')
@@ -31,6 +34,12 @@ describe('local build compatibility', () => {
       'cannot reconnect terminal daemon protocol 26'
     )
     expect(getLocalBuildCompatibilityError(target(), 1, [27, 28])).toBeNull()
+    expect(getLocalBuildCompatibilityError(target({ attestation: undefined }), 1, [])).toBeNull()
+    expect(
+      getLocalBuildCompatibilityError(target({ attestation: undefined }), 1, [], {
+        requireAttestedProvenance: true
+      })
+    ).toContain('unattested')
   })
 
   it('parses only bounded Orca compatibility contracts', () => {

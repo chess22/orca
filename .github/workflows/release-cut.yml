@@ -1257,6 +1257,8 @@ jobs:
     env:
       # beforePack and afterPack fail the package when the template is absent.
       ORCA_REQUIRE_ORCAD_TEMPLATE: '1'
+      ORCA_BUILD_TARGET_ARCH: ${{ matrix.platform == 'linux-arm64' && 'arm64' || 'x64' }}
+      ORCA_BUILD_ID: ${{ needs.release-javascript.outputs.supported == 'true' && needs.release-javascript.outputs.build_id || format('gh-{0}-{1}-release-{2}', github.run_id, github.run_attempt, matrix.platform) }}
     strategy:
       fail-fast: false
       matrix:
@@ -1300,6 +1302,10 @@ jobs:
         with:
           ref: refs/tags/${{ needs.cut.outputs.tag }}
 
+      - name: Pin checked-out source provenance
+        shell: bash
+        run: echo "ORCA_BUILD_SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
       # GitHub reruns also resume jobs skipped behind a failed gate. Never
       # recreate Windows signing requests on a rerun; reuse the assets from the
       # original attempt and require a fresh dispatch if they are missing.
@@ -1326,7 +1332,11 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --no-tags --depth=1 origin "$WORKFLOW_SHA"
-          git checkout "$WORKFLOW_SHA" -- config/scripts/assert-github-release-is-draft.mjs config/scripts/run-release-mac-build-workflow.mjs
+          tools_dir="$RUNNER_TEMP/orca-workflow-tools"
+          mkdir -p "$tools_dir"
+          git show "$WORKFLOW_SHA:config/scripts/assert-github-release-is-draft.mjs" > "$tools_dir/assert-github-release-is-draft.mjs"
+          git show "$WORKFLOW_SHA:config/scripts/run-release-mac-build-workflow.mjs" > "$tools_dir/run-release-mac-build-workflow.mjs"
+          echo "ORCA_WORKFLOW_TOOLS_DIR=$tools_dir" >> "$GITHUB_ENV"
 
       - name: Restore composite actions from the workflow ref
         shell: bash
@@ -1335,23 +1345,28 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
         run: |
           set -euo pipefail
-          required=(.github/actions/install-mobile-dependencies/action.yml)
+          actions_dir=.build/workflow-actions
+          required=(install-mobile-dependencies/action.yml)
           if [ "$PLATFORM" = win ] && [ "$GITHUB_RUN_ATTEMPT" = 1 ]; then
-            required+=(.github/actions/install-signpath-module/action.yml)
+            required+=(install-signpath-module/action.yml)
           fi
           missing=()
           for action_path in "${required[@]}"; do
-            [ -f "$action_path" ] || missing+=("$action_path")
+            [ -f ".github/actions/$action_path" ] || missing+=("$action_path")
           done
           if [ "${#missing[@]}" -eq 0 ]; then
-            echo "Composite actions already present at the cut ref."
-            exit 0
+            rm -rf "$actions_dir"
+            mkdir -p "$actions_dir"
+            cp -R .github/actions/. "$actions_dir/"
+          else
+            echo "Cut ref predates ${missing[*]}; restoring from $WORKFLOW_SHA."
+            git fetch --no-tags --depth=1 origin "$WORKFLOW_SHA"
+            rm -rf "$actions_dir"
+            mkdir -p "$actions_dir"
+            git archive "$WORKFLOW_SHA" .github/actions | tar -x -C "$actions_dir" --strip-components=2
           fi
-          echo "Cut ref predates ${missing[*]}; restoring from $WORKFLOW_SHA."
-          git fetch --no-tags --depth=1 origin "$WORKFLOW_SHA"
-          git checkout "$WORKFLOW_SHA" -- .github/actions
           for action_path in "${required[@]}"; do
-            test -f "$action_path"
+            test -f "$actions_dir/$action_path"
           done
 
       # pnpm must be on PATH before setup-node so setup-node can locate the store for caching.
@@ -1421,7 +1436,7 @@ jobs:
 
       # Why here: electron-builder's beforePack requires out/mobile-web, and the bundle
       # build resolves React Native and Expo from mobile/node_modules.
-      - uses: ./.github/actions/install-mobile-dependencies
+      - uses: ./.build/workflow-actions/install-mobile-dependencies
 
       # Why: `pnpm build:release` verifies the Linux computer-use provider by
       # importing AT-SPI bindings, which are runtime package deps but are not
@@ -1628,7 +1643,7 @@ jobs:
       - name: Install SignPath PowerShell module
         id: install-signpath
         if: matrix.platform == 'win' && github.run_attempt == 1
-        uses: ./.github/actions/install-signpath-module
+        uses: ./.build/workflow-actions/install-signpath-module
 
       # ── Windows inner-binary signing (issue #7785) ─────────────────────
       # Why: SignPath cannot deep-sign inside NSIS installers, so inner PE
@@ -1714,7 +1729,7 @@ jobs:
         id: mac-signing-gate
         if: matrix.platform == 'win' && github.run_attempt == 1
         shell: bash
-        run: node config/scripts/run-release-mac-build-workflow.mjs wait
+        run: node "$ORCA_WORKFLOW_TOOLS_DIR/run-release-mac-build-workflow.mjs" wait
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_MAC_BUILD_REF: ${{ github.ref_name }}
@@ -2338,7 +2353,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.cut.outputs.tag }}
-        run: node config/scripts/assert-github-release-is-draft.mjs "${{ needs.cut.outputs.tag }}"
+        run: node "$ORCA_WORKFLOW_TOOLS_DIR/assert-github-release-is-draft.mjs" "${{ needs.cut.outputs.tag }}"
 
       # Why post-pack for Linux: electron-builder packs and uploads in one
       # `--publish always` invocation. The previous step re-drafts if that
@@ -2400,6 +2415,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_MAC_BUILD_REF: ${{ github.ref_name }}
           RELEASE_MAC_BUILD_RELEASE_RUN_ID: ${{ github.run_id }}
+          RELEASE_MAC_BUILD_JAVASCRIPT_BUILD_ID: ${{ needs.release-javascript.outputs.supported == 'true' && needs.release-javascript.outputs.build_id || '' }}
           RELEASE_MAC_BUILD_JAVASCRIPT_SOURCE_SHA: ${{ needs.release-javascript.outputs.supported == 'true' && needs.release-javascript.outputs.source_sha || '' }}
           RELEASE_MAC_BUILD_TAG: ${{ needs.cut.outputs.tag }}
           RELEASE_MAC_BUILD_WORKFLOW: release-mac-build.yml

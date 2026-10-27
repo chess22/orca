@@ -26,11 +26,13 @@ describe('release mac build workflow dispatch', () => {
     const api = { owner: 'stablyai', repo: 'orca', request }
     await dispatchReleaseMacBuildWorkflow(api, {
       ...baseOptions,
+      javascriptBuildId: 'release-javascript-fixture',
       javascriptSourceSha: 'a'.repeat(40)
     })
     expect(request.mock.calls[0][2].inputs).toEqual({
       release_run_id: '777',
       tag: 'v1.2.3-rc.4',
+      javascript_build_id: 'release-javascript-fixture',
       javascript_source_sha: 'a'.repeat(40)
     })
   })

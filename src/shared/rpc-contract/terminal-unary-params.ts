@@ -195,13 +195,41 @@ export const TerminalRespawnIfMatch = z.object({
     leafId: requiredString('Missing leaf id').pipe(z.string().max(128)),
     ptyId: requiredString('Missing PTY id').pipe(z.string().max(512)),
     ptyGeneration: z.number().int().nonnegative(),
-    incarnationId: requiredString('Missing PTY incarnation').pipe(z.string().max(128))
+    incarnationId: requiredString('Missing PTY incarnation').pipe(z.string().max(128)),
+    rootProcessId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
   }),
   replacement: z.object({
     cols: z.number().int().min(1).max(1000).optional(),
     rows: z.number().int().min(1).max(500).optional(),
     cwd: OptionalString,
     command: OptionalString,
+    env: z.record(z.string(), z.string()).optional(),
+    envToDelete: z.array(z.string().min(1).max(256)).max(32).optional()
+  })
+})
+
+export const TerminalRecoverEmptyLeafIfMatch = z.object({
+  originalMutationId: requiredString('Missing original mutation id').pipe(z.string().max(128)),
+  recoveryId: requiredString('Missing recovery id').pipe(z.string().max(128)),
+  terminal: requiredString('Missing terminal handle').pipe(z.string().max(256)),
+  expected: z.object({
+    worktreeId: requiredString('Missing worktree id').pipe(z.string().max(1024)),
+    tabId: requiredString('Missing tab id').pipe(z.string().max(128)),
+    leafId: requiredString('Missing leaf id').pipe(z.string().max(128)),
+    ptyId: requiredString('Missing PTY id').pipe(z.string().max(512)),
+    ptyGeneration: z.number().int().nonnegative(),
+    retiredIncarnationId: requiredString('Missing retired PTY incarnation').pipe(
+      z.string().max(128)
+    ),
+    layoutEpoch: z.number().int().nonnegative(),
+    persistedBindingVersion: z.number().int().nonnegative(),
+    tombstoneId: requiredString('Missing tombstone id').pipe(z.string().max(1024))
+  }),
+  replacement: z.object({
+    cols: z.number().int().min(1).max(1000),
+    rows: z.number().int().min(1).max(500),
+    cwd: requiredString('Missing replacement cwd').pipe(z.string().max(32_768)),
+    command: requiredString('Missing replacement command').pipe(z.string().max(32_768)),
     env: z.record(z.string(), z.string()).optional(),
     envToDelete: z.array(z.string().min(1).max(256)).max(32).optional()
   })

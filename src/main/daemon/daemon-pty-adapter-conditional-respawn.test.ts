@@ -17,6 +17,7 @@ import {
   MAX_RETAINED_CONDITIONAL_RESPAWN_EXITS,
   recordConditionalRespawnExit
 } from './daemon-pty-adapter-conditional-respawn'
+import { terminalEmptyLeafTombstoneId } from '../../shared/terminal-empty-leaf-recovery'
 
 describe('DaemonPtyAdapter conditional respawn', () => {
   let harness: Awaited<ReturnType<typeof startDaemonAdapterHarness>>
@@ -98,6 +99,7 @@ describe('DaemonPtyAdapter conditional respawn', () => {
     const result = await harness.adapter.respawnIfMatch(
       sessionId,
       original.incarnationId!,
+      original.pid!,
       'mutation-exit-fence',
       { cols: 100, rows: 30 }
     )
@@ -116,6 +118,129 @@ describe('DaemonPtyAdapter conditional respawn', () => {
     expect(internals.activeSessionIds.has(sessionId)).toBe(true)
   })
 
+  it('recovers a confirmed post-stop gap and replays without a second spawn', async () => {
+    const sessionId = 'conditional-respawn-post-stop-recovery'
+    const original = await harness.adapter.spawn({ sessionId, cols: 80, rows: 24 })
+    failReplacementSpawn = true
+    const mutationId = 'mutation-post-stop-gap'
+    const ambiguous = await harness.adapter.respawnIfMatch(
+      sessionId,
+      original.incarnationId!,
+      original.pid!,
+      mutationId,
+      { command: 'exec relay', cwd: '/repo', cols: 100, rows: 30 }
+    )
+    expect(ambiguous).toMatchObject({
+      outcome: 'indeterminate',
+      oldStopped: true,
+      replacementStarted: true
+    })
+    failReplacementSpawn = false
+    const request = {
+      originalMutationId: mutationId,
+      recoveryId: 'recovery-post-stop-gap',
+      terminal: 'term-1',
+      expected: {
+        worktreeId: 'worktree-1',
+        tabId: 'tab-1',
+        leafId: 'leaf-1',
+        ptyId: sessionId,
+        ptyGeneration: 1,
+        retiredIncarnationId: original.incarnationId!,
+        layoutEpoch: 1,
+        persistedBindingVersion: 1,
+        tombstoneId: terminalEmptyLeafTombstoneId(sessionId, original.incarnationId!)
+      },
+      replacement: { command: 'exec relay', cwd: '/repo', cols: 100, rows: 30 }
+    }
+
+    const connections: { values(): IterableIterator<ConnectedDaemonClient> } = Reflect.get(
+      harness.server,
+      'connections'
+    )
+    const controlSocket = [...connections.values()][0]!.controlSocket
+    const write = controlSocket.write.bind(controlSocket)
+    let dropped = false
+    // SAFETY: the test proxy preserves Socket.write arguments and return values outside one dropped reply.
+    Object.defineProperty(controlSocket, 'write', {
+      value: (chunk: Uint8Array | string, ...args: unknown[]) => {
+        if (!dropped && String(chunk).includes('"outcome":"recovered"')) {
+          dropped = true
+          controlSocket.destroy()
+          return false
+        }
+        return Reflect.apply(write, controlSocket, [chunk, ...args])
+      }
+    })
+
+    await expect(harness.adapter.recoverEmptyLeafIfMatch(request)).resolves.toMatchObject({
+      outcome: 'indeterminate',
+      reason: 'provider_response_lost'
+    })
+    const recovered = await harness.adapter.recoverEmptyLeafIfMatch(request)
+    const replay = await harness.adapter.recoverEmptyLeafIfMatch(request)
+    expect(recovered.outcome).toBe('recovered')
+    if (recovered.outcome !== 'recovered') {
+      throw new Error('recovery was not prepared')
+    }
+    await expect(
+      harness.adapter.completeEmptyLeafRecovery(
+        request.recoveryId,
+        sessionId,
+        recovered.incarnationId,
+        true
+      )
+    ).resolves.toBe(true)
+    await expect(
+      harness.adapter.completeEmptyLeafRecovery(
+        request.recoveryId,
+        sessionId,
+        recovered.incarnationId,
+        true
+      )
+    ).resolves.toBe(true)
+    await expect(
+      harness.adapter.completeEmptyLeafRecovery(
+        request.recoveryId,
+        sessionId,
+        recovered.incarnationId,
+        false
+      )
+    ).resolves.toBe(false)
+    const competing = await harness.adapter.recoverEmptyLeafIfMatch({
+      ...request,
+      recoveryId: 'competing-recovery'
+    })
+
+    expect(recovered).toMatchObject({ outcome: 'recovered', ptyId: sessionId })
+    expect(replay).toMatchObject({ outcome: 'recovered', ptyId: sessionId, replayed: true })
+    expect(dropped).toBe(true)
+    expect(competing).toMatchObject({ outcome: 'precondition_failed', reason: 'terminal_live' })
+    expect(handles).toHaveLength(2)
+    expect(harness.adapter.hasPty(sessionId)).toBe(true)
+  })
+
+  it('fails closed when the terminal root process changed', async () => {
+    const sessionId = 'conditional-respawn-root-process-changed'
+    const original = await harness.adapter.spawn({ sessionId, cols: 80, rows: 24 })
+
+    await expect(
+      harness.adapter.respawnIfMatch(
+        sessionId,
+        original.incarnationId!,
+        original.pid! + 1,
+        'mutation-root-process-changed',
+        { cols: 100, rows: 30 }
+      )
+    ).resolves.toEqual({
+      outcome: 'precondition_failed',
+      mutationId: 'mutation-root-process-changed',
+      reason: 'root_process_changed'
+    })
+    expect(handles).toHaveLength(1)
+    expect(handles[0]!.forceKill).not.toHaveBeenCalled()
+  })
+
   it('clears live adapter state when the replacement exits before its reply', async () => {
     const sessionId = 'conditional-respawn-early-replacement-exit'
     const original = await harness.adapter.spawn({ sessionId, cols: 80, rows: 24 })
@@ -126,6 +251,7 @@ describe('DaemonPtyAdapter conditional respawn', () => {
     const result = await harness.adapter.respawnIfMatch(
       sessionId,
       original.incarnationId!,
+      original.pid!,
       'mutation-early-exit',
       { cols: 100, rows: 30 }
     )
@@ -211,8 +337,14 @@ describe('DaemonPtyAdapter conditional respawn', () => {
       kill: () => false,
       getSize: () => ({ cols: 80, rows: 24 }),
       getForegroundProcess: async () => null,
-      respawnIfMatch: (id, expectedIncarnationId, mutationId, replacement) =>
-        harness.adapter.respawnIfMatch(id, expectedIncarnationId, mutationId, replacement)
+      respawnIfMatch: (id, expectedIncarnationId, expectedRootProcessId, mutationId, replacement) =>
+        harness.adapter.respawnIfMatch(
+          id,
+          expectedIncarnationId,
+          expectedRootProcessId,
+          mutationId,
+          replacement
+        )
     } as never)
     exitReplacementOnSpawn = true
     const shown = await runtime.showTerminal(handle)
@@ -227,7 +359,8 @@ describe('DaemonPtyAdapter conditional respawn', () => {
           leafId,
           ptyId: sessionId,
           ptyGeneration: shown.ptyGeneration!,
-          incarnationId: original.incarnationId!
+          incarnationId: original.incarnationId!,
+          rootProcessId: original.pid!
         },
         replacement: {}
       })
@@ -249,6 +382,7 @@ describe('DaemonPtyAdapter conditional respawn', () => {
     const replacing = harness.adapter.respawnIfMatch(
       sessionId,
       original.incarnationId!,
+      original.pid!,
       'mutation-stream-replaced',
       { cols: 100, rows: 30 }
     )
@@ -282,6 +416,7 @@ describe('DaemonPtyAdapter conditional respawn', () => {
     const replacing = harness.adapter.respawnIfMatch(
       sessionId,
       original.incarnationId!,
+      original.pid!,
       'mutation-preparation-exit',
       { cols: 100, rows: 30 }
     )
@@ -307,13 +442,13 @@ describe('DaemonPtyAdapter conditional respawn', () => {
       harness.adapter.respawnIfMatch(
         sessionId,
         original.incarnationId!,
+        original.pid!,
         'mutation-spawn-failure-exit',
         { cols: 100, rows: 30 }
       )
     ).resolves.toMatchObject({
-      outcome: 'partial',
-      replacementStarted: false,
-      replacementPublished: false
+      outcome: 'indeterminate',
+      replacementStarted: true
     })
     expect(onPtySessionExit).toHaveBeenCalledWith(sessionId)
     const attachments = (
@@ -335,6 +470,7 @@ describe('DaemonPtyAdapter conditional respawn', () => {
       harness.adapter.respawnIfMatch(
         sessionId,
         original.incarnationId!,
+        original.pid!,
         'mutation-stop-indeterminate-exit',
         { cols: 100, rows: 30 }
       )
@@ -376,6 +512,7 @@ describe('DaemonPtyAdapter conditional respawn', () => {
       harness.adapter.respawnIfMatch(
         sessionId,
         original.incarnationId!,
+        original.pid!,
         'mutation-response-loss-replay',
         { cols: 100, rows: 30 }
       )
@@ -396,6 +533,7 @@ describe('DaemonPtyAdapter conditional respawn', () => {
     const replay = await harness.adapter.respawnIfMatch(
       sessionId,
       original.incarnationId!,
+      original.pid!,
       'mutation-response-loss-replay',
       { cols: 100, rows: 30 }
     )
@@ -411,6 +549,7 @@ describe('DaemonPtyAdapter conditional respawn', () => {
       harness.adapter.respawnIfMatch(
         sessionId,
         original.incarnationId!,
+        original.pid!,
         'mutation-response-loss-replay',
         { cols: 101, rows: 30 }
       )
@@ -447,10 +586,16 @@ describe('DaemonPtyAdapter conditional respawn', () => {
     }) as typeof controlSocket.write
 
     await expect(
-      harness.adapter.respawnIfMatch(sessionId, original.incarnationId!, mutationId, {
-        cols: 100,
-        rows: 30
-      })
+      harness.adapter.respawnIfMatch(
+        sessionId,
+        original.incarnationId!,
+        original.pid!,
+        mutationId,
+        {
+          cols: 100,
+          rows: 30
+        }
+      )
     ).resolves.toMatchObject({ outcome: 'indeterminate', reason: 'response_lost' })
     const uncertain = (
       harness.adapter as unknown as {
@@ -471,10 +616,16 @@ describe('DaemonPtyAdapter conditional respawn', () => {
     expect(uncertain.operation.conditionalRespawnExitCaptureOverflowed).toBe(true)
 
     await expect(
-      harness.adapter.respawnIfMatch(sessionId, original.incarnationId!, mutationId, {
-        cols: 100,
-        rows: 30
-      })
+      harness.adapter.respawnIfMatch(
+        sessionId,
+        original.incarnationId!,
+        original.pid!,
+        mutationId,
+        {
+          cols: 100,
+          rows: 30
+        }
+      )
     ).resolves.toMatchObject({
       outcome: 'indeterminate',
       reason: 'response_lost_exit_capture_overflow'
@@ -515,6 +666,7 @@ describe('DaemonPtyAdapter conditional respawn', () => {
       harness.adapter.respawnIfMatch(
         sessionId,
         original.incarnationId!,
+        original.pid!,
         'mutation-response-loss-exit-replay',
         { cols: 100, rows: 30 }
       )
@@ -528,6 +680,7 @@ describe('DaemonPtyAdapter conditional respawn', () => {
       harness.adapter.respawnIfMatch(
         sessionId,
         original.incarnationId!,
+        original.pid!,
         'mutation-response-loss-exit-replay',
         { cols: 101, rows: 30 }
       )
@@ -540,6 +693,7 @@ describe('DaemonPtyAdapter conditional respawn', () => {
       harness.adapter.respawnIfMatch(
         sessionId,
         original.incarnationId!,
+        original.pid!,
         'mutation-response-loss-exit-replay',
         { cols: 100, rows: 30 }
       )
@@ -569,6 +723,7 @@ describe('DaemonPtyAdapter conditional respawn', () => {
       harness.adapter.respawnIfMatch(
         sessionId,
         original.incarnationId!,
+        original.pid!,
         'mutation-response-loss-before-publication',
         { cols: 100, rows: 30 }
       )
@@ -579,6 +734,7 @@ describe('DaemonPtyAdapter conditional respawn', () => {
       harness.adapter.respawnIfMatch(
         sessionId,
         original.incarnationId!,
+        original.pid!,
         'mutation-response-loss-before-publication',
         { cols: 100, rows: 30 }
       )

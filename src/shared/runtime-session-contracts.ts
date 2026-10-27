@@ -65,6 +65,19 @@ export function browserUnavailableMessage(
   return detail ? `${base} (${detail})` : base
 }
 
+export type RuntimeBuildProvenance = {
+  /** Existing package metadata commit identity; local packages historically use a short SHA. */
+  commit: string
+  /** Full source commit injected while compiling the running main process. */
+  sourceCommit: string
+  /** Build-system identity, explicitly injected when available. */
+  buildId: string
+  /** Package/version/channel identity when a self-referential artifact digest is unavailable. */
+  artifactIdentity: string
+  targetArchitecture: 'arm64' | 'x64'
+  attestation: 'attested' | 'unattested'
+}
+
 export type RuntimeStatus = {
   runtimeId: string
   /** Authenticated requester identity. Missing for in-process callers and older hosts. */
@@ -91,6 +104,7 @@ export type RuntimeStatus = {
    */
   degradations?: RuntimeDegradation[]
   appVersion?: string
+  build?: RuntimeBuildProvenance
   remoteUpdateSupport?: RemoteServerUpdateSupport
   remoteControl?: RemoteRuntimeSharedConnectionDiagnostics | null
   hostPlatform?: NodeJS.Platform

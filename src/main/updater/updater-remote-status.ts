@@ -103,6 +103,6 @@ export abstract class UpdaterRemoteStatus extends UpdaterNudge {
     return hasServeUpdateSupervisor() ? 'supervised-headless-serve' : 'unsupported-headless-serve'
   }
 
-  protected abstract downloadUpdate(): void
-  protected abstract quitAndInstall(): void
+  protected abstract downloadUpdate(): boolean
+  protected abstract quitAndInstall(): boolean
 }
