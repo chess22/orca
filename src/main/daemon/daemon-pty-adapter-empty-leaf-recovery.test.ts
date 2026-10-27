@@ -1,8 +1,13 @@
 import { rmSync } from 'node:fs'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMockSubprocess, startDaemonAdapterHarness } from './daemon-pty-adapter-test-harness'
 import type { ConnectedDaemonClient } from './daemon-client-connections'
 import { terminalEmptyLeafTombstoneId } from '../../shared/terminal-empty-leaf-recovery'
+
+vi.mock('../../shared/terminal-recovery-rollout', () => ({
+  TERMINAL_RECOVERY_MUTATIONS_ENABLED: true,
+  TERMINAL_RECOVERY_DISABLED_REASON: 'source_baseline_disabled'
+}))
 
 describe('DaemonPtyAdapter empty-leaf recovery completion', () => {
   let harness: Awaited<ReturnType<typeof startDaemonAdapterHarness>>

@@ -9,6 +9,7 @@ import type {
   RuntimePtyWorktreeRecord
 } from '../../runtime-terminal-state-records'
 import { runtimeGapRefusal, type RuntimeEmptyLeafRecoveryState } from './empty-leaf-recovery-state'
+import { TERMINAL_RECOVERY_MUTATIONS_ENABLED } from '../../../../shared/terminal-recovery-rollout'
 
 type EmptyLeafPty = Pick<RuntimePtyWorktreeRecord, 'ptyId' | 'incarnationId' | 'connected'>
 type EmptyLeaf = Pick<RuntimeLeafRecord, 'ptyId' | 'connected' | 'writable' | 'ptyGeneration'>
@@ -27,6 +28,27 @@ type EmptyLeafRecoveryPreflightPorts = {
 }
 
 export function terminalEmptyLeafRecoveryPreflight({
+  terminal,
+  pty,
+  leaf,
+  findRecoverableGap,
+  captureLayoutEpoch,
+  inspectState
+}: EmptyLeafRecoveryPreflightPorts): RuntimeTerminalEmptyLeafRecoveryPreflight | undefined {
+  if (!TERMINAL_RECOVERY_MUTATIONS_ENABLED) {
+    return { status: 'unknown' }
+  }
+  return inspectTerminalEmptyLeafRecoveryPreflight({
+    terminal,
+    pty,
+    leaf,
+    findRecoverableGap,
+    captureLayoutEpoch,
+    inspectState
+  })
+}
+
+export function inspectTerminalEmptyLeafRecoveryPreflight({
   terminal,
   pty,
   leaf,

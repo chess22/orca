@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { TerminalConditionalRespawnRequest } from '../../../../shared/terminal-conditional-respawn'
 import type { RuntimeEmptyLeafRecoveryState } from './empty-leaf-recovery-state'
-import { terminalEmptyLeafRecoveryPreflight } from './empty-leaf-recovery-preflight'
+import {
+  inspectTerminalEmptyLeafRecoveryPreflight,
+  terminalEmptyLeafRecoveryPreflight
+} from './empty-leaf-recovery-preflight'
 
 const original: TerminalConditionalRespawnRequest = {
   mutationId: 'mutation-1',
@@ -36,7 +39,7 @@ const authoritativeState: RuntimeEmptyLeafRecoveryState = {
 }
 
 function preflight(state: RuntimeEmptyLeafRecoveryState | null) {
-  return terminalEmptyLeafRecoveryPreflight({
+  return inspectTerminalEmptyLeafRecoveryPreflight({
     terminal: original.terminal,
     pty: { ptyId: 'pty-1', incarnationId: 'incarnation-1', connected: false },
     leaf: { ptyId: 'pty-1', ptyGeneration: 3, connected: false, writable: false },
@@ -47,6 +50,24 @@ function preflight(state: RuntimeEmptyLeafRecoveryState | null) {
 }
 
 describe('terminalEmptyLeafRecoveryPreflight', () => {
+  it('never evaluates or publishes ready while recovery mutations are disabled', () => {
+    const findRecoverableGap = vi.fn(() => original)
+    const inspectState = vi.fn(() => authoritativeState)
+
+    expect(
+      terminalEmptyLeafRecoveryPreflight({
+        terminal: original.terminal,
+        pty: { ptyId: 'pty-1', incarnationId: 'incarnation-1', connected: false },
+        leaf: { ptyId: 'pty-1', ptyGeneration: 3, connected: false, writable: false },
+        findRecoverableGap,
+        captureLayoutEpoch: () => 8,
+        inspectState
+      })
+    ).toEqual({ status: 'unknown' })
+    expect(findRecoverableGap).not.toHaveBeenCalled()
+    expect(inspectState).not.toHaveBeenCalled()
+  })
+
   it('publishes ready only when authoritative state matches every original request fence', () => {
     expect(preflight(authoritativeState)).toMatchObject({
       status: 'ready',

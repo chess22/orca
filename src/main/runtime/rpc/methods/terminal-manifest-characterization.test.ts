@@ -177,7 +177,7 @@ describe('terminal RPC manifest characterization', () => {
     ).toThrow()
   })
 
-  it('routes empty-leaf recovery through the production runtime method', async () => {
+  it('refuses empty-leaf recovery before the production runtime method', async () => {
     const params = METHOD_CASES.find(([name]) => name === 'terminal.recoverEmptyLeafIfMatch')?.[1]
     const recoverTerminalEmptyLeafIfMatch = vi.fn(async () => ({
       outcome: 'precondition_failed' as const,
@@ -189,12 +189,12 @@ describe('terminal RPC manifest characterization', () => {
       invoke('terminal.recoverEmptyLeafIfMatch', params, { recoverTerminalEmptyLeafIfMatch })
     ).resolves.toEqual({
       recovery: {
-        outcome: 'precondition_failed',
+        outcome: 'failed_before_mutation',
         recoveryId: 'recovery',
-        reason: 'terminal_live'
+        reason: 'source_baseline_disabled'
       }
     })
-    expect(recoverTerminalEmptyLeafIfMatch).toHaveBeenCalledExactlyOnceWith(params)
+    expect(recoverTerminalEmptyLeafIfMatch).not.toHaveBeenCalled()
   })
 
   it('keeps multiplex control objects strict while subscribe remains skew-tolerant', () => {

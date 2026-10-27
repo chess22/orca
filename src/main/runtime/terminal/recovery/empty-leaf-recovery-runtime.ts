@@ -6,6 +6,10 @@ import {
 } from '../../../../shared/terminal-empty-leaf-recovery'
 import { OrcaRuntimeWithConditionalRespawnSupport } from '../stop/conditional-respawn-support'
 import { RuntimeEmptyLeafRecovery } from './empty-leaf-recovery'
+import {
+  TERMINAL_RECOVERY_DISABLED_REASON,
+  TERMINAL_RECOVERY_MUTATIONS_ENABLED
+} from '../../../../shared/terminal-recovery-rollout'
 
 export abstract class OrcaRuntimeWithEmptyLeafRecovery extends OrcaRuntimeWithConditionalRespawnSupport {
   private readonly emptyLeafRecovery = new RuntimeEmptyLeafRecovery({
@@ -145,6 +149,13 @@ export abstract class OrcaRuntimeWithEmptyLeafRecovery extends OrcaRuntimeWithCo
   recoverTerminalEmptyLeafIfMatch(
     request: TerminalEmptyLeafRecoveryRequest
   ): Promise<TerminalEmptyLeafRecoveryResult> {
+    if (!TERMINAL_RECOVERY_MUTATIONS_ENABLED) {
+      return Promise.resolve({
+        outcome: 'failed_before_mutation',
+        recoveryId: request.recoveryId,
+        reason: TERMINAL_RECOVERY_DISABLED_REASON
+      })
+    }
     return this.emptyLeafRecovery.recover(request)
   }
 

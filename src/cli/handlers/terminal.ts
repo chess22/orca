@@ -1,6 +1,4 @@
 import type * as RuntimeTypes from '../../shared/runtime-types'
-import type { TerminalConditionalRespawnResult } from '../../shared/terminal-conditional-respawn'
-import type { TerminalEmptyLeafRecoveryResult } from '../../shared/terminal-empty-leaf-recovery'
 import type { CommandHandler } from '../dispatch'
 import { shouldUseRendererBackedInteractiveTerminal } from '../codex-command-classification'
 import * as output from '../format'
@@ -13,6 +11,7 @@ import * as selectors from '../selectors'
 import { revealPairedTerminalOnLocalDesktop } from '../paired-terminal-desktop-reveal'
 import { terminalCloseHandler } from './terminal-close'
 import { terminalSendHandler } from './terminal-send'
+import { TERMINAL_RECOVERY_HANDLERS } from './terminal-recovery'
 
 import * as handlerValues from './terminal-handler-values'
 
@@ -181,96 +180,7 @@ export const TERMINAL_HANDLERS: Record<string, CommandHandler> = {
   },
   'terminal switch': terminalFocusHandler,
   'terminal close': terminalCloseHandler,
-  'terminal respawn-if-match': async ({ flags, client, json }) => {
-    const mutationId = cliFlags.getRequiredStringFlag(flags, 'mutation-id')
-    await requireRuntimeCapability(
-      client,
-      capabilities.TERMINAL_CONDITIONAL_RESPAWN_RUNTIME_CAPABILITY,
-      'This Orca host does not support conditional terminal respawn. Nothing was changed.'
-    )
-    const result = await client.call<{ respawn: TerminalConditionalRespawnResult }>(
-      'terminal.respawnIfMatch',
-      {
-        mutationId,
-        terminal: cliFlags.getRequiredStringFlag(flags, 'terminal'),
-        expected: {
-          worktreeId: cliFlags.getRequiredStringFlag(flags, 'expected-worktree-id'),
-          tabId: cliFlags.getRequiredStringFlag(flags, 'expected-tab-id'),
-          leafId: cliFlags.getRequiredStringFlag(flags, 'expected-leaf-id'),
-          ptyId: cliFlags.getRequiredStringFlag(flags, 'expected-pty-id'),
-          ptyGeneration: handlerValues.getRequiredNonNegativeIntegerFlag(
-            flags,
-            'expected-pty-generation'
-          ),
-          incarnationId: cliFlags.getRequiredStringFlag(flags, 'expected-incarnation-id'),
-          rootProcessId: handlerValues.getRequiredPositiveIntegerFlag(flags, 'expected-root-pid')
-        },
-        replacement: {
-          cols: handlerValues.getRequiredPositiveIntegerFlag(flags, 'cols'),
-          rows: handlerValues.getRequiredPositiveIntegerFlag(flags, 'rows'),
-          cwd: cliFlags.getRequiredStringFlag(flags, 'cwd'),
-          command: cliFlags.getRequiredStringFlag(flags, 'command')
-        }
-      }
-    )
-    output.printResult(result, json, (value) => {
-      const respawn = value.respawn
-      if (respawn.outcome === 'respawned') {
-        return `Respawned terminal ${respawn.ptyId}.`
-      }
-      return `Terminal respawn ${respawn.outcome}: ${respawn.reason}`
-    })
-    if (result.result.respawn.outcome !== 'respawned') {
-      process.exitCode =
-        result.result.respawn.outcome === 'precondition_failed'
-          ? 10
-          : result.result.respawn.outcome === 'unsupported'
-            ? 125
-            : 1
-    }
-  },
-  'terminal recover-empty-leaf-if-match': async ({ flags, client, json }) => {
-    const result = await client.call<{ recovery: TerminalEmptyLeafRecoveryResult }>(
-      'terminal.recoverEmptyLeafIfMatch',
-      {
-        originalMutationId: cliFlags.getRequiredStringFlag(flags, 'original-mutation-id'),
-        recoveryId: cliFlags.getRequiredStringFlag(flags, 'recovery-id'),
-        terminal: cliFlags.getRequiredStringFlag(flags, 'terminal'),
-        expected: {
-          worktreeId: cliFlags.getRequiredStringFlag(flags, 'expected-worktree-id'),
-          tabId: cliFlags.getRequiredStringFlag(flags, 'expected-tab-id'),
-          leafId: cliFlags.getRequiredStringFlag(flags, 'expected-leaf-id'),
-          ptyId: cliFlags.getRequiredStringFlag(flags, 'expected-pty-id'),
-          ptyGeneration: handlerValues.getRequiredNonNegativeIntegerFlag(
-            flags,
-            'expected-pty-generation'
-          ),
-          retiredIncarnationId: cliFlags.getRequiredStringFlag(flags, 'retired-incarnation-id'),
-          layoutEpoch: handlerValues.getRequiredNonNegativeIntegerFlag(flags, 'layout-epoch'),
-          persistedBindingVersion: handlerValues.getRequiredNonNegativeIntegerFlag(
-            flags,
-            'persisted-binding-version'
-          ),
-          tombstoneId: cliFlags.getRequiredStringFlag(flags, 'tombstone-id')
-        },
-        replacement: {
-          command: cliFlags.getRequiredStringFlag(flags, 'command'),
-          cwd: cliFlags.getRequiredStringFlag(flags, 'cwd'),
-          cols: handlerValues.getRequiredPositiveIntegerFlag(flags, 'cols'),
-          rows: handlerValues.getRequiredPositiveIntegerFlag(flags, 'rows')
-        }
-      }
-    )
-    output.printResult(result, json, (value) => {
-      const recovery = value.recovery
-      return recovery.outcome === 'recovered'
-        ? `Recovered terminal ${recovery.ptyId}.`
-        : `Terminal recovery ${recovery.outcome}: ${recovery.reason}`
-    })
-    if (result.result.recovery.outcome !== 'recovered') {
-      process.exitCode = result.result.recovery.outcome === 'precondition_failed' ? 10 : 1
-    }
-  },
+  ...TERMINAL_RECOVERY_HANDLERS,
   'terminal split': async ({ flags, client, cwd, json }) => {
     const directionFlag = cliFlags.getOptionalStringFlag(flags, 'direction')
     if (

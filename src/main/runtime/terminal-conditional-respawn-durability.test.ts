@@ -7,6 +7,11 @@ import { OrcaRuntimeService } from './orca-runtime'
 import { terminalEmptyLeafTombstoneId } from '../../shared/terminal-empty-leaf-recovery'
 import type { RuntimePtyController } from './runtime-pty-controller-contract'
 
+vi.mock('../../shared/terminal-recovery-rollout', () => ({
+  TERMINAL_RECOVERY_MUTATIONS_ENABLED: true,
+  TERMINAL_RECOVERY_DISABLED_REASON: 'source_baseline_disabled'
+}))
+
 const WORKTREE = 'repo-1::/tmp/worktree'
 const TAB = 'tab-1'
 const LEAF = '11111111-1111-4111-8111-111111111111'

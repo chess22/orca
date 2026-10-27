@@ -6,6 +6,11 @@ import { withBoundPane } from '../../runtime/bind-first-pane.test-fixture'
 import { TerminalLeafMutationLane } from '../../terminal-leaf-mutation-lane'
 import { commitPtySpawn } from './spawn-commit-assembly'
 
+vi.mock('../../../shared/terminal-recovery-rollout', () => ({
+  TERMINAL_RECOVERY_MUTATIONS_ENABLED: true,
+  TERMINAL_RECOVERY_DISABLED_REASON: 'source_baseline_disabled'
+}))
+
 const WORKTREE = 'repo-1::/tmp/worktree'
 const TAB = 'tab-1'
 const LEAF = '11111111-1111-4111-8111-111111111111'

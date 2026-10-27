@@ -20,6 +20,10 @@ import {
   TerminalWait
 } from '../../../../../shared/rpc-contract/terminal-unary-params'
 import { TerminalResizeForClient } from '../../../../../shared/rpc-contract/terminal-stream-params'
+import {
+  TERMINAL_RECOVERY_DISABLED_REASON,
+  TERMINAL_RECOVERY_MUTATIONS_ENABLED
+} from '../../../../../shared/terminal-recovery-rollout'
 
 export const TERMINAL_LIFECYCLE_METHODS = [
   defineMethod({
@@ -166,7 +170,13 @@ export const TERMINAL_LIFECYCLE_METHODS = [
     permission: 'workspace',
     params: TerminalRespawnIfMatch,
     handler: async (params, { runtime }) => ({
-      respawn: await runtime.respawnTerminalIfMatch(params)
+      respawn: TERMINAL_RECOVERY_MUTATIONS_ENABLED
+        ? await runtime.respawnTerminalIfMatch(params)
+        : {
+            outcome: 'unsupported' as const,
+            mutationId: params.mutationId,
+            reason: TERMINAL_RECOVERY_DISABLED_REASON
+          }
     })
   }),
   defineMethod({
@@ -174,7 +184,13 @@ export const TERMINAL_LIFECYCLE_METHODS = [
     permission: 'workspace',
     params: TerminalRecoverEmptyLeafIfMatch,
     handler: async (params, { runtime }) => ({
-      recovery: await runtime.recoverTerminalEmptyLeafIfMatch(params)
+      recovery: TERMINAL_RECOVERY_MUTATIONS_ENABLED
+        ? await runtime.recoverTerminalEmptyLeafIfMatch(params)
+        : {
+            outcome: 'failed_before_mutation' as const,
+            recoveryId: params.recoveryId,
+            reason: TERMINAL_RECOVERY_DISABLED_REASON
+          }
     })
   }),
   ...TERMINAL_WORKSPACE_STOP_METHODS,

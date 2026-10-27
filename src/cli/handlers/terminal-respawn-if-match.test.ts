@@ -154,4 +154,43 @@ describe('terminal respawn-if-match CLI', () => {
       }
     })
   })
+
+  it('refuses before the mutation RPC when the host does not advertise respawn', async () => {
+    const client = new RuntimeClient('/tmp/orca-respawn-test', 60_000, null, null)
+    const call = vi.spyOn(client, 'call')
+    vi.spyOn(client, 'getCliStatus').mockResolvedValue({
+      id: 'status',
+      ok: true,
+      result: {
+        app: { running: true, pid: 123 },
+        runtime: { state: 'ready', reachable: true, runtimeId: 'runtime-1', capabilities: [] },
+        graph: { state: 'ready' }
+      },
+      _meta: { runtimeId: 'runtime-1' }
+    })
+
+    await expect(
+      TERMINAL_HANDLERS['terminal respawn-if-match']({
+        flags: new Map([
+          ['terminal', 'term-1'],
+          ['mutation-id', 'mutation-1'],
+          ['expected-worktree-id', 'worktree-1'],
+          ['expected-tab-id', 'tab-1'],
+          ['expected-leaf-id', 'leaf-1'],
+          ['expected-pty-id', 'pty-1'],
+          ['expected-pty-generation', '3'],
+          ['expected-incarnation-id', 'incarnation-1'],
+          ['expected-root-pid', '4242'],
+          ['cols', '120'],
+          ['rows', '40'],
+          ['cwd', '/tmp/replacement'],
+          ['command', 'exec replacement']
+        ]),
+        client,
+        cwd: '/tmp/worktree',
+        json: true
+      })
+    ).rejects.toThrow(/does not support conditional terminal respawn/)
+    expect(call).not.toHaveBeenCalled()
+  })
 })

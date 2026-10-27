@@ -24,7 +24,8 @@ import {
   RUNTIME_PROTOCOL_VERSION,
   SESSION_TABS_AUTHORITATIVE_INVENTORY_RUNTIME_CAPABILITY,
   TERMINAL_PROMPT_DELIVERY_RUNTIME_CAPABILITY,
-  TERMINAL_PAIRED_PARKING_RUNTIME_CAPABILITY
+  TERMINAL_PAIRED_PARKING_RUNTIME_CAPABILITY,
+  terminalRecoveryCapabilityIsEnabled
 } from '../../shared/protocol-version'
 import {
   BROWSER_UNAVAILABLE_ERROR_CODE,
@@ -101,6 +102,7 @@ export abstract class OrcaRuntimeWithGetStatus extends OrcaRuntimeWithGetRuntime
       process.platform === 'win32' && isWindowsProcessStartTimeAvailable()
     const capabilities: RuntimeCapability[] = RUNTIME_CAPABILITIES.filter(
       (capability) =>
+        terminalRecoveryCapabilityIsEnabled(capability) &&
         (capability !== 'browser.screencast.v1' || canBrowse) &&
         (capability !== BROWSER_CLIENT_HOST_RUNTIME_CAPABILITY || canHostClientPages) &&
         (capability !== BROWSER_TAB_CREATE_KNOWN_ID_RUNTIME_CAPABILITY ||

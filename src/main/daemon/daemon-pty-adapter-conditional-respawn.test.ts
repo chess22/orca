@@ -19,6 +19,11 @@ import {
 } from './daemon-pty-adapter-conditional-respawn'
 import { terminalEmptyLeafTombstoneId } from '../../shared/terminal-empty-leaf-recovery'
 
+vi.mock('../../shared/terminal-recovery-rollout', () => ({
+  TERMINAL_RECOVERY_MUTATIONS_ENABLED: true,
+  TERMINAL_RECOVERY_DISABLED_REASON: 'source_baseline_disabled'
+}))
+
 describe('DaemonPtyAdapter conditional respawn', () => {
   let harness: Awaited<ReturnType<typeof startDaemonAdapterHarness>>
   let handles: ReturnType<typeof createMockSubprocess>[]

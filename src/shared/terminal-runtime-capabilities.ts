@@ -1,5 +1,6 @@
 import { PROGRAM_STATUS_RUNTIME_CAPABILITY } from './program-status/protocol'
 import { TERMINAL_QUICK_COMMAND_RUNTIME_CAPABILITIES } from './terminal-quick-command-capabilities'
+import { TERMINAL_RECOVERY_MUTATIONS_ENABLED } from './terminal-recovery-rollout'
 
 // Why: hosts without this strip terminal.send's inputKind (zod object drops
 // unknown keys), so a mobile xterm query reply would land as ordinary
@@ -30,6 +31,16 @@ export const TERMINAL_CREATE_SHELL_SELECTION_RUNTIME_CAPABILITY =
 export const TERMINAL_SPLIT_RETRY_RUNTIME_CAPABILITY = 'terminal.split-retry.v1' as const
 export const TERMINAL_CONDITIONAL_RESPAWN_RUNTIME_CAPABILITY =
   'terminal.conditional-respawn.v1' as const
+export const TERMINAL_EMPTY_LEAF_RECOVERY_RUNTIME_CAPABILITY =
+  'terminal.empty-leaf-recovery.v1' as const
+
+export function terminalRecoveryCapabilityIsEnabled(capability: string): boolean {
+  return (
+    TERMINAL_RECOVERY_MUTATIONS_ENABLED ||
+    (capability !== TERMINAL_CONDITIONAL_RESPAWN_RUNTIME_CAPABILITY &&
+      capability !== TERMINAL_EMPTY_LEAF_RECOVERY_RUNTIME_CAPABILITY)
+  )
+}
 
 export const TERMINAL_RUNTIME_CAPABILITIES = [
   'terminal.binary-stream.v1',
@@ -44,5 +55,6 @@ export const TERMINAL_RUNTIME_CAPABILITIES = [
   TERMINAL_CREATE_IDEMPOTENCY_RUNTIME_CAPABILITY,
   TERMINAL_CREATE_SHELL_SELECTION_RUNTIME_CAPABILITY,
   TERMINAL_SPLIT_RETRY_RUNTIME_CAPABILITY,
-  TERMINAL_CONDITIONAL_RESPAWN_RUNTIME_CAPABILITY
+  TERMINAL_CONDITIONAL_RESPAWN_RUNTIME_CAPABILITY,
+  TERMINAL_EMPTY_LEAF_RECOVERY_RUNTIME_CAPABILITY
 ] as const

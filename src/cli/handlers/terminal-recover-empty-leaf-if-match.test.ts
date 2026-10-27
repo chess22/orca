@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RuntimeClient } from '../runtime-client'
+import { TERMINAL_EMPTY_LEAF_RECOVERY_RUNTIME_CAPABILITY } from '../../shared/protocol-version'
 import { TERMINAL_HANDLERS } from './terminal'
 
 const REQUIRED_FLAGS = {
@@ -32,7 +33,23 @@ function flags(overrides: Record<string, string | undefined> = {}) {
 }
 
 function client() {
-  return new RuntimeClient('/tmp/orca-recovery-test', 60_000, null, null)
+  const runtimeClient = new RuntimeClient('/tmp/orca-recovery-test', 60_000, null, null)
+  vi.spyOn(runtimeClient, 'getCliStatus').mockResolvedValue({
+    id: 'status',
+    ok: true,
+    result: {
+      app: { running: true, pid: 123 },
+      runtime: {
+        state: 'ready',
+        reachable: true,
+        runtimeId: 'runtime-1',
+        capabilities: [TERMINAL_EMPTY_LEAF_RECOVERY_RUNTIME_CAPABILITY]
+      },
+      graph: { state: 'ready' }
+    },
+    _meta: { runtimeId: 'runtime-1' }
+  })
+  return runtimeClient
 }
 
 describe('terminal recover-empty-leaf-if-match CLI', () => {
@@ -133,5 +150,30 @@ describe('terminal recover-empty-leaf-if-match CLI', () => {
       },
       replacement: { command: 'exec relay', cwd: '/tmp/worktree', cols: 120, rows: 40 }
     })
+  })
+
+  it('refuses before the mutation RPC when the host does not advertise recovery', async () => {
+    const runtimeClient = client()
+    vi.mocked(runtimeClient.getCliStatus).mockResolvedValue({
+      id: 'status',
+      ok: true,
+      result: {
+        app: { running: true, pid: 123 },
+        runtime: { state: 'ready', reachable: true, runtimeId: 'runtime-1', capabilities: [] },
+        graph: { state: 'ready' }
+      },
+      _meta: { runtimeId: 'runtime-1' }
+    })
+    const call = vi.spyOn(runtimeClient, 'call')
+
+    await expect(
+      TERMINAL_HANDLERS['terminal recover-empty-leaf-if-match']({
+        flags: flags(),
+        client: runtimeClient,
+        cwd: '/tmp/worktree',
+        json: true
+      })
+    ).rejects.toThrow(/does not support empty-leaf terminal recovery/)
+    expect(call).not.toHaveBeenCalled()
   })
 })

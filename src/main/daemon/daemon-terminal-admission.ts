@@ -35,6 +35,10 @@ import {
   type PreparedEmptyLeafRecovery
 } from './daemon-terminal-empty-leaf-recovery-admission'
 import { createDaemonTerminalStreamClient } from './daemon-terminal-stream-client'
+import {
+  TERMINAL_RECOVERY_DISABLED_REASON,
+  TERMINAL_RECOVERY_MUTATIONS_ENABLED
+} from '../../shared/terminal-recovery-rollout'
 
 type CreateOrAttachRequest = Extract<DaemonRequest, { type: 'createOrAttach' }>
 
@@ -194,6 +198,13 @@ export class DaemonTerminalAdmission {
   }
 
   async respawnIfMatch(clientId: string, request: RespawnIfMatchRequest): Promise<unknown> {
+    if (!TERMINAL_RECOVERY_MUTATIONS_ENABLED) {
+      return {
+        outcome: 'unsupported',
+        mutationId: request.payload.mutationId,
+        reason: TERMINAL_RECOVERY_DISABLED_REASON
+      }
+    }
     // SAFETY: the helper receives this admission boundary's private state as one authority unit.
     return await admitConditionalTerminalRespawn(
       {
@@ -212,6 +223,13 @@ export class DaemonTerminalAdmission {
     clientId: string,
     request: RecoverEmptyLeafIfMatchRequest
   ): Promise<unknown> {
+    if (!TERMINAL_RECOVERY_MUTATIONS_ENABLED) {
+      return {
+        outcome: 'failed_before_mutation',
+        recoveryId: request.payload.recoveryId,
+        reason: TERMINAL_RECOVERY_DISABLED_REASON
+      }
+    }
     return await admitEmptyLeafRecovery(this.emptyLeafRecoveryAdmissionOwner(), clientId, request)
   }
 
@@ -220,6 +238,9 @@ export class DaemonTerminalAdmission {
     payload: { recoveryId: string; ptyId: string; incarnationId: string },
     commit: boolean
   ): { completed: boolean } {
+    if (!TERMINAL_RECOVERY_MUTATIONS_ENABLED) {
+      return { completed: false }
+    }
     return completeEmptyLeafRecoveryAdmission(
       this.emptyLeafRecoveryAdmissionOwner(),
       clientId,

@@ -9,6 +9,10 @@ import { ConditionalRespawnMutationRecords } from './conditional-respawn-mutatio
 import { parsePaneKey } from '../../../../shared/stable-pane-id'
 import type { RuntimeTerminalEmptyLeafRecoveryPreflight } from '../../../../shared/runtime-types'
 import type { RuntimePtyWorktreeRecord } from '../../runtime-terminal-state-records'
+import {
+  TERMINAL_RECOVERY_DISABLED_REASON,
+  TERMINAL_RECOVERY_MUTATIONS_ENABLED
+} from '../../../../shared/terminal-recovery-rollout'
 
 export abstract class OrcaRuntimeWithConditionalRespawn extends OrcaRuntimeWithEmptyLeafRecovery {
   private readonly conditionalRespawnMutations = new ConditionalRespawnMutationRecords()
@@ -16,6 +20,13 @@ export abstract class OrcaRuntimeWithConditionalRespawn extends OrcaRuntimeWithE
   async respawnTerminalIfMatch(
     request: TerminalConditionalRespawnRequest
   ): Promise<TerminalConditionalRespawnResult> {
+    if (!TERMINAL_RECOVERY_MUTATIONS_ENABLED) {
+      return {
+        outcome: 'unsupported',
+        mutationId: request.mutationId,
+        reason: TERMINAL_RECOVERY_DISABLED_REASON
+      }
+    }
     return this.conditionalRespawnMutations.run(request, () =>
       this.respawnTerminalIfMatchOnce(request)
     )
