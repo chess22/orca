@@ -50,7 +50,7 @@ function preflight(state: RuntimeEmptyLeafRecoveryState | null) {
 }
 
 describe('terminalEmptyLeafRecoveryPreflight', () => {
-  it('never evaluates or publishes ready while recovery mutations are disabled', () => {
+  it('publishes ready through the public preflight when recovery mutations are enabled', () => {
     const findRecoverableGap = vi.fn(() => original)
     const inspectState = vi.fn(() => authoritativeState)
 
@@ -63,9 +63,13 @@ describe('terminalEmptyLeafRecoveryPreflight', () => {
         captureLayoutEpoch: () => 8,
         inspectState
       })
-    ).toEqual({ status: 'unknown' })
-    expect(findRecoverableGap).not.toHaveBeenCalled()
-    expect(inspectState).not.toHaveBeenCalled()
+    ).toMatchObject({
+      status: 'ready',
+      originalMutationId: 'mutation-1',
+      retiredIncarnationId: 'incarnation-1'
+    })
+    expect(findRecoverableGap).toHaveBeenCalledOnce()
+    expect(inspectState).toHaveBeenCalledOnce()
   })
 
   it('publishes ready only when authoritative state matches every original request fence', () => {

@@ -19,16 +19,24 @@ function lifecycleMethod(name: string) {
 }
 
 describe('terminal recovery source rollout', () => {
-  it('does not advertise either recovery mutation', () => {
+  it('advertises both recovery mutations', () => {
     const capabilities = new OrcaRuntimeService().getStatus().capabilities
 
-    expect(capabilities).not.toContain(TERMINAL_CONDITIONAL_RESPAWN_RUNTIME_CAPABILITY)
-    expect(capabilities).not.toContain(TERMINAL_EMPTY_LEAF_RECOVERY_RUNTIME_CAPABILITY)
+    expect(capabilities).toContain(TERMINAL_CONDITIONAL_RESPAWN_RUNTIME_CAPABILITY)
+    expect(capabilities).toContain(TERMINAL_EMPTY_LEAF_RECOVERY_RUNTIME_CAPABILITY)
   })
 
-  it('refuses both public RPCs before calling runtime mutation methods', async () => {
-    const respawnTerminalIfMatch = vi.fn()
-    const recoverTerminalEmptyLeafIfMatch = vi.fn()
+  it('dispatches both public RPCs to the runtime mutation methods', async () => {
+    const respawnTerminalIfMatch = vi.fn(async () => ({
+      outcome: 'precondition_failed' as const,
+      mutationId: 'mutation-1',
+      reason: 'terminal_not_live'
+    }))
+    const recoverTerminalEmptyLeafIfMatch = vi.fn(async () => ({
+      outcome: 'failed_before_mutation' as const,
+      recoveryId: 'recovery-1',
+      reason: 'terminal_not_retired'
+    }))
     const runtime = { respawnTerminalIfMatch, recoverTerminalEmptyLeafIfMatch }
     const respawn = lifecycleMethod('terminal.respawnIfMatch')
     const recovery = lifecycleMethod('terminal.recoverEmptyLeafIfMatch')
@@ -49,14 +57,13 @@ describe('terminal recovery source rollout', () => {
           },
           replacement: { command: 'exec relay', cwd: '/tmp/worktree', cols: 120, rows: 40 }
         }),
-        // SAFETY: disabled handlers return before accessing any runtime member beyond the spies.
         { runtime: runtime as unknown as OrcaRuntimeService }
       )
     ).resolves.toEqual({
       respawn: {
-        outcome: 'unsupported',
+        outcome: 'precondition_failed',
         mutationId: 'mutation-1',
-        reason: 'source_baseline_disabled'
+        reason: 'terminal_not_live'
       }
     })
     await expect(
@@ -78,32 +85,36 @@ describe('terminal recovery source rollout', () => {
           },
           replacement: { command: 'exec relay', cwd: '/tmp/worktree', cols: 120, rows: 40 }
         }),
-        // SAFETY: disabled handlers return before accessing any runtime member beyond the spies.
         { runtime: runtime as unknown as OrcaRuntimeService }
       )
     ).resolves.toEqual({
       recovery: {
         outcome: 'failed_before_mutation',
         recoveryId: 'recovery-1',
-        reason: 'source_baseline_disabled'
+        reason: 'terminal_not_retired'
       }
     })
-    expect(respawnTerminalIfMatch).not.toHaveBeenCalled()
-    expect(recoverTerminalEmptyLeafIfMatch).not.toHaveBeenCalled()
+    expect(respawnTerminalIfMatch).toHaveBeenCalledOnce()
+    expect(recoverTerminalEmptyLeafIfMatch).toHaveBeenCalledOnce()
   })
 
-  it('refuses direct runtime calls before either mutation ledger or recovery state machine', async () => {
-    const sideEffectAccess = vi.fn((property: string | symbol) => {
-      throw new Error(`disabled recovery accessed side-effect dependency: ${String(property)}`)
-    })
+  it('dispatches direct runtime calls into the mutation ledger and recovery state machine', async () => {
+    const mutationRun = vi.fn(async (request: { mutationId: string }) => ({
+      outcome: 'precondition_failed' as const,
+      mutationId: request.mutationId,
+      reason: 'terminal_not_live'
+    }))
+    const recoveryRun = vi.fn(async (request: { recoveryId: string }) => ({
+      outcome: 'failed_before_mutation' as const,
+      recoveryId: request.recoveryId,
+      reason: 'terminal_not_retired'
+    }))
     // Avoid the production service constructor: it owns timers and process handles unrelated to
-    // this source gate. Throwing getters prove the guard returns before every mutation dependency.
+    // this source gate. The two small collaborators are the first stateful runtime boundaries.
     const runtime = Object.create(OrcaRuntimeService.prototype) as OrcaRuntimeService
     Object.defineProperties(runtime, {
-      conditionalRespawnMutations: { get: () => sideEffectAccess('conditionalRespawnMutations') },
-      emptyLeafRecovery: { get: () => sideEffectAccess('emptyLeafRecovery') },
-      ptyController: { get: () => sideEffectAccess('ptyController') },
-      store: { get: () => sideEffectAccess('store') }
+      conditionalRespawnMutations: { value: { run: mutationRun } },
+      emptyLeafRecovery: { value: { recover: recoveryRun } }
     })
     const respawnRequest = {
       mutationId: 'mutation-direct',
@@ -137,19 +148,15 @@ describe('terminal recovery source rollout', () => {
       replacement: { command: 'exec relay', cwd: '/tmp/worktree', cols: 100, rows: 30 }
     }
 
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      await expect(runtime.respawnTerminalIfMatch(respawnRequest)).resolves.toEqual({
-        outcome: 'unsupported',
-        mutationId: 'mutation-direct',
-        reason: 'source_baseline_disabled'
-      })
-      await expect(runtime.recoverTerminalEmptyLeafIfMatch(recoveryRequest)).resolves.toEqual({
-        outcome: 'failed_before_mutation',
-        recoveryId: 'recovery-direct',
-        reason: 'source_baseline_disabled'
-      })
-    }
-
-    expect(sideEffectAccess).not.toHaveBeenCalled()
+    await expect(runtime.respawnTerminalIfMatch(respawnRequest)).resolves.toMatchObject({
+      mutationId: 'mutation-direct',
+      reason: 'terminal_not_live'
+    })
+    await expect(runtime.recoverTerminalEmptyLeafIfMatch(recoveryRequest)).resolves.toMatchObject({
+      recoveryId: 'recovery-direct',
+      reason: 'terminal_not_retired'
+    })
+    expect(mutationRun).toHaveBeenCalledOnce()
+    expect(recoveryRun).toHaveBeenCalledOnce()
   })
 })

@@ -1,8 +1,33 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { TerminalEmptyLeafRecoveryRequest } from '../../shared/terminal-empty-leaf-recovery'
 import type { DaemonTerminalAdmissionOptions } from './daemon-terminal-admission'
 import { DaemonTerminalAdmission } from './daemon-terminal-admission'
 import type { RecoverEmptyLeafIfMatchRequest, RespawnIfMatchRequest } from './types'
+
+const helpers = vi.hoisted(() => ({
+  respawn: vi.fn(async (_owner: unknown, _clientId: string, request: RespawnIfMatchRequest) => ({
+    outcome: 'precondition_failed' as const,
+    mutationId: request.payload.mutationId,
+    reason: 'terminal_not_live'
+  })),
+  recover: vi.fn(
+    async (_owner: unknown, _clientId: string, request: RecoverEmptyLeafIfMatchRequest) => ({
+      outcome: 'failed_before_mutation' as const,
+      recoveryId: request.payload.recoveryId,
+      reason: 'terminal_not_retired'
+    })
+  ),
+  complete: vi.fn(() => ({ completed: true }))
+}))
+
+vi.mock('./daemon-terminal-conditional-respawn-admission', () => ({
+  admitConditionalTerminalRespawn: helpers.respawn,
+  resolveSpawnAdmissionDeadline: vi.fn()
+}))
+vi.mock('./daemon-terminal-empty-leaf-recovery-admission', () => ({
+  admitEmptyLeafRecovery: helpers.recover,
+  completeEmptyLeafRecoveryAdmission: helpers.complete
+}))
 
 const recovery: TerminalEmptyLeafRecoveryRequest = {
   originalMutationId: 'mutation-1',
@@ -27,16 +52,17 @@ function admission(): DaemonTerminalAdmission {
     {},
     {
       get: (_target, property) => {
-        throw new Error(`disabled recovery touched daemon dependency ${String(property)}`)
+        throw new Error(
+          `enabled rollout unexpectedly touched daemon dependency ${String(property)}`
+        )
       }
     }
   )
-  // SAFETY: every tested disabled path must return before reading any admission dependency.
   return new DaemonTerminalAdmission(noAccess as DaemonTerminalAdmissionOptions)
 }
 
 describe('daemon terminal recovery rollout', () => {
-  it('refuses respawn before admission state or host mutation', async () => {
+  it('dispatches respawn into daemon admission', async () => {
     const request: RespawnIfMatchRequest = {
       id: 'request-1',
       type: 'respawnIfMatch',
@@ -52,14 +78,14 @@ describe('daemon terminal recovery rollout', () => {
       }
     }
 
-    await expect(admission().respawnIfMatch('client-1', request)).resolves.toEqual({
-      outcome: 'unsupported',
+    await expect(admission().respawnIfMatch('client-1', request)).resolves.toMatchObject({
       mutationId: 'mutation-1',
-      reason: 'source_baseline_disabled'
+      reason: 'terminal_not_live'
     })
+    expect(helpers.respawn).toHaveBeenCalledOnce()
   })
 
-  it('refuses recovery and completion before admission ledgers or host mutation', async () => {
+  it('dispatches recovery and both completion decisions into daemon admission', async () => {
     const instance = admission()
     const request: RecoverEmptyLeafIfMatchRequest = {
       id: 'request-1',
@@ -67,10 +93,9 @@ describe('daemon terminal recovery rollout', () => {
       payload: recovery
     }
 
-    await expect(instance.recoverEmptyLeafIfMatch('client-1', request)).resolves.toEqual({
-      outcome: 'failed_before_mutation',
+    await expect(instance.recoverEmptyLeafIfMatch('client-1', request)).resolves.toMatchObject({
       recoveryId: 'recovery-1',
-      reason: 'source_baseline_disabled'
+      reason: 'terminal_not_retired'
     })
     expect(
       instance.completeEmptyLeafRecovery(
@@ -78,13 +103,15 @@ describe('daemon terminal recovery rollout', () => {
         { recoveryId: 'recovery-1', ptyId: 'pty-1', incarnationId: 'incarnation-2' },
         true
       )
-    ).toEqual({ completed: false })
+    ).toEqual({ completed: true })
     expect(
       instance.completeEmptyLeafRecovery(
         'client-1',
         { recoveryId: 'recovery-1', ptyId: 'pty-1', incarnationId: 'incarnation-2' },
         false
       )
-    ).toEqual({ completed: false })
+    ).toEqual({ completed: true })
+    expect(helpers.recover).toHaveBeenCalledOnce()
+    expect(helpers.complete).toHaveBeenCalledTimes(2)
   })
 })
