@@ -148,7 +148,7 @@ export abstract class OrcaRuntimeWithEmptyLeafRecovery extends OrcaRuntimeWithCo
     return this.emptyLeafRecovery.recover(request)
   }
 
-  private inspectEmptyLeafRecoveryState(request: TerminalEmptyLeafRecoveryRequest) {
+  protected inspectEmptyLeafRecoveryState(request: TerminalEmptyLeafRecoveryRequest) {
     const record = this.handles.get(request.terminal)
     const leaf = this.leaves.get(this.getLeafKey(request.expected.tabId, request.expected.leafId))
     const pty = this.ptysById.get(request.expected.ptyId)

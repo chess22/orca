@@ -127,6 +127,7 @@ function formatHostConnection(host: HostListEntry): string {
 }
 
 export function formatCliStatus(status: CliStatusResult): string {
+  const build = status.runtime.build
   return [
     ...(status.target && status.target.kind === 'environment'
       ? [`target: environment ${status.target.environment}`]
@@ -138,6 +139,18 @@ export function formatCliStatus(status: CliStatusResult): string {
     `runtimeReachable: ${status.runtime.reachable}`,
     `runtimeConnectionState: ${status.runtime.connectionState ?? 'unknown'}`,
     `runtimeId: ${status.runtime.runtimeId ?? 'none'}`,
+    `appVersion: ${status.runtime.appVersion ?? 'unknown'}`,
+    `buildProvenance: ${build ? 'available' : 'unverifiable'}`,
+    ...(build
+      ? [
+          `buildCommit: ${build.commit}`,
+          `buildSourceCommit: ${build.sourceCommit}`,
+          `buildId: ${build.buildId}`,
+          `buildArtifactIdentity: ${build.artifactIdentity}`,
+          `buildTargetArchitecture: ${build.targetArchitecture}`,
+          `buildAttestation: ${build.attestation}`
+        ]
+      : []),
     `graphState: ${status.graph.state}`,
     ...(status.caller === undefined ? [] : [`orcaSessionId: ${formatStatusCaller(status.caller)}`])
   ].join('\n')

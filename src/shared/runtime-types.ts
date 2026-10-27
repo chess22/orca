@@ -154,6 +154,7 @@ export type {
   RuntimeTerminalFocus,
   RuntimeTerminalInteractiveWait,
   RuntimeTerminalInteractiveWaitSource,
+  RuntimeTerminalEmptyLeafRecoveryPreflight,
   RuntimeTerminalListHostScope,
   RuntimeTerminalListResult,
   RuntimeTerminalOrphanAdoptionClaim,

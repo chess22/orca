@@ -56,10 +56,21 @@ export abstract class OrcaRuntimeWithBuildPtyTerminalSummary extends OrcaRuntime
     ) {
       throw new Error('terminal_surface_ownership_unavailable')
     }
+    const handle = this.issuePtyHandle(pty)
+    const providerKind = this.ptyController?.getProviderKind?.(pty.ptyId) ?? 'unknown'
+    const emptyLeafRecovery = this.getEmptyLeafRecoveryPreflight(handle, pty)
     return {
-      handle: this.issuePtyHandle(pty),
+      handle,
       ptyId: pty.ptyId,
       incarnationId: pty.incarnationId,
+      providerKind,
+      installRestartPersistence:
+        providerKind === 'daemon-backed'
+          ? 'eligible'
+          : providerKind === 'in-process'
+            ? 'ineligible'
+            : 'unknown',
+      ...(emptyLeafRecovery ? { emptyLeafRecovery } : {}),
       agentOwnership: pty.agentSessionOwnershipKnown
         ? pty.agentSessionOwners.length > 0
           ? 'present'

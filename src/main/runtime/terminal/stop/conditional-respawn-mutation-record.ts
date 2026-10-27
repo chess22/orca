@@ -5,7 +5,9 @@ import type {
 
 type MutationRecord = {
   fingerprint: string
+  request: TerminalConditionalRespawnRequest
   result?: Promise<TerminalConditionalRespawnResult>
+  resolvedResult?: TerminalConditionalRespawnResult
 }
 
 const MAX_RECORDED_MUTATIONS = 256
@@ -64,9 +66,32 @@ export class ConditionalRespawnMutationRecords {
         reason: 'mutation_ledger_full'
       })
     }
-    const record: MutationRecord = { fingerprint }
+    const record: MutationRecord = { fingerprint, request }
     this.records.set(request.mutationId, record)
     return this.start(record, mutation)
+  }
+
+  findRecoverableGap(args: {
+    terminal: string
+    ptyId: string
+    retiredIncarnationId: string
+  }): TerminalConditionalRespawnRequest | null {
+    const matches = [...this.records.values()].filter((record) => {
+      const result = record.resolvedResult
+      const recoverable =
+        (result?.outcome === 'partial' && result.oldStopped && !result.replacementStarted) ||
+        (result?.outcome === 'indeterminate' &&
+          result.oldStopped === true &&
+          result.replacementStarted !== false &&
+          result.incarnationId === undefined)
+      return (
+        recoverable &&
+        record.request.terminal === args.terminal &&
+        record.request.expected.ptyId === args.ptyId &&
+        record.request.expected.incarnationId === args.retiredIncarnationId
+      )
+    })
+    return matches.length === 1 ? matches[0]!.request : null
   }
 
   private start(
@@ -77,6 +102,7 @@ export class ConditionalRespawnMutationRecords {
     record.result = result
     void result.then(
       (value) => {
+        record.resolvedResult = value
         if (
           value.outcome === 'indeterminate' &&
           (value.reason === 'provider_response_lost' || value.reason === 'response_lost') &&

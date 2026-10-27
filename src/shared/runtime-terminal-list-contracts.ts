@@ -18,6 +18,12 @@ export type RuntimeTerminalSummary = {
   agentOwnership?: 'absent' | 'present' | 'unknown'
   /** Present only when agentOwnership is authoritative. */
   agentOwnerCount?: number
+  /** Process owner for this exact PTY. Absent on older hosts. */
+  providerKind?: 'daemon-backed' | 'in-process' | 'unknown'
+  /** Whether replacing the desktop app keeps this PTY alive. Absent on older hosts. */
+  installRestartPersistence?: 'eligible' | 'ineligible' | 'unknown'
+  /** Present only for an empty retained leaf; older hosts omit it. */
+  emptyLeafRecovery?: RuntimeTerminalEmptyLeafRecoveryPreflight
   orphaned?: boolean
   /**
    * Orphaned only: the pane the host last recorded for this PTY, which the renderer owning it can
@@ -49,6 +55,24 @@ export type RuntimeTerminalSummary = {
    */
   verdict?: PtyLivenessVerdict['status']
 }
+
+export type RuntimeTerminalEmptyLeafRecoveryPreflight =
+  | { status: 'unknown' }
+  | {
+      status: 'ready'
+      originalMutationId: string
+      ptyGeneration: number
+      retiredIncarnationId: string
+      layoutEpoch: number
+      persistedBindingVersion: number
+      tombstoneId: string
+      replacement: {
+        command: string
+        cwd: string
+        cols: number
+        rows: number
+      }
+    }
 
 export type RuntimeTerminalVisualTerminalNode = {
   type: 'terminal'

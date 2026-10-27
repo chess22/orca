@@ -237,6 +237,68 @@ async function prepareEmptyLeafRecovery(runtime: ReturnType<typeof harness>) {
 }
 
 describe('conditional terminal respawn durability', () => {
+  it('publishes exact recovery fences only for a confirmed empty-leaf mutation gap', async () => {
+    const runtime = harness()
+    const shown = await runtime.showTerminal(HANDLE)
+    const ptysById: Map<string, { agentSessionOwnershipKnown?: boolean }> = Reflect.get(
+      runtime,
+      'ptysById'
+    )
+    ptysById.get(PTY)!.agentSessionOwnershipKnown = true
+    runtime.setPtyController({
+      getProviderKind: () => 'daemon-backed',
+      write: () => true,
+      kill: () => false,
+      getForegroundProcess: async () => null,
+      respawnIfMatch: async (_ptyId, _incarnationId, _rootPid, mutationId) => ({
+        outcome: 'partial',
+        mutationId,
+        reason: 'replacement_not_started',
+        oldStopped: true,
+        replacementStarted: false,
+        replacementPublished: false
+      })
+    } satisfies RuntimePtyController)
+
+    await runtime.respawnTerminalIfMatch({
+      mutationId: 'mutation-public-preflight',
+      terminal: HANDLE,
+      expected: {
+        worktreeId: WORKTREE,
+        tabId: TAB,
+        leafId: LEAF,
+        ptyId: PTY,
+        ptyGeneration: shown.ptyGeneration!,
+        incarnationId: 'inc-1',
+        rootProcessId: 4242
+      },
+      replacement: { command: 'exec relay', cwd: '/tmp/worktree', cols: 80, rows: 24 }
+    })
+    await prepareEmptyLeafRecovery(runtime)
+
+    await expect(runtime.showTerminal(HANDLE)).resolves.toMatchObject({
+      providerKind: 'daemon-backed',
+      installRestartPersistence: 'eligible',
+      emptyLeafRecovery: {
+        status: 'ready',
+        originalMutationId: 'mutation-public-preflight',
+        ptyGeneration: shown.ptyGeneration,
+        retiredIncarnationId: 'inc-1',
+        persistedBindingVersion: shown.ptyGeneration,
+        tombstoneId: terminalEmptyLeafTombstoneId(PTY, 'inc-1'),
+        replacement: { command: 'exec relay', cwd: '/tmp/worktree', cols: 80, rows: 24 }
+      }
+    })
+  })
+
+  it('publishes unknown rather than guessing recovery fences without an original ledger', async () => {
+    const runtime = harness()
+    await prepareEmptyLeafRecovery(runtime)
+    await expect(runtime.showTerminal(HANDLE)).resolves.toMatchObject({
+      emptyLeafRecovery: { status: 'unknown' }
+    })
+  })
+
   it('recovers a real retained empty leaf once and replays the runtime result', async () => {
     const runtime = harness()
     const { request } = await prepareEmptyLeafRecovery(runtime)

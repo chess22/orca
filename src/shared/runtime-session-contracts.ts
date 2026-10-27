@@ -141,6 +141,9 @@ export type CliStatusResult = {
     connectionState?: RuntimeHostConnectionState
     runtimeId: string | null
     appVersion?: string
+    /** New CLIs always set this to the complete runtime value or null for mixed-version/unverifiable hosts. */
+    build?: RuntimeBuildProvenance | null
+    buildStatus?: 'available' | 'unverifiable'
     remoteUpdateSupport?: RemoteServerUpdateSupport
     capabilities?: RuntimeCapability[]
     degradations?: RuntimeDegradation[]

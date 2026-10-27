@@ -42,6 +42,7 @@ export type PtyInventoryRefreshOptions = {
 }
 
 export type RuntimePtyController = {
+  getProviderKind?(ptyId: string): 'daemon-backed' | 'in-process' | 'unknown'
   claimStablePaneCreate?(args: {
     worktreeId: string
     connectionId: string | null

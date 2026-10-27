@@ -11,7 +11,7 @@ import {
 import type { PairedRuntimeConnection } from '../../shared/paired-runtime-connection'
 import { launchOrcaApp } from './launch'
 import { getDefaultUserDataPath, readMetadata } from './metadata'
-import { getCliStatus, projectRemoteAppStatus } from './status'
+import { getCliStatus, projectCliRuntimeBuildStatus, projectRemoteAppStatus } from './status'
 import { sendRequest } from './transport'
 import { RuntimeClientError, RuntimeRpcFailureError, type RuntimeRpcSuccess } from './types'
 import {
@@ -232,7 +232,7 @@ export class RuntimeClient {
               status: response.result
             }),
             runtimeId: response.result.runtimeId,
-            ...(response.result.appVersion ? { appVersion: response.result.appVersion } : {}),
+            ...projectCliRuntimeBuildStatus(response.result),
             ...(response.result.remoteUpdateSupport
               ? { remoteUpdateSupport: response.result.remoteUpdateSupport }
               : {}),

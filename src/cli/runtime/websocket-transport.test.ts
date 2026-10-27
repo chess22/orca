@@ -106,6 +106,14 @@ describe('CLI remote WebSocket transport', () => {
   it('accepts a bare pairing payload as well as the orca URL wrapper', async () => {
     const runtime = await startTestRuntime('runtime-ws-2', {
       appVersion: '1.5.0',
+      build: {
+        commit: '43324e009085',
+        sourceCommit: '43324e0090854634c9cfd5567451a8aee339e139',
+        buildId: 'remote-1.5.0-x64',
+        artifactIdentity: 'orca@1.5.0:linux-x64',
+        targetArchitecture: 'x64',
+        attestation: 'attested'
+      },
       remoteUpdateSupport: {
         installMode: 'unsupported-headless-serve',
         automatic: false,
@@ -140,6 +148,15 @@ describe('CLI remote WebSocket transport', () => {
     expect(status.result.runtime.runtimeId).toBe('runtime-ws-2')
     expect(status.result.runtime).toMatchObject({
       appVersion: '1.5.0',
+      buildStatus: 'available',
+      build: {
+        commit: '43324e009085',
+        sourceCommit: '43324e0090854634c9cfd5567451a8aee339e139',
+        buildId: 'remote-1.5.0-x64',
+        artifactIdentity: 'orca@1.5.0:linux-x64',
+        targetArchitecture: 'x64',
+        attestation: 'attested'
+      },
       remoteUpdateSupport: { automatic: false, reason: 'manual-service-update-required' },
       capabilities: ['updater.remote-control.v1'],
       degradations: [expect.objectContaining({ code: 'browser_unavailable' })]
@@ -188,6 +205,10 @@ describe('CLI remote WebSocket transport', () => {
     expect(status.result.app).toEqual({ running: false, pid: null })
     expect(status.result.runtime.reachable).toBe(true)
     expect(status.result.runtime.runtimeId).toBe('runtime-env-1')
+    expect(status.result.runtime).toMatchObject({
+      build: null,
+      buildStatus: 'unverifiable'
+    })
   })
 
   it('blocks remote RPCs when the server protocol is too old', async () => {
@@ -266,6 +287,7 @@ async function startTestRuntime(
     minCompatibleRuntimeClientVersion?: number
     desktopWindowStatus?: 'available' | 'openable' | 'initializing' | 'blocked'
     appVersion?: string
+    build?: RuntimeStatus['build']
     remoteUpdateSupport?: {
       installMode: 'unsupported-headless-serve'
       automatic: false
@@ -343,6 +365,7 @@ async function startTestRuntime(
                   statusOverrides.minCompatibleRuntimeClientVersion ??
                   MIN_COMPATIBLE_RUNTIME_CLIENT_VERSION,
                 appVersion: statusOverrides.appVersion,
+                build: statusOverrides.build,
                 remoteUpdateSupport: statusOverrides.remoteUpdateSupport,
                 capabilities: statusOverrides.capabilities,
                 degradations: statusOverrides.degradations

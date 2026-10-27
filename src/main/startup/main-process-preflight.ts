@@ -105,7 +105,7 @@ import {
   handleMainProcessPreflightFailure
 } from './main-process-preflight-failure'
 import { ensureWindowsAppDataPath } from './windows-app-data-path'
-import { consumeHeadlessLocalBuildRelaunch } from '../local-builds/headless-local-build-relaunch'
+import { applyHeadlessLocalBuildRelaunchAppPreflight } from '../local-builds/headless-local-build-relaunch'
 
 export type MainProcessPreflightOptions = {
   focusExistingWindow: () => void
@@ -210,10 +210,12 @@ function initializeMainProcessPreflight(options: MainProcessPreflightOptions): b
   // Why captured now: after the dev/E2E override above, and before app.setName('Orca') (whenReady)
   // changes how userData resolves on a case-sensitive filesystem. See persistence.ts:20-28.
   initDataPath()
-  // Consume before Electron ready, activation policy, or window creation. The rename-backed claim
-  // makes this a strict one-shot even if two replacement processes race during Squirrel relaunch.
-  if (process.platform === 'darwin' && app.isPackaged) {
-    consumeHeadlessLocalBuildRelaunch(getCanonicalUserDataPath(), app.getVersion())
+  if (
+    process.platform === 'darwin' &&
+    app.isPackaged &&
+    !applyHeadlessLocalBuildRelaunchAppPreflight(getCanonicalUserDataPath(), app)
+  ) {
+    return false
   }
   startEventLoopDelayProbe('main', getCanonicalUserDataPath())
   antigravityHookService.setWindowsRuntimePathProvider(

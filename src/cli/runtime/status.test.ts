@@ -47,6 +47,16 @@ describe.skipIf(process.platform === 'win32')('CLI runtime status', () => {
               graphStatus: 'ready',
               authoritativeWindowId: null,
               liveTabCount: 0,
+              liveLeafCount: 0,
+              appVersion: '1.4.239',
+              build: {
+                commit: '43324e009085',
+                sourceCommit: '43324e0090854634c9cfd5567451a8aee339e139',
+                buildId: 'local-1.4.239-arm64',
+                artifactIdentity: 'orca@1.4.239:darwin-arm64',
+                targetArchitecture: 'arm64',
+                attestation: 'attested'
+              },
               degradations: [
                 {
                   code: 'browser_unavailable',
@@ -80,6 +90,16 @@ describe.skipIf(process.platform === 'win32')('CLI runtime status', () => {
       connectionState: 'connected',
       runtimeId: 'runtime-legacy',
       state: 'ready',
+      appVersion: '1.4.239',
+      buildStatus: 'available',
+      build: {
+        commit: '43324e009085',
+        sourceCommit: '43324e0090854634c9cfd5567451a8aee339e139',
+        buildId: 'local-1.4.239-arm64',
+        artifactIdentity: 'orca@1.4.239:darwin-arm64',
+        targetArchitecture: 'arm64',
+        attestation: 'attested'
+      },
       degradations: [expect.objectContaining({ code: 'browser_unavailable' })]
     })
   })

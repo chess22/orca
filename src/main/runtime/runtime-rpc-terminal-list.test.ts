@@ -30,6 +30,7 @@ describe('OrcaRuntimeRpcServer', () => {
     const runtime = new OrcaRuntimeService(makeStore() as never)
     const writes: string[] = []
     runtime.setPtyController({
+      getProviderKind: () => 'daemon-backed',
       write: (_ptyId, data) => {
         writes.push(data)
         return true
@@ -77,7 +78,13 @@ describe('OrcaRuntimeRpcServer', () => {
       id: 'req_list',
       ok: true,
       result: {
-        terminals: [expect.objectContaining({ ptyId: 'pty-1' })]
+        terminals: [
+          expect.objectContaining({
+            ptyId: 'pty-1',
+            providerKind: 'daemon-backed',
+            installRestartPersistence: 'eligible'
+          })
+        ]
       }
     })
 
@@ -102,7 +109,13 @@ describe('OrcaRuntimeRpcServer', () => {
     })
     expect(showResponse).toMatchObject({
       id: 'req_show',
-      ok: true
+      ok: true,
+      result: {
+        terminal: {
+          providerKind: 'daemon-backed',
+          installRestartPersistence: 'eligible'
+        }
+      }
     })
 
     const readResponse = await sendRequest(metadata!.transports[0]!.endpoint, {

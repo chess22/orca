@@ -11,6 +11,7 @@ export type {
 } from './runtime-terminal-send-contract'
 
 export type {
+  RuntimeTerminalEmptyLeafRecoveryPreflight,
   RuntimeTerminalListHostScope,
   RuntimeTerminalListResult,
   RuntimeTerminalOrphanAdoptionClaim,

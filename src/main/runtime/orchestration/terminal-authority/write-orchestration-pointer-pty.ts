@@ -146,10 +146,23 @@ export abstract class OrcaRuntimeWithWriteOrchestrationPointerPty extends OrcaRu
     const mainPane = ORCA_LAYOUT_OWNER_IS_MAIN
       ? (startedMainTerminalSurfaces(this)?.paneOf(leaf.tabId, leaf.leafId) ?? null)
       : null
+    const handle = this.issueHandle(leaf)
+    const providerKind = leaf.ptyId
+      ? (this.ptyController?.getProviderKind?.(leaf.ptyId) ?? 'unknown')
+      : 'unknown'
+    const emptyLeafRecovery = pty ? this.getEmptyLeafRecoveryPreflight(handle, pty) : undefined
     return {
-      handle: this.issueHandle(leaf),
+      handle,
       ptyId: leaf.ptyId,
       incarnationId: pty?.incarnationId ?? null,
+      providerKind,
+      installRestartPersistence:
+        providerKind === 'daemon-backed'
+          ? 'eligible'
+          : providerKind === 'in-process'
+            ? 'ineligible'
+            : 'unknown',
+      ...(emptyLeafRecovery ? { emptyLeafRecovery } : {}),
       orphaned: false,
       worktreeId: leaf.worktreeId,
       worktreePath: worktree?.path ?? '',

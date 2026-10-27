@@ -4,7 +4,11 @@ import type {
 } from '../../../../shared/terminal-conditional-respawn'
 import { toSshExecutionHostId } from '../../../../shared/execution-host'
 import { OrcaRuntimeWithEmptyLeafRecovery } from '../recovery/empty-leaf-recovery-runtime'
+import { terminalEmptyLeafRecoveryPreflight } from '../recovery/empty-leaf-recovery-preflight'
 import { ConditionalRespawnMutationRecords } from './conditional-respawn-mutation-record'
+import { parsePaneKey } from '../../../../shared/stable-pane-id'
+import type { RuntimeTerminalEmptyLeafRecoveryPreflight } from '../../../../shared/runtime-types'
+import type { RuntimePtyWorktreeRecord } from '../../runtime-terminal-state-records'
 
 export abstract class OrcaRuntimeWithConditionalRespawn extends OrcaRuntimeWithEmptyLeafRecovery {
   private readonly conditionalRespawnMutations = new ConditionalRespawnMutationRecords()
@@ -15,6 +19,26 @@ export abstract class OrcaRuntimeWithConditionalRespawn extends OrcaRuntimeWithE
     return this.conditionalRespawnMutations.run(request, () =>
       this.respawnTerminalIfMatchOnce(request)
     )
+  }
+
+  protected getEmptyLeafRecoveryPreflight(
+    terminal: string,
+    pty: RuntimePtyWorktreeRecord
+  ): RuntimeTerminalEmptyLeafRecoveryPreflight | undefined {
+    const recorded = this.paneOfPty(pty)
+    const pane = parsePaneKey(recorded.paneKey ?? '')
+    return terminalEmptyLeafRecoveryPreflight({
+      terminal,
+      pty,
+      leaf:
+        recorded.tabId && pane
+          ? this.leaves.get(this.getLeafKey(recorded.tabId, pane.leafId))
+          : undefined,
+      findRecoverableGap: (identity) =>
+        this.conditionalRespawnMutations.findRecoverableGap(identity),
+      captureLayoutEpoch: () => this.captureReadyGraphEpoch(),
+      inspectState: (request) => this.inspectEmptyLeafRecoveryState(request)
+    })
   }
 
   private async respawnTerminalIfMatchOnce(

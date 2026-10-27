@@ -12,6 +12,16 @@ import { isProcessRunning } from './runtime-pid-liveness'
 
 export { projectRemoteAppStatus, resolveDesktopWindowStatus }
 
+export function projectCliRuntimeBuildStatus(
+  status: RuntimeStatus
+): Pick<CliStatusResult['runtime'], 'appVersion' | 'build' | 'buildStatus'> {
+  return {
+    ...(status.appVersion ? { appVersion: status.appVersion } : {}),
+    build: status.build ?? null,
+    buildStatus: status.build ? 'available' : 'unverifiable'
+  }
+}
+
 export async function getCliStatus(
   userDataPath: string
 ): Promise<RuntimeRpcSuccess<CliStatusResult>> {
@@ -56,7 +66,7 @@ export async function getCliStatus(
           status: response.result
         }),
         runtimeId: response.result.runtimeId,
-        ...(response.result.appVersion ? { appVersion: response.result.appVersion } : {}),
+        ...projectCliRuntimeBuildStatus(response.result),
         ...(response.result.remoteUpdateSupport
           ? { remoteUpdateSupport: response.result.remoteUpdateSupport }
           : {}),

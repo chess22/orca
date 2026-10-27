@@ -42,11 +42,18 @@ import {
 } from './inventory-operations'
 import { respawnPtyIfMatch } from './conditional-respawn'
 import { completePtyEmptyLeafRecovery, recoverPtyEmptyLeafIfMatch } from './empty-leaf-recovery'
+import { resolvePtyExecutionHost } from '../provider/registry'
+import { LOCAL_EXECUTION_HOST_ID } from '../../../../shared/execution-host'
+import { terminalProviderKind } from './provider-kind'
 
 export function installPtyRuntimeController(deps: PtyRuntimeControllerDeps): void {
   const { runtime, adoptStablePane, requestSerializedBuffer } = deps
 
   runtime?.setPtyController({
+    getProviderKind: (ptyId) =>
+      resolvePtyExecutionHost(ptyId) === LOCAL_EXECUTION_HOST_ID
+        ? terminalProviderKind(localProvider, ptyId)
+        : 'unknown',
     claimStablePaneCreate: (args) => {
       const paneKey = makePaneKey(args.tabId, args.leafId)
       const ownerKey = makePaneSpawnReservationKey(args.worktreeId, args.connectionId, paneKey)
