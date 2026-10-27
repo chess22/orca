@@ -10,6 +10,7 @@ export const removeHandlerMock: Mock = vi.fn()
 export const removeAllListenersMock: Mock = vi.fn()
 export const existsSyncMock: Mock = vi.fn()
 export const statSyncMock: Mock = vi.fn()
+export const lstatSyncMock: Mock = vi.fn()
 export const accessSyncMock: Mock = vi.fn()
 export const mkdirSyncMock: Mock = vi.fn()
 export const readFileSyncMock: Mock = vi.fn()
@@ -80,6 +81,7 @@ export const electronModuleMock = (): ElectronModuleMock => ({
 export const fsModuleMock = () => ({
   existsSync: existsSyncMock,
   statSync: statSyncMock,
+  lstatSync: lstatSyncMock,
   accessSync: accessSyncMock,
   mkdirSync: mkdirSyncMock,
   readFileSync: readFileSyncMock,

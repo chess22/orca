@@ -27,7 +27,7 @@ let leases: SshRemotePtyLease[]
 let stops: LegacyRelayPaneStops
 let events: { data: string[]; exits: string[] }
 
-function retire(relayPtyId: string): void {
+async function retire(relayPtyId: string): Promise<void> {
   leases = leases.map((row) => (row.ptyId === relayPtyId ? { ...row, state: 'terminated' } : row))
 }
 
@@ -67,7 +67,7 @@ beforeEach(() => {
     recordStop: (_target, relayPtyId, pendingKill) => {
       leases = leases.map((row) => (row.ptyId === relayPtyId ? { ...row, pendingKill } : row))
     },
-    retireLease: (_target, relayPtyId) => retire(relayPtyId)
+    retireLease: async (_target, relayPtyId) => retire(relayPtyId)
   }))
 })
 
@@ -177,6 +177,8 @@ describe('a relay restarted at the same socket', () => {
     relay.attachError = new Error('PTY busy')
     await expect(subject.attach(PTY)).resolves.toEqual({ status: 'unverifiable' })
     relay.clients[0].emitExit('pty-1', 4)
+    await Promise.resolve()
+    await Promise.resolve()
     expect(events.exits).toEqual([PTY])
     expect(leases[0].state).toBe('terminated')
   })
@@ -198,6 +200,8 @@ describe('a relay restarted at the same socket', () => {
     expect(subject.snapshot()).toContainEqual(expect.objectContaining({ state: 'unverifiable' }))
     expect(relay.clients[0].closed).toBe(false)
     relay.clients[0].emitExit('pty-1', 6)
+    await Promise.resolve()
+    await Promise.resolve()
     expect(events.exits).toEqual([PTY])
     expect(leases[0].state).toBe('terminated')
     expect(leases[1].state).toBe('detached')

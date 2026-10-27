@@ -31,6 +31,7 @@ import type { RuntimePtySpawnArgs } from './runtime/spawn-state'
 import { reportRuntimeResumeOutcome } from './runtime/spawn-commit-response'
 import { savePtySpawnPaneBinding, type PtySpawnPaneBinding } from './spawn-commit-binding'
 import { publishCommittedPtySpawn, type PtySpawnPaneKeyAliases } from './spawn-commit-publication'
+import { LOCAL_EXECUTION_HOST_ID, toSshExecutionHostId } from '../../../shared/execution-host'
 
 export type PtySpawnCommitState = {
   deps: {
@@ -145,78 +146,114 @@ export async function commitPtySpawn<Reply extends PtySpawnResult>(
     codexResumeUnavailable: state.codexResumeUnavailable,
     codexResumeArgvDropped: input.resumeArgvDropped
   })
-  if (input.paneBinding) {
-    await savePtySpawnPaneBinding(state, input.paneBinding, state.args.connectionId)
-  }
-  const { registration } = input
-  if (registration.worktreeId) {
-    const tabId = state.args.tabId
-    const rejectedRegistration = registerPersistedPtySpawn(
-      runtime,
-      registration.store,
-      state.pendingRegistrationClaim,
-      result.id,
-      registration.worktreeId,
-      null,
-      // Validate pane identity so throttled mobile creation retains its live PTY surface (#7587).
-      typeof tabId === 'string' &&
-        isValidTerminalTabId(tabId) &&
-        tabId.length <= 512 &&
-        state.metadataLeafId !== null
-        ? {
-            tabId,
-            leafId: state.metadataLeafId,
-            ...(input.preAllocatedHandle ? { terminalHandle: input.preAllocatedHandle } : {}),
-            ...(result.incarnationId ? { incarnationId: result.incarnationId } : {}),
-            ...(registration.rendererLaunchAuthority
-              ? { agentLaunchAuthority: registration.rendererLaunchAuthority }
-              : {}),
-            ...(providerReattachLaunchIdentity ? { providerReattachLaunchIdentity } : {})
-          }
-        : undefined,
-      shouldSkipCodexHomeEnvForWindowsShell(registration.shellOverride, state.cwd)
-    )
-    if (rejectedRegistration) {
-      if (input.earlyExit === 'throw') {
-        return await rejectedRegistration
-      }
-      await rejectedRegistration.catch((error: unknown) => {
-        if (!(error instanceof Error) || error.message !== 'agent_session_exited_during_start') {
-          throw error
-        }
-      })
-      runtime?.cancelPendingPtyRegistration?.(
-        result.id,
-        result.incarnationId,
-        state.pendingRegistrationClaim
-      )
-      state.pendingRegistrationPtyId = null
-      state.exitedBeforeRegistration = true
-      // The renderer drains this incarnation's buffered output and exit without publishing it live.
-      return resolvePaneSpawnReservation(
-        state.paneSpawnReservationKey,
-        state.paneSpawnReservation,
-        result
-      )
-    }
-  } else if (input.earlyExit === 'throw') {
-    // Worktree-less PTYs have no later surface-registration step to clear admission.
-    runtime?.cancelPendingPtyRegistration?.(
-      result.id,
-      result.incarnationId,
-      state.pendingRegistrationClaim
-    )
-  } else if (state.pendingRegistrationPtyId) {
-    runtime?.cancelPendingPtyRegistration?.(
-      state.pendingRegistrationPtyId,
-      result.incarnationId,
-      state.pendingRegistrationClaim
-    )
+  const rejected = await commitPtySpawnBindingAndRegistration(input, providerReattachLaunchIdentity)
+  if (rejected) {
+    return rejected
   }
   if (input.earlyExit === 'drain') {
     state.pendingRegistrationPtyId = null
   }
   return publishCommittedPtySpawn(input)
+}
+
+/** Keep a pane's durable rebind and runtime registration in one canonical leaf mutation. */
+async function commitPtySpawnBindingAndRegistration<Reply extends PtySpawnResult>(
+  input: PtySpawnCommitInput<Reply>,
+  providerReattachLaunchIdentity: ReturnType<typeof admitProviderReattachLaunchIdentity>
+): Promise<PtySpawnResult | undefined> {
+  const { state } = input
+  const { result } = state
+  const runtime = state.deps.runtime
+  const commit = async (): Promise<PtySpawnResult | undefined> => {
+    if (input.paneBinding) {
+      await savePtySpawnPaneBinding(state, input.paneBinding, state.args.connectionId)
+    }
+    const { registration } = input
+    if (registration.worktreeId) {
+      const tabId = state.args.tabId
+      const rejectedRegistration = registerPersistedPtySpawn(
+        runtime,
+        registration.store,
+        state.pendingRegistrationClaim,
+        result.id,
+        registration.worktreeId,
+        null,
+        // Validate pane identity so throttled mobile creation retains its live PTY surface (#7587).
+        typeof tabId === 'string' &&
+          isValidTerminalTabId(tabId) &&
+          tabId.length <= 512 &&
+          state.metadataLeafId !== null
+          ? {
+              tabId,
+              leafId: state.metadataLeafId,
+              ...(input.preAllocatedHandle ? { terminalHandle: input.preAllocatedHandle } : {}),
+              ...(result.incarnationId ? { incarnationId: result.incarnationId } : {}),
+              ...(registration.rendererLaunchAuthority
+                ? { agentLaunchAuthority: registration.rendererLaunchAuthority }
+                : {}),
+              ...(providerReattachLaunchIdentity ? { providerReattachLaunchIdentity } : {})
+            }
+          : undefined,
+        shouldSkipCodexHomeEnvForWindowsShell(registration.shellOverride, state.cwd)
+      )
+      if (rejectedRegistration) {
+        if (input.earlyExit === 'throw') {
+          return await rejectedRegistration
+        }
+        await rejectedRegistration.catch((error: unknown) => {
+          if (!(error instanceof Error) || error.message !== 'agent_session_exited_during_start') {
+            throw error
+          }
+        })
+        runtime?.cancelPendingPtyRegistration?.(
+          result.id,
+          result.incarnationId,
+          state.pendingRegistrationClaim
+        )
+        state.pendingRegistrationPtyId = null
+        state.exitedBeforeRegistration = true
+        // The renderer drains this incarnation's buffered output and exit without publishing it live.
+        return resolvePaneSpawnReservation(
+          state.paneSpawnReservationKey,
+          state.paneSpawnReservation,
+          result
+        )
+      }
+    } else if (input.earlyExit === 'throw') {
+      // Worktree-less PTYs have no later surface-registration step to clear admission.
+      runtime?.cancelPendingPtyRegistration?.(
+        result.id,
+        result.incarnationId,
+        state.pendingRegistrationClaim
+      )
+    } else if (state.pendingRegistrationPtyId) {
+      runtime?.cancelPendingPtyRegistration?.(
+        state.pendingRegistrationPtyId,
+        result.incarnationId,
+        state.pendingRegistrationClaim
+      )
+    }
+    return undefined
+  }
+  const paneBinding = input.paneBinding
+  if (!paneBinding) {
+    return commit()
+  }
+  const { binding, store } = paneBinding
+  const executionHostId = state.args.connectionId
+    ? toSshExecutionHostId(state.args.connectionId)
+    : LOCAL_EXECUTION_HOST_ID
+  return store.runTerminalLeafMutations(
+    [
+      {
+        executionHostId,
+        worktreeId: binding.worktreeId,
+        tabId: binding.tabId,
+        leafId: binding.leafId
+      }
+    ],
+    commit
+  )
 }
 
 function commitAdoptedAgentSession<Reply extends PtySpawnResult>(

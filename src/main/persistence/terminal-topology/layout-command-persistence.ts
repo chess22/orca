@@ -53,6 +53,7 @@ type LayoutCommandRuntime = Pick<
   | 'writesFrozen'
   | 'ptyBindingGenerations'
   | 'layoutEditorViews'
+  | 'terminalLeafMutationLane'
 >
 
 const layoutCommandPersistenceContext = Symbol('LayoutCommandPersistence')
@@ -102,15 +103,44 @@ export class LayoutCommandPersistence {
         noteEffects: (noted) => (effects = noted)
       })
     )
+    const keys = resolved.flatMap((executionHostId) => {
+      const session = context.sessions.getWorkspaceSession(executionHostId)
+      const tabIds = session.tabsByWorktree[command.workspace]?.map((tab) => tab.id) ?? []
+      const existing = tabIds.flatMap((tabId) =>
+        Object.keys(session.terminalLayoutsByTabId[tabId]?.ptyIdsByLeafId ?? {}).map((leafId) => ({
+          executionHostId,
+          worktreeId: command.workspace,
+          tabId,
+          leafId
+        }))
+      )
+      return 'tabId' in command &&
+        typeof command.tabId === 'string' &&
+        'leafId' in command &&
+        typeof command.leafId === 'string'
+        ? [
+            ...existing,
+            {
+              executionHostId,
+              worktreeId: command.workspace,
+              tabId: command.tabId,
+              leafId: command.leafId
+            }
+          ]
+        : existing
+    })
     // Switch point: a terminal close stands once applied, as the switch-off window shows it.
-    const applied: Promise<LayoutApplyOutcome> =
-      ORCA_LAYOUT_OWNER_IS_MAIN && context.writeLater && isTerminalClose(command)
-        ? keptOnWriteFailure(
-            (mutate) => context.runtime.runDurableMutation(mutate),
-            writingOnly(resolved, commit),
-            context.writeLater
-          )
-        : context.runtime.runDurableMutation(writingOnly(resolved, commit))
+    const applied: Promise<LayoutApplyOutcome> = context.runtime.terminalLeafMutationLane.run(
+      keys,
+      () =>
+        ORCA_LAYOUT_OWNER_IS_MAIN && context.writeLater && isTerminalClose(command)
+          ? keptOnWriteFailure(
+              (mutate) => context.runtime.runDurableMutation(mutate),
+              writingOnly(resolved, commit),
+              context.writeLater
+            )
+          : context.runtime.runDurableMutation(writingOnly(resolved, commit))
+    )
     if (!run.onEffects) {
       return applied
     }

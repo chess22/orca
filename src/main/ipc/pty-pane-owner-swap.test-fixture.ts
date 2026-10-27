@@ -10,6 +10,7 @@ import { makePaneKey } from '../../shared/stable-pane-id'
 import { registerPtyHandlers } from './pty/register-handlers'
 import { setLocalPtyProvider } from './pty/provider/registry'
 import { TerminalIntentionalStops } from '../runtime/terminal-intentional-stops'
+import { TerminalLeafMutationLane } from '../terminal-leaf-mutation-lane'
 
 // An explicit Mock return type keeps the exported fixture type portable.
 function stub(): Mock<(...args: unknown[]) => unknown> {
@@ -197,7 +198,8 @@ export function installRestartHarness(
     quitFlushStarted: false,
     writeGeneration: 0,
     lastDurableWriteGeneration: 0,
-    ptyBindingGenerations: new Map<string, number>()
+    ptyBindingGenerations: new Map<string, number>(),
+    terminalLeafMutationLane: new TerminalLeafMutationLane()
   }
   // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: binding writes read only state, write bookkeeping, durable mutation and the session partitions from these fakes.
   const bindingArgs = [bindingRuntime, store] as unknown as ConstructorParameters<
@@ -207,6 +209,9 @@ export function installRestartHarness(
   const storeWithRetirement = Object.assign(store, {
     persistPtyBinding: vi.fn(bindingOperations.persistPtyBinding.bind(bindingOperations)),
     retirePtyBinding: bindingOperations.retirePtyBinding.bind(bindingOperations),
+    runTerminalLeafMutations: bindingRuntime.terminalLeafMutationLane.run.bind(
+      bindingRuntime.terminalLeafMutationLane
+    ),
     getPtyBindingGeneration: (hostId: ExecutionHostId, leafId: string) =>
       ptyBindingGenerationOf(bindingRuntime, hostId, leafId)
   })

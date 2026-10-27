@@ -93,13 +93,14 @@ export abstract class OrcaRuntimeWithPersistTerminalSurfaceRetirements extends O
   }
 
   // Why synchronous: the exit's stream end cues clients to re-activate, which must find the leaf gone.
-  protected retireMobileSessionSurfacesForPty(
+  protected async retireMobileSessionSurfacesForPty(
     ptyId: string,
     incarnationId: string,
     exactSurfaces: readonly Pick<RetiredTerminalSurface, 'worktreeId' | 'parentTabId' | 'leafId'>[],
     exit?: ExitedSplitPaneFacts,
-    closedPane?: ClosedPaneOfExit
-  ): Promise<void> | undefined {
+    closedPane?: ClosedPaneOfExit,
+    onPublished?: () => void
+  ): Promise<void> {
     const terminalHandle =
       this.handleByPtyId.get(ptyId) ?? this.findHandleForPtyRecord(ptyId) ?? undefined
     const retiredSurfaceByKey = new Map<string, RetiredTerminalSurface>()
@@ -129,57 +130,70 @@ export abstract class OrcaRuntimeWithPersistTerminalSurfaceRetirements extends O
     }
     const retiredSurfaces = [...retiredSurfaceByKey.values()]
     if (retiredSurfaces.length === 0) {
-      return undefined
+      onPublished?.()
+      return
     }
-    const staged = this.stageTerminalSurfaceRetirements(retiredSurfaces, exit, closedPane)
-    for (const surface of staged.unpersisted) {
-      const repoId = getRepoIdFromWorktreeId(surface.worktreeId)
-      this.terminalTopologyRevisionByRepoId.set(
-        repoId,
-        (this.terminalTopologyRevisionByRepoId.get(repoId) ?? 0) + 1
-      )
-    }
-    // Why: one repo epoch can cover multiple exits; a surface the session binds to another PTY or incarnation stays.
-    const removableRetiredSurfaces = [...staged.accepted, ...staged.unpersisted]
-    for (const [worktreeId, snapshot] of this.mobileSessionTabsByWorktree) {
-      // Why proofs aren't gated on `removable`: the exit is the attestation, and a surface the
-      // renderer already de-persisted leaves persistence nothing to accept. Withholding the proof
-      // then strands the mirror's pane until a second inventory a quiet workspace never sends.
-      const retirementProofs = terminalHandle
-        ? retiredSurfaces
-            .filter(
-              (surface) => surface.worktreeId === worktreeId && !staged.kept.includes(surface)
-            )
-            .map((surface) => ({
-              parentTabId: surface.parentTabId,
-              leafId: surface.leafId,
-              ptyId: surface.ptyId,
-              terminal: terminalHandle,
-              incarnationId
-            }))
-        : []
-      const removableSurfaces = removableRetiredSurfaces.filter(
-        (surface) => surface.worktreeId === worktreeId
-      )
-      const retired =
-        removableSurfaces.length > 0
-          ? retireTerminalSurfacesFromSnapshot({
-              snapshot,
-              ptyId,
-              exactSurfaces: removableSurfaces,
-              // Why: discovery is broad by PTY id, but publication may remove only surfaces the session retired.
-              exactOnly: true,
-              ...(retirementProofs.length > 0 ? { retirementProofs } : {})
-            })
-          : null
-      if (retired) {
-        this.storeMobileSessionSnapshot(worktreeId, retired.snapshot)
-        this.notifyMobileSessionTabsChanged(worktreeId)
-        continue
+    const keys = retiredSurfaces.map((surface) => ({
+      executionHostId:
+        this.tryGetWorkspaceSessionHostIdForWorktree(surface.worktreeId) ?? LOCAL_EXECUTION_HOST_ID,
+      worktreeId: surface.worktreeId,
+      tabId: surface.parentTabId,
+      leafId: surface.leafId
+    }))
+    await this.runTerminalLeafMutations(keys, async () => {
+      const staged = this.stageTerminalSurfaceRetirements(retiredSurfaces, exit, closedPane)
+      for (const surface of staged.unpersisted) {
+        const repoId = getRepoIdFromWorktreeId(surface.worktreeId)
+        this.terminalTopologyRevisionByRepoId.set(
+          repoId,
+          (this.terminalTopologyRevisionByRepoId.get(repoId) ?? 0) + 1
+        )
       }
-      this.publishRetiredTerminalSurfaceProofs(worktreeId, retirementProofs)
-    }
-    return staged.accepted.length > 0 ? this.persistStagedTerminalSurfaceRetirements() : undefined
+      // Why: one repo epoch can cover multiple exits; a surface the session binds to another PTY or incarnation stays.
+      const removableRetiredSurfaces = [...staged.accepted, ...staged.unpersisted]
+      for (const [worktreeId, snapshot] of this.mobileSessionTabsByWorktree) {
+        // Why proofs aren't gated on `removable`: the exit is the attestation, and a surface the
+        // renderer already de-persisted leaves persistence nothing to accept. Withholding the proof
+        // then strands the mirror's pane until a second inventory a quiet workspace never sends.
+        const retirementProofs = terminalHandle
+          ? retiredSurfaces
+              .filter(
+                (surface) => surface.worktreeId === worktreeId && !staged.kept.includes(surface)
+              )
+              .map((surface) => ({
+                parentTabId: surface.parentTabId,
+                leafId: surface.leafId,
+                ptyId: surface.ptyId,
+                terminal: terminalHandle,
+                incarnationId
+              }))
+          : []
+        const removableSurfaces = removableRetiredSurfaces.filter(
+          (surface) => surface.worktreeId === worktreeId
+        )
+        const retired =
+          removableSurfaces.length > 0
+            ? retireTerminalSurfacesFromSnapshot({
+                snapshot,
+                ptyId,
+                exactSurfaces: removableSurfaces,
+                // Why: discovery is broad by PTY id, but publication may remove only surfaces the session retired.
+                exactOnly: true,
+                ...(retirementProofs.length > 0 ? { retirementProofs } : {})
+              })
+            : null
+        if (retired) {
+          this.storeMobileSessionSnapshot(worktreeId, retired.snapshot)
+          this.notifyMobileSessionTabsChanged(worktreeId)
+          continue
+        }
+        this.publishRetiredTerminalSurfaceProofs(worktreeId, retirementProofs)
+      }
+      onPublished?.()
+      if (staged.accepted.length > 0) {
+        await this.persistStagedTerminalSurfaceRetirements()
+      }
+    })
   }
 
   /** Ships durable retirement proofs on their own frame when no surface removal carries them. */

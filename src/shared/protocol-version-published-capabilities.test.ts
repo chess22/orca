@@ -150,6 +150,7 @@ const PUBLISHED_RUNTIME_CAPABILITIES = [
   'ssh.target-management.v1',
   'task-source-context.v1',
   'terminal.binary-stream.v1',
+  'terminal.conditional-respawn.v1',
   'terminal.create-idempotency.v2',
   'terminal.create-shell-selection.v1',
   'terminal.multiplex.v1',

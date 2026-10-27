@@ -1,4 +1,7 @@
-import { OrcaRuntimeWithResolveTerminalSplitSourceAuthority } from '../launch/terminal-split-source-authority'
+import {
+  OrcaRuntimeWithTerminalStopIdentity,
+  type TerminalStopIdentity
+} from './worktree-terminal-stop-identity'
 import type { ResolvedWorktree } from '../../runtime-worktree-path-identity'
 import { worktreeIdentityKey } from '../../../../shared/worktree/id'
 import { teardownRpcDeadline } from '../../worktree-teardown-deadline'
@@ -10,9 +13,6 @@ import type {
 import type { WorktreeTerminalStopOptions } from './worktree-terminal-stop-options'
 import type { HostWorktreeTarget } from '../../../../shared/worktree/host-qualified-identity'
 import type { WorktreeTerminalMutationKind } from '../../worktree-terminal-mutation-lock'
-import type { WorkspaceSessionState } from '../../../../shared/workspace-session-state-types'
-import { cloneWorkspaceSessionState } from '../../../persistence/restoring-sessions/session-owner-fields'
-import { rollbackWorkspaceSessionAfterFailedAsyncWrite } from '../../../persistence/restoring-sessions/workspace-session-write-rollback'
 import {
   getWorktreeExecutionHostId,
   parseExecutionHostId,
@@ -29,7 +29,7 @@ import { clearClosedWorktreeResumeRecords } from './worktree-sleep-resume-record
 import { anySleepKeyNames, hostSleepKey, resolveSleepScope } from './worktree-terminal-sleep-key'
 import type { WorktreeSleepScope } from './worktree-terminal-sleep-key'
 
-export abstract class OrcaRuntimeWithStopTerminalsForWorktree extends OrcaRuntimeWithResolveTerminalSplitSourceAuthority {
+export abstract class OrcaRuntimeWithStopTerminalsForWorktree extends OrcaRuntimeWithTerminalStopIdentity {
   protected abstract sleepResolvedWorktreeTerminals(
     worktree: ResolvedWorktree,
     scope: WorktreeSleepScope,
@@ -125,50 +125,6 @@ export abstract class OrcaRuntimeWithStopTerminalsForWorktree extends OrcaRuntim
     )
   }
 
-  /** Durably replaces a host partition's session with `edit`'s result: null skips, an Error refuses. */
-  protected async commitWorkspaceSessionEdit(
-    hostId: ExecutionHostId,
-    edit: (session: WorkspaceSessionState) => WorkspaceSessionState | Error | null
-  ): Promise<void> {
-    if (
-      !this.store?.getWorkspaceSession ||
-      !this.store.setWorkspaceSession ||
-      !this.store.runDurableMutation
-    ) {
-      throw new Error('workspace_session_unavailable')
-    }
-    const refusal = await this.store.runDurableMutation<Error | undefined>(() => {
-      // SAFETY: Keep the original late lookup and failure if this capability disappears.
-      const session = cloneWorkspaceSessionState(this.store!.getWorkspaceSession!(hostId))
-      const next = edit(session)
-      if (next instanceof Error) {
-        return { value: next, persist: false }
-      }
-      if (!next) {
-        return { value: undefined, persist: false }
-      }
-      // SAFETY: Keep the original late lookup and failure if this capability disappears.
-      this.store!.setWorkspaceSession!(next, hostId)
-      // SAFETY: Keep the original late lookup and failure if this capability disappears.
-      const staged = cloneWorkspaceSessionState(this.store!.getWorkspaceSession!(hostId))
-      return {
-        value: undefined,
-        rollback: () => {
-          // SAFETY: Keep the original late lookup and failure if this capability disappears.
-          const current = this.store!.getWorkspaceSession!(hostId)
-          const rolledBack = rollbackWorkspaceSessionAfterFailedAsyncWrite(session, staged, current)
-          if (rolledBack !== current) {
-            // SAFETY: Keep the original late lookup and failure if this capability disappears.
-            this.store!.setWorkspaceSession!(rolledBack, hostId)
-          }
-        }
-      }
-    })
-    if (refusal) {
-      throw refusal
-    }
-  }
-
   async stopTerminalsForWorktree(
     worktreeSelector: string,
     options: WorktreeTerminalStopOptions = {}
@@ -203,12 +159,16 @@ export abstract class OrcaRuntimeWithStopTerminalsForWorktree extends OrcaRuntim
 
     let stopped = 0
     for (const ptyId of ptyIds) {
+      const identity = this.captureTerminalStopIdentity(ptyId)
+      if (!identity) {
+        continue
+      }
       if (pastDeadline()) {
         if (!options.requestStopsPastDeadline) {
           break
         }
         // Unverified, so never counted: the budget bounds the wait, not who is asked to stop.
-        this.requestPtyStopWithoutWaiting(ptyId)
+        this.requestPtyStopWithoutWaiting(identity)
         continue
       }
       const stop = async (): Promise<boolean> => {
@@ -234,9 +194,19 @@ export abstract class OrcaRuntimeWithStopTerminalsForWorktree extends OrcaRuntim
           return false
         }
       }
-      const stopResult = options.stopPty
-        ? await options.stopPty(ptyId, stop)
-        : { stopped: await stop(), owner: true }
+      const stopResult = await this.runTerminalStopMutation(identity, async () => {
+        if (!this.terminalStopIdentityMatches(identity)) {
+          return { stopped: false, owner: true }
+        }
+        return options.stopPty
+          ? await options.stopPty(ptyId, async () => {
+              if (!this.terminalStopIdentityMatches(identity)) {
+                return false
+              }
+              return await stop()
+            })
+          : { stopped: await stop(), owner: true }
+      })
       if (stopResult.owner && stopResult.stopped) {
         stopped += 1
       }
@@ -244,12 +214,15 @@ export abstract class OrcaRuntimeWithStopTerminalsForWorktree extends OrcaRuntim
     return { stopped }
   }
 
-  private requestPtyStopWithoutWaiting(ptyId: string): void {
-    try {
-      this.ptyController?.kill(ptyId)
-    } catch (error) {
-      console.warn(`[runtime] failed to request a stop for terminal ${ptyId}`, error)
-    }
+  private requestPtyStopWithoutWaiting(identity: TerminalStopIdentity): void {
+    void this.runTerminalStopMutation(identity, () => {
+      if (!this.terminalStopIdentityMatches(identity)) {
+        return
+      }
+      this.ptyController?.kill(identity.ptyId)
+    }).catch((error) => {
+      console.warn(`[runtime] failed to request a stop for terminal ${identity.ptyId}`, error)
+    })
   }
 
   /** With `soleLivePtyId`, stops nothing unless that PTY is the worktree's only live terminal. */

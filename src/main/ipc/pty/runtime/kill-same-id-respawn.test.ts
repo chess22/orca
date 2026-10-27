@@ -6,7 +6,12 @@ import { finishPtyShutdown } from '../provider/liveness'
 import { ptyIncarnationById, ptyOwnership } from '../provider/ownership-state'
 import { getLocalPtyProvider, setLocalPtyProvider } from '../provider/registry'
 import type { PtyRuntimeControllerDeps } from './controller-deps'
-import { killPtyFromRuntimeController, stopAndWaitPtyFromRuntimeController } from './kill'
+import {
+  killPtyFromRuntimeController,
+  stopAndWaitPtyFromRuntimeController,
+  stopPtyIncarnationIfMatchFromRuntimeController
+} from './kill'
+import { PtyExitProof } from '../../../pty-exit-proof'
 
 const PTY_ID = 'respawned-pty'
 
@@ -95,6 +100,76 @@ describe('a stop whose shutdown lands after a same-id respawn', () => {
     const h = start()
     await stopRendererOwnedPty(asKillIpcDeps(h.ports), { id: PTY_ID })
     expectRespawnUntouched(h)
+  })
+
+  it('refuses a renderer stop when its queued mutation observes a replacement incarnation', async () => {
+    const h = start()
+    const shutdown = vi.spyOn(getLocalPtyProvider(), 'shutdown')
+    Object.assign(h.ports, {
+      store: {
+        getWorkspaceSessionHostIds: () => [],
+        runTerminalLeafMutations: async (_keys: unknown, operation: () => Promise<void>) => {
+          respawn()
+          return await operation()
+        }
+      }
+    })
+
+    await expect(stopRendererOwnedPty(asKillIpcDeps(h.ports), { id: PTY_ID })).rejects.toThrow(
+      'terminal_kill_pty_identity_changed'
+    )
+    expect(shutdown).not.toHaveBeenCalled()
+    expectRespawnUntouched(h)
+  })
+})
+
+describe('exact replacement cleanup', () => {
+  it('uses the provider incarnation fence and observes the replacement stopped', async () => {
+    let providerAlive = true
+    const killFenced = vi.fn(async () => {
+      providerAlive = false
+      return { outcome: 'ended' as const }
+    })
+    setLocalPtyProvider({
+      supportsFencedTermination: () => true,
+      killFenced
+    } as unknown as IPtyProvider)
+    ptyOwnership.set(PTY_ID, LOCAL_EXECUTION_HOST_ID)
+
+    await expect(
+      stopPtyIncarnationIfMatchFromRuntimeController(PTY_ID, 'inc-replacement')
+    ).resolves.toBe(true)
+    expect(killFenced).toHaveBeenCalledExactlyOnceWith({
+      id: PTY_ID,
+      expectedIncarnationId: 'inc-replacement',
+      requireNoAgentOwner: false,
+      requireUnattached: false
+    })
+    expect(providerAlive).toBe(false)
+  })
+})
+
+describe('an SSH retirement persistence failure', () => {
+  it('keeps provider ownership and incarnation state intact', async () => {
+    ptyOwnership.set(PTY_ID, 'ssh:ssh-1')
+    ptyIncarnationById.set(PTY_ID, 'inc-current')
+    const store = {
+      markSshRemotePtyLease: vi.fn(async () => {
+        throw new Error('durable retirement failed')
+      })
+    }
+
+    await expect(
+      finishPtyShutdown(
+        PTY_ID,
+        'ssh-1',
+        store as never,
+        // The exact incarnation remains current throughout the failed write.
+        PtyExitProof.from('exit-observed', 'inc-current')
+      )
+    ).rejects.toThrow('durable retirement failed')
+    expect(ptyOwnership.get(PTY_ID)).toBe('ssh:ssh-1')
+    expect(ptyIncarnationById.get(PTY_ID)).toBe('inc-current')
   })
 })
 

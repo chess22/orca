@@ -71,6 +71,62 @@ async function startSplitHost() {
 }
 
 describe('OrcaRuntimeService', () => {
+  it('retires a persisted-only leaf before clearing runtime exit state', async () => {
+    const { runtime, getSession } = await startSplitHost()
+    const internals = runtime as unknown as {
+      mobileSessionTabsByWorktree: Map<string, { tabs: { type: string; ptyId?: string | null }[] }>
+      ptysById: Map<string, { tabId: string | null; paneKey: string | null }>
+    }
+    const snapshot = internals.mobileSessionTabsByWorktree.get(TEST_WORKTREE_ID)
+    if (!snapshot) {
+      throw new Error('missing_test_snapshot')
+    }
+    snapshot.tabs = snapshot.tabs.filter((tab) => tab.ptyId !== 'pty-b')
+    const pty = internals.ptysById.get('pty-b')
+    if (!pty) {
+      throw new Error('missing_test_pty')
+    }
+    pty.tabId = null
+    pty.paneKey = null
+
+    await runtime.onPtyExit('pty-b', 0, undefined, { providerExitObserved: true })
+
+    expect(
+      getSession().terminalLayoutsByTabId['host-tab']?.ptyIdsByLeafId?.[HEADLESS_SECOND_LEAF_ID]
+    ).toBeUndefined()
+  })
+
+  it('holds stream end behind a contended leaf retirement', async () => {
+    const { runtime, getSession } = await startSplitHost()
+    const gate = makeDeferred()
+    const blocker = runtime.runTerminalLeafMutations(
+      [
+        {
+          executionHostId: 'local',
+          worktreeId: TEST_WORKTREE_ID,
+          tabId: 'host-tab',
+          leafId: HEADLESS_SECOND_LEAF_ID
+        }
+      ],
+      () => gate.promise
+    )
+    const streamEnd = vi.fn()
+    runtime.subscribeToPtyExit('pty-b', streamEnd)
+    const exiting = runtime.onPtyExit('pty-b', 0, undefined, { providerExitObserved: true })
+
+    expect(streamEnd).not.toHaveBeenCalled()
+    expect(
+      getSession().terminalLayoutsByTabId['host-tab']?.ptyIdsByLeafId?.[HEADLESS_SECOND_LEAF_ID]
+    ).toBe('pty-b')
+    gate.resolve()
+    await blocker
+    await exiting
+    expect(streamEnd).toHaveBeenCalledOnce()
+    expect(
+      getSession().terminalLayoutsByTabId['host-tab']?.ptyIdsByLeafId?.[HEADLESS_SECOND_LEAF_ID]
+    ).toBeUndefined()
+  })
+
   // Why: a paired mirror answers an exit's stream end by re-activating its pane. An activation
   // that still finds the leaf respawns the exited session, and the retirement never publishes.
   it('retires an exited split leaf before its stream end, while the durable write is pending', async () => {

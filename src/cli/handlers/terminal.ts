@@ -9,6 +9,7 @@ import type {
   RuntimeTerminalSplit,
   RuntimeTerminalWait
 } from '../../shared/runtime-types'
+import type { TerminalConditionalRespawnResult } from '../../shared/terminal-conditional-respawn'
 import type { CommandHandler } from '../dispatch'
 import { shouldUseRendererBackedInteractiveTerminal } from '../codex-command-classification'
 import {
@@ -29,17 +30,18 @@ import {
   getRequiredStringFlag,
   getRequiredStringFlagAllowingEmpty
 } from '../flags'
+import { RuntimeClientError } from '../runtime-client'
 import {
   annotateOmittedHostScope,
   type WithAnnotatedHostScope
 } from '../omitted-host-scope-selectors'
-import { RuntimeClientError } from '../runtime-client'
 import {
   isSupportedWindowsShellOverride,
   listSupportedWindowsShellOverrides
 } from '../../shared/windows-terminal-shell'
 import {
   TERMINAL_CREATE_SHELL_SELECTION_RUNTIME_CAPABILITY,
+  TERMINAL_CONDITIONAL_RESPAWN_RUNTIME_CAPABILITY,
   TERMINAL_SPLIT_RETRY_RUNTIME_CAPABILITY
 } from '../../shared/protocol-version'
 import {
@@ -52,8 +54,10 @@ import { revealPairedTerminalOnLocalDesktop } from '../paired-terminal-desktop-r
 import { terminalCloseHandler } from './terminal-close'
 import { terminalSendHandler } from './terminal-send'
 
-// Long terminal waits must outlive the ordinary transport timeout.
-const DEFAULT_TERMINAL_WAIT_RPC_TIMEOUT_MS = 5 * 60 * 1000
+import {
+  DEFAULT_TERMINAL_WAIT_RPC_TIMEOUT_MS,
+  getRequiredNonNegativeIntegerFlag
+} from './terminal-handler-values'
 
 const terminalFocusHandler: CommandHandler = async ({ flags, client, cwd, json }) => {
   const terminal = await getTerminalHandle(flags, cwd, client)
@@ -213,6 +217,56 @@ export const TERMINAL_HANDLERS: Record<string, CommandHandler> = {
   },
   'terminal switch': terminalFocusHandler,
   'terminal close': terminalCloseHandler,
+  'terminal respawn-if-match': async ({ flags, client, json }) => {
+    const mutationId = getRequiredStringFlag(flags, 'mutation-id')
+    const status = await client.getCliStatus()
+    if (
+      status.result.runtime.capabilities?.includes(
+        TERMINAL_CONDITIONAL_RESPAWN_RUNTIME_CAPABILITY
+      ) !== true
+    ) {
+      throw new RuntimeClientError(
+        'incompatible_runtime',
+        'This Orca host does not support conditional terminal respawn. Nothing was changed.'
+      )
+    }
+    const result = await client.call<{ respawn: TerminalConditionalRespawnResult }>(
+      'terminal.respawnIfMatch',
+      {
+        mutationId,
+        terminal: getRequiredStringFlag(flags, 'terminal'),
+        expected: {
+          worktreeId: getRequiredStringFlag(flags, 'expected-worktree-id'),
+          tabId: getRequiredStringFlag(flags, 'expected-tab-id'),
+          leafId: getRequiredStringFlag(flags, 'expected-leaf-id'),
+          ptyId: getRequiredStringFlag(flags, 'expected-pty-id'),
+          ptyGeneration: getRequiredNonNegativeIntegerFlag(flags, 'expected-pty-generation'),
+          incarnationId: getRequiredStringFlag(flags, 'expected-incarnation-id')
+        },
+        replacement: {
+          cols: getOptionalPositiveIntegerFlag(flags, 'cols'),
+          rows: getOptionalPositiveIntegerFlag(flags, 'rows'),
+          cwd: getOptionalStringFlag(flags, 'cwd'),
+          command: getOptionalStringFlag(flags, 'command')
+        }
+      }
+    )
+    printResult(result, json, (value) => {
+      const respawn = value.respawn
+      if (respawn.outcome === 'respawned') {
+        return `Respawned terminal ${respawn.ptyId}.`
+      }
+      return `Terminal respawn ${respawn.outcome}: ${respawn.reason}`
+    })
+    if (result.result.respawn.outcome !== 'respawned') {
+      process.exitCode =
+        result.result.respawn.outcome === 'precondition_failed'
+          ? 10
+          : result.result.respawn.outcome === 'unsupported'
+            ? 125
+            : 1
+    }
+  },
   'terminal split': async ({ flags, client, cwd, json }) => {
     const directionFlag = getOptionalStringFlag(flags, 'direction')
     if (

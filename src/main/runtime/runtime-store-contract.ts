@@ -56,6 +56,8 @@ export type RuntimeStore = {
   setWorkspaceSession?: Store['setWorkspaceSession']
   getRemoteLayoutSnapshots?: Store['getRemoteLayoutSnapshots']
   runDurableMutation?: Store['runDurableMutation']
+  runTerminalLeafMutations?: Store['runTerminalLeafMutations']
+  getSshPtyRetirementMutationKeys?: Store['getSshPtyRetirementMutationKeys']
   flushOrThrow?: Store['flushOrThrow']
   flushPendingOrThrowAsync?: Store['flushPendingOrThrowAsync']
   stageOrcadMigrationCatalog?: Store['stageOrcadMigrationCatalog']

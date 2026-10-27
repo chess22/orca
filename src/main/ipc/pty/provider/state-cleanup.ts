@@ -101,6 +101,20 @@ export function clearProviderPtyState(
   }
 }
 
+export function clearExitedProviderPtyState(id: string, incarnationId?: string): boolean {
+  const currentIncarnationId = ptyIncarnationById.get(id)
+  if (
+    incarnationId === undefined
+      ? currentIncarnationId !== undefined
+      : currentIncarnationId !== incarnationId
+  ) {
+    return false
+  }
+  clearProviderPtyState(id)
+  ptyOwnership.delete(id)
+  return true
+}
+
 export function clearPtyOwnershipForConnection(connectionId: string): void {
   for (const ptyId of getPtyIdsForConnection(connectionId)) {
     // Disconnect clears unroutable pane caches while claim fences survive until authoritative reconnect.

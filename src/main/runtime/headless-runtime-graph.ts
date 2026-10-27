@@ -7,7 +7,9 @@ import type { OrcaRuntimeService } from './orca-runtime'
  * an inventory publication that never comes.
  */
 export function publishHeadlessRuntimeGraph(
-  runtime: Pick<OrcaRuntimeService, 'syncWindowGraph'>
-): void {
-  runtime.syncWindowGraph(HEADLESS_RUNTIME_WINDOW_ID, { tabs: [], leaves: [] })
+  runtime: Pick<OrcaRuntimeService, 'syncWindowGraphSerialized'>
+): Promise<void> {
+  return runtime
+    .syncWindowGraphSerialized(HEADLESS_RUNTIME_WINDOW_ID, { tabs: [], leaves: [] })
+    .then(() => undefined)
 }

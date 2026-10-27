@@ -40,7 +40,11 @@ type ReportPhase = EventProps<'ssh_host_server_legacy_relay_bridge'>['phase']
 export type LegacyRelayBridgeHost = {
   leases: (targetId: string) => SshRemotePtyLease[]
   /** Ends the lease and any stop recorded on it: on the relay's proof, or on a stop it can't be sent. */
-  retireLease: (targetId: string, relayPtyId: string, evidence: PtyRetirementEvidence) => void
+  retireLease: (
+    targetId: string,
+    relayPtyId: string,
+    evidence: PtyRetirementEvidence
+  ) => Promise<void>
   /** Persists a closed tab's stop on its lease, so a restart still sends it. */
   recordStop: (targetId: string, relayPtyId: string, pendingKill: SshPendingPtyKill) => void
   connection: (targetId: string) => SshConnection | null

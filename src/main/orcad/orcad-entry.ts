@@ -333,7 +333,7 @@ async function startOrcadRuntime(
   agentHookServer.setCliWriterExecutionMatcher(observedPaneIdentities, runtime)
   // Why before the RPC server binds: like `--serve`, the first client must find a ready graph.
   const { publishHeadlessRuntimeGraph } = await import('../runtime/headless-runtime-graph')
-  publishHeadlessRuntimeGraph(runtime)
+  await publishHeadlessRuntimeGraph(runtime)
   // Store load skipped moved shell history: only the runtime can tell which worktrees run a shell.
   void runtime.installPendingOrcadMigrationShellHistory().catch((error: unknown) => {
     console.error('[orcad-migration] installing pending shell history failed:', error)

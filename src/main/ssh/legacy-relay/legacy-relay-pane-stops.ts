@@ -208,17 +208,22 @@ export class LegacyRelayPaneStops {
   private abandon(ptyId: string, bridge: StopTarget | null, attempted = false): void {
     this.closing.delete(ptyId)
     const relayPtyId = parseAppSshPtyId(ptyId)?.relayPtyId
-    if (relayPtyId) {
-      this.host()?.retireLease(
-        this.targetId,
-        relayPtyId,
-        PtyRetirementWithoutProof.because('the old relay could not be sent a stop fenced to it')
-      )
-    }
+    const retirement = relayPtyId
+      ? (this.host()?.retireLease(
+          this.targetId,
+          relayPtyId,
+          PtyRetirementWithoutProof.because('the old relay could not be sent a stop fenced to it')
+        ) ?? Promise.resolve())
+      : Promise.resolve()
     // The next listing drops the pane it still holds for that lease; after an attempted stop, only
     // once the relay's exit report had its chance, since dropping the pane first would hide it.
     const relist = attempted ? this.exits.wait(ptyId, UNFENCED_EXIT_WAIT_MS) : Promise.resolve()
-    void relist.then(() => bridge?.refresh())
+    void Promise.all([
+      retirement.catch((error: unknown) =>
+        console.warn('[legacy-relay] failed to retire abandoned pane:', error)
+      ),
+      relist
+    ]).then(() => bridge?.refresh())
   }
 
   /** The old relay's own stop, fenced to the process the tab ran; false when it can't be asked. */

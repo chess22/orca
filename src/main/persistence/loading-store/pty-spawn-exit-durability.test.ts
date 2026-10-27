@@ -96,7 +96,12 @@ it.each(
         )?.result
     } else if (controller === 'runtime') {
       // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: only commit runs; its runtime/store are real and preflight-only dependencies are unreachable.
-      const deps = { runtime, store, options: {} } as PtyRuntimeControllerDeps
+      const deps = {
+        runtime,
+        store,
+        options: {},
+        sendPtySpawnedToRenderer: vi.fn()
+      } as unknown as PtyRuntimeControllerDeps
       const ctx = createRuntimePtySpawnState(deps, { ...binding, connectionId, cols: 80, rows: 24 })
       ctx.result = { id: binding.ptyId, incarnationId: binding.incarnationId }
       ctx.stablePaneOwner = owner
@@ -106,7 +111,11 @@ it.each(
       commit = () => commitRuntimePtySpawn(ctx)
     } else {
       // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: only commit runs; its runtime/store are real and preflight-only dependencies are unreachable.
-      const deps = { runtime, store } as PtySpawnIpcDeps
+      const deps = {
+        runtime,
+        store,
+        sendPtySpawnedToRenderer: vi.fn()
+      } as unknown as PtySpawnIpcDeps
       const ctx = createPtyIpcSpawnState(deps, { ...binding, connectionId, cols: 80, rows: 24 })
       ctx.result = { id: binding.ptyId, incarnationId: binding.incarnationId }
       ctx.stablePaneOwner = owner
@@ -118,21 +127,23 @@ it.each(
       commit = () => commitPtyIpcSpawn(ctx)
     }
     const gate = authority.pause()
+    const committing = commit()
     const pending =
-      controller === 'ipc'
-        ? expect(commit()).resolves.toMatchObject({
+      controller === 'runtime' && stableOwner
+        ? expect(committing).rejects.toThrow('agent_session_exited_during_start')
+        : expect(committing).resolves.toMatchObject({
             id: binding.ptyId,
             incarnationId: binding.incarnationId
           })
-        : expect(commit()).rejects.toThrow('agent_session_exited_during_start')
     await gate.started.promise
     const nextReservation = reservation ? reserveIdlePaneSpawn(reservationKey) : undefined
-    clearProviderPtyState(binding.ptyId)
-    ptyOwnership.delete(binding.ptyId)
-    await runtime.onPtyExit(binding.ptyId, exitCode, binding.incarnationId, {
+    const exiting = runtime.onPtyExit(binding.ptyId, exitCode, binding.incarnationId, {
       providerExitObserved: true
     })
     gate.finish.resolve()
+    await exiting
+    clearProviderPtyState(binding.ptyId)
+    ptyOwnership.delete(binding.ptyId)
     await pending
     expect(ptyOwnership.has(binding.ptyId)).toBe(false)
     expect(ptyIncarnationById.has(binding.ptyId)).toBe(false)
@@ -195,7 +206,7 @@ it.each(['replacement-pty', binding.ptyId])(
   }
 )
 
-it('retains the binding when loss of contact supplies no process-exit proof', async () => {
+it('retires a persisted-only local binding after an unproved local exit', async () => {
   const { store, readState } = await fixture()
   const runtime = new OrcaRuntimeService(store)
   runtime.beginPtyRegistration(binding.ptyId, binding.incarnationId)
@@ -213,10 +224,10 @@ it('retains the binding when loss of contact supplies no process-exit proof', as
     )
   ).toThrow('agent_session_exited_during_start')
   expect(
-    readState().workspaceSession.terminalLayoutsByTabId[binding.tabId].ptyIdsByLeafId[
+    readState().workspaceSession.terminalLayoutsByTabId[binding.tabId]?.ptyIdsByLeafId?.[
       binding.leafId
     ]
-  ).toBe(binding.ptyId)
+  ).toBeUndefined()
 })
 
 it('does not settle rejected registration until its exit cleanup reaches SQLite', async () => {
@@ -224,8 +235,11 @@ it('does not settle rejected registration until its exit cleanup reaches SQLite'
   const runtime = new OrcaRuntimeService(store)
   runtime.beginPtyRegistration(binding.ptyId, binding.incarnationId)
   await store.persistPtyBinding(binding)
-  await runtime.onPtyExit(binding.ptyId, 0, binding.incarnationId, { providerExitObserved: true })
   const gate = authority.pause()
+  const exiting = runtime.onPtyExit(binding.ptyId, 0, binding.incarnationId, {
+    providerExitObserved: true
+  })
+  await gate.started.promise
   let rejected = false
   const cleanup = registerPersistedPtySpawn(
     runtime,
@@ -244,7 +258,6 @@ it('does not settle rejected registration until its exit cleanup reaches SQLite'
     throw error
   })
   const failure = expect(pending).rejects.toThrow('agent_session_exited_during_start')
-  await gate.started.promise
   expect(rejected).toBe(false)
   expect(
     readState().workspaceSession.terminalLayoutsByTabId[binding.tabId].ptyIdsByLeafId[
@@ -252,6 +265,7 @@ it('does not settle rejected registration until its exit cleanup reaches SQLite'
     ]
   ).toBe(binding.ptyId)
   gate.finish.resolve()
+  await exiting
   await failure
   expect(
     readState().workspaceSession.terminalLayoutsByTabId[binding.tabId]?.ptyIdsByLeafId?.[

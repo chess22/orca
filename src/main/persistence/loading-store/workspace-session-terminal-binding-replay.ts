@@ -5,6 +5,8 @@ import {
 } from '../../../shared/execution-host'
 import { getPtyExecutionHost } from '../../../shared/terminal-execution-host'
 import type { WorkspaceSessionState } from '../../../shared/workspace-session-state-types'
+import { collectLeafIds } from '../../../shared/terminal-pane-layout-tree'
+import type { TerminalLeafMutationKey } from '../../terminal-leaf-mutation-lane'
 import { preserveMissingLeafRecordEntries } from '../restoring-sessions/terminal-layout-normalization'
 
 import type { TerminalBindingRecoveryOperations } from './terminal-binding-recovery'
@@ -40,6 +42,52 @@ export type WorkspaceSessionTerminalBindingReplayOptions = {
   targetIdForWorktree?: (worktreeId: string) => string | null
   /** Reject a binding that explicitly names another execution host. */
   executionHostId?: ExecutionHostId
+}
+
+/**
+ * Every leaf whose durable binding a snapshot replay can retain, add, or remove.
+ * Callers that publish a persisted session acquire these keys before applying the snapshot.
+ */
+export function workspaceSessionTerminalReplayMutationKeys(
+  executionHostId: ExecutionHostId,
+  session: WorkspaceSessionState,
+  prior: WorkspaceSessionState
+): TerminalLeafMutationKey[] {
+  const worktreeIdsByTab = new Map<string, Set<string>>()
+  for (const source of [prior.tabsByWorktree ?? {}, session.tabsByWorktree ?? {}]) {
+    for (const [worktreeId, tabs] of Object.entries(source)) {
+      for (const tab of tabs) {
+        const worktreeIds = worktreeIdsByTab.get(tab.id) ?? new Set<string>()
+        worktreeIds.add(worktreeId)
+        worktreeIdsByTab.set(tab.id, worktreeIds)
+      }
+    }
+  }
+  const keys: TerminalLeafMutationKey[] = []
+  const tabIds = new Set([
+    ...Object.keys(prior.terminalLayoutsByTabId ?? {}),
+    ...Object.keys(session.terminalLayoutsByTabId ?? {})
+  ])
+  for (const tabId of tabIds) {
+    const worktreeIds = worktreeIdsByTab.get(tabId)
+    if (!worktreeIds) {
+      continue
+    }
+    const priorLayout = prior.terminalLayoutsByTabId?.[tabId]
+    const nextLayout = session.terminalLayoutsByTabId?.[tabId]
+    const leafIds = new Set([
+      ...collectLeafIds(priorLayout?.root),
+      ...collectLeafIds(nextLayout?.root),
+      ...Object.keys(priorLayout?.ptyIdsByLeafId ?? {}),
+      ...Object.keys(nextLayout?.ptyIdsByLeafId ?? {})
+    ])
+    for (const worktreeId of worktreeIds) {
+      for (const leafId of leafIds) {
+        keys.push({ executionHostId, worktreeId, tabId, leafId })
+      }
+    }
+  }
+  return keys
 }
 
 function ptyBindingMatchesExecutionHost(

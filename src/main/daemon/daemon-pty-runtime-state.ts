@@ -35,6 +35,8 @@ export type PendingDaemonSpawnOperation = {
   exitsBySessionId: Map<string, { code: number; incarnationId?: string }[]>
   ignoredExitIncarnationIds: Set<string>
   ignoreNextExit: boolean
+  conditionalRespawnOldIncarnationId?: string
+  conditionalRespawnExitCaptureOverflowed?: boolean
 }
 
 export type HistoryRecoveryContext = {

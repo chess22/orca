@@ -20,6 +20,10 @@ import type { PtyProcessInfo } from './pty-process-info'
 import type { TerminalExitCause } from '../../shared/terminal-exit-cause'
 import type { TerminalOwner } from '../../shared/terminal-owner'
 import type { WriteSettlement } from '../../shared/pty-write-settlement'
+import type {
+  TerminalConditionalRespawnResult,
+  TerminalRespawnReplacement
+} from '../../shared/terminal-conditional-respawn'
 
 export type {
   PtyBackgroundStreamEvent,
@@ -141,6 +145,12 @@ export type IPtyProvider = {
   /** Re-probes a degraded durable host before main commits to fallback spawn semantics. */
   recoverFreshSpawnRouting?: () => Promise<boolean>
   spawn(opts: PtySpawnOptions): Promise<PtySpawnResult>
+  respawnIfMatch?: (
+    id: string,
+    expectedIncarnationId: PtyIncarnationId,
+    mutationId: string,
+    replacement: TerminalRespawnReplacement
+  ) => Promise<TerminalConditionalRespawnResult>
   /** Process-owner cleanup for history stored outside the workspace tree. */
   deleteWorktreeHistory?: (worktreeId: string) => Promise<void>
   /** Whether this spawn target can append the Git guard after its final env merge. */

@@ -1,5 +1,5 @@
 /* eslint-disable unicorn/no-useless-spread */
-import { OrcaRuntimeWithAttachWindow } from './session-graph-promotion'
+import { OrcaRuntimeWithSerializedWindowGraph } from './session-window-graph-serialization'
 import type {
   RuntimeRendererSyncWindowGraph,
   RuntimeSyncedTab,
@@ -24,7 +24,7 @@ function assertUniqueRuntimeGraphTabIds(tabs: readonly RuntimeSyncedTab[]): void
   }
 }
 
-export abstract class OrcaRuntimeWithSyncWindowGraph extends OrcaRuntimeWithAttachWindow {
+export abstract class OrcaRuntimeWithSyncWindowGraph extends OrcaRuntimeWithSerializedWindowGraph {
   /** Layout-owner builds: main's panes in place of the window's (session-tabs-inventory.ts). */
   protected abstract withMainSurfaces(windowId: number, graph: Graph): Graph
   declare protected terminalGroupGridSizes?: RuntimeSyncWindowGraph['terminalGroupGridSizes']

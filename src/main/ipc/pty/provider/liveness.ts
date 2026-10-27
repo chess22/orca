@@ -105,12 +105,12 @@ export async function verifyPtyStopped(
 /** Returns the retired incarnation, or `null` when the proof names a different incarnation than
  *  the record's: a same-id respawn owns it now, so nothing is retired. A proof naming none still
  *  retires: owner reconciliation can stamp the same process's incarnation mid-stop. */
-export function finishPtyShutdown(
+export async function finishPtyShutdown(
   id: string,
   connectionId: string | null | undefined,
   store: Store | undefined,
   evidence: PtyRetirementEvidence
-): string | undefined | null {
+): Promise<string | undefined | null> {
   if (
     evidence instanceof PtyExitProof &&
     evidence.incarnationId !== undefined &&
@@ -119,11 +119,18 @@ export function finishPtyShutdown(
     return null
   }
   const incarnationId = ptyIncarnationById.get(id)
-  clearProviderPtyState(id)
   if (connectionId) {
     // Keeps any relay-era undelivered stop on the lease: only host evidence may retire it.
-    store?.markSshRemotePtyLease(connectionId, getRelayPtyId(connectionId, id), evidence)
+    await store?.markSshRemotePtyLease(connectionId, getRelayPtyId(connectionId, id), evidence)
   }
+  if (
+    evidence instanceof PtyExitProof &&
+    evidence.incarnationId !== undefined &&
+    !isCurrentPtyExit({ id, incarnationId: evidence.incarnationId })
+  ) {
+    return null
+  }
+  clearProviderPtyState(id)
   ptyOwnership.delete(id)
   return incarnationId
 }

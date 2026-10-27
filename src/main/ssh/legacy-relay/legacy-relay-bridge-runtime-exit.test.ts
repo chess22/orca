@@ -88,7 +88,7 @@ async function startBridge(): Promise<void> {
   registerLegacyRelayBridgeIpc({
     store: {
       getSshRemotePtyLeases: () => leases,
-      markSshRemotePtyLease: (_target: string, relayPtyId: string) => {
+      markSshRemotePtyLease: async (_target: string, relayPtyId: string) => {
         leases = leases.map((row) =>
           row.ptyId === relayPtyId ? { ...row, state: 'terminated' } : row
         )
@@ -158,7 +158,7 @@ describe('a bridged terminal the old relay proves exited', () => {
     expect(killPtyFromRuntimeController(controllerDeps(), PTY)).toBe(true)
     await vi.waitFor(() => expect(leases[0].state).toBe('terminated'))
 
-    expect(runtime.onPtyExit).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(runtime.onPtyExit).toHaveBeenCalledTimes(1))
     expect(runtime.onPtyExit).toHaveBeenCalledWith(PTY, 0, undefined, { hostExitConfirmed: true })
   })
 
@@ -168,6 +168,7 @@ describe('a bridged terminal the old relay proves exited', () => {
     relay.ptys.delete(RELAY_PTY)
     relay.exits.forEach((listener) => listener(RELAY_PTY, 3))
 
+    await vi.waitFor(() => expect(runtime.onPtyExit).toHaveBeenCalledTimes(1))
     expect(runtime.onPtyExit).toHaveBeenCalledWith(PTY, 3, undefined, { hostExitConfirmed: true })
   })
 

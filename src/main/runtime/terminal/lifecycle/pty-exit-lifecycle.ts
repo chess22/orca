@@ -1,4 +1,4 @@
-import { OrcaRuntimeWithOnClientDisconnected } from '../layout/terminal-client-disconnect'
+import { OrcaRuntimeWithPtyExitMutationLane } from './pty-exit-mutation-lane'
 import type { PtyIncarnationId } from '../../../../shared/pty-incarnation'
 import type { TerminalExitCause } from '../../../../shared/terminal-exit-cause'
 import {
@@ -12,13 +12,12 @@ import { advertisedUrlWatcher } from '../../../ports/advertised-url-watcher'
 import type { PtyLivenessVerdict } from '../../../../shared/pty-liveness-verdict'
 import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../../../shared/layout-owner-switch'
 import { exitedSplitPaneFacts } from './exited-split-pane-rule'
-import { closedPaneOfExitedPty, type ClosedPaneOfExit } from './closed-pane-of-exited-pty'
 import type {
   RuntimePtyWorktreeRecord,
   RuntimeLeafRecord
 } from '../../runtime-terminal-state-records'
 
-export abstract class OrcaRuntimeWithOnPtyExit extends OrcaRuntimeWithOnClientDisconnected {
+export abstract class OrcaRuntimeWithOnPtyExit extends OrcaRuntimeWithPtyExitMutationLane {
   protected abstract pruneDisconnectedPtyRecords(): void
 
   protected abstract failActiveDispatchOnExit(
@@ -38,23 +37,7 @@ export abstract class OrcaRuntimeWithOnPtyExit extends OrcaRuntimeWithOnClientDi
 
   protected abstract rememberPtyLivenessVerdict(ptyId: string, verdict: PtyLivenessVerdict): void
 
-  /** The pane main's close already dropped, from its closed-pane record; null while main holds it. */
-  private closedPaneOfExit(
-    pty: RuntimePtyWorktreeRecord | undefined,
-    exitIncarnationId: PtyIncarnationId | undefined
-  ): ClosedPaneOfExit | null {
-    if (!ORCA_LAYOUT_OWNER_IS_MAIN || !pty || this.paneOfPty(pty).paneKey) {
-      return null
-    }
-    return closedPaneOfExitedPty(
-      this.store,
-      this.tryGetWorkspaceSessionHostIdForWorktree(pty.worktreeId),
-      pty,
-      exitIncarnationId ?? pty.incarnationId
-    )
-  }
-
-  onPtyExit(
+  protected onPtyExitWithinLeafLane(
     ptyId: string,
     exitCode: number,
     exitIncarnationId?: PtyIncarnationId,
@@ -67,10 +50,20 @@ export abstract class OrcaRuntimeWithOnPtyExit extends OrcaRuntimeWithOnClientDi
       providerExitObserved?: boolean
       /** A window's view of the pane was showing when it ended (layout-owner build). */
       viewShown?: boolean
+      /** Persisted surfaces captured before provider/runtime retirement begins. */
+      persistedSurfaces?: readonly { worktreeId: string; tabId: string; leafId: string }[]
     } = {}
   ): void | Promise<void> {
     const pty = this.ptysById.get(ptyId)
     const pending = this.pendingPtyRegistrationIncarnations.get(ptyId)
+    if (
+      pending?.incarnationId === null &&
+      exitIncarnationId !== undefined &&
+      pty?.incarnationId !== exitIncarnationId
+    ) {
+      pending.exitedIncarnations.add(exitIncarnationId)
+      return
+    }
     const candidateIncarnation = pending ? pending.incarnationId : pty?.incarnationId
     if (exitIncarnationId && candidateIncarnation && exitIncarnationId !== candidateIncarnation) {
       return
@@ -123,11 +116,19 @@ export abstract class OrcaRuntimeWithOnPtyExit extends OrcaRuntimeWithOnClientDi
       `runtime:${this.runtimeId}:${this.getPtyLifecycleGeneration(ptyId)}`
     this.advancePtyLifecycleGeneration(ptyId)
     let retirement: Promise<void> | undefined
+    let retirementPublished = false
     try {
       const exactSurfaceByKey = new Map<
         string,
         Pick<RetiredTerminalSurface, 'worktreeId' | 'parentTabId' | 'leafId'>
       >()
+      for (const surface of options.persistedSurfaces ?? []) {
+        exactSurfaceByKey.set(`${surface.worktreeId}\0${surface.tabId}\0${surface.leafId}`, {
+          worktreeId: surface.worktreeId,
+          parentTabId: surface.tabId,
+          leafId: surface.leafId
+        })
+      }
       for (const [worktreeId, snapshot] of this.mobileSessionTabsByWorktree) {
         for (const tab of snapshot.tabs) {
           if (
@@ -275,16 +276,26 @@ export abstract class OrcaRuntimeWithOnPtyExit extends OrcaRuntimeWithOnClientDi
             ORCA_LAYOUT_OWNER_IS_MAIN
               ? exitedSplitPaneFacts(this.terminalRunFacts, pty, ptyId, exitCode, options)
               : undefined,
-            closedPane ?? undefined
+            closedPane ?? undefined,
+            () => {
+              retirementPublished = true
+            }
           )
         } catch (error) {
           console.error('[runtime] failed to publish terminal retirement:', error)
         }
       }
     } finally {
-      // Why last: a stream end cues clients to re-activate the pane it ended, so the retirement
-      // must precede it; a cleanup fault must still end the stream.
-      this.notifyPtyExitListeners(ptyId)
+      // A queued leaf retirement must publish before the stream end lets clients reactivate it.
+      if (retirement && !retirementPublished) {
+        retirement = retirement
+          .catch((error: unknown) => {
+            console.error('[runtime] failed to publish terminal retirement:', error)
+          })
+          .finally(() => this.notifyPtyExitListeners(ptyId))
+      } else {
+        this.notifyPtyExitListeners(ptyId)
+      }
     }
 
     const exitedSurfaces: { handle: string; paneKey: string | null }[] = []

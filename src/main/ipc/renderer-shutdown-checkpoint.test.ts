@@ -191,6 +191,129 @@ describe('registerRendererShutdownCheckpointHandler', () => {
     await expect(checkpoint).resolves.toEqual({ ok: true })
   })
 
+  it('queues a renderer binding snapshot behind the terminal leaf mutation lane', async () => {
+    let releaseLane!: () => void
+    const laneBlocked = new Promise<void>((resolve) => {
+      releaseLane = resolve
+    })
+    const session = getDefaultWorkspaceSession()
+    session.tabsByWorktree = {
+      worktree: [
+        {
+          id: 'tab',
+          ptyId: 'pty',
+          worktreeId: 'worktree',
+          title: 'Terminal',
+          customTitle: null,
+          color: null,
+          sortOrder: 0,
+          createdAt: 1
+        }
+      ]
+    }
+    session.terminalLayoutsByTabId = {
+      tab: {
+        root: { type: 'leaf', leafId: 'leaf' },
+        activeLeafId: 'leaf',
+        expandedLeafId: null,
+        ptyIdsByLeafId: { leaf: 'pty' }
+      }
+    }
+    const store = {
+      getWorkspaceSession: vi.fn(() => session),
+      stageWorkspaceSessionBeforeUnload: vi.fn(),
+      updateUI: vi.fn(),
+      flushPendingOrThrowAsync: vi.fn(() => Promise.resolve()),
+      runTerminalLeafMutations: vi.fn(async (_keys, operation) => {
+        await laneBlocked
+        return await operation()
+      })
+    }
+    registerRendererShutdownCheckpointHandler(store as never)
+
+    const event: { returnValue?: unknown } = {}
+    syncHandlers.get('app:stage-before-unload-sync')?.(event, {
+      sessions: [{ state: session }],
+      ui: {}
+    })
+
+    expect(event.returnValue).toEqual({ ok: true })
+    expect(store.runTerminalLeafMutations).toHaveBeenCalledWith(
+      [{ executionHostId: 'local', worktreeId: 'worktree', tabId: 'tab', leafId: 'leaf' }],
+      expect.any(Function)
+    )
+    expect(store.stageWorkspaceSessionBeforeUnload).not.toHaveBeenCalled()
+
+    releaseLane()
+    await expect(invokeHandlers.get(AWAIT_CHANNEL)?.()).resolves.toEqual({ ok: true })
+    expect(store.stageWorkspaceSessionBeforeUnload).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-reads a respawned incarnation after acquiring the terminal leaf lane', async () => {
+    let releaseLane!: () => void
+    const laneBlocked = new Promise<void>((resolve) => {
+      releaseLane = resolve
+    })
+    const rendererSession = getDefaultWorkspaceSession()
+    rendererSession.tabsByWorktree = {
+      worktree: [
+        {
+          id: 'tab',
+          ptyId: 'pty',
+          worktreeId: 'worktree',
+          title: 'Terminal',
+          customTitle: null,
+          color: null,
+          sortOrder: 0,
+          createdAt: 1
+        }
+      ]
+    }
+    rendererSession.terminalLayoutsByTabId = {
+      tab: {
+        root: { type: 'leaf', leafId: 'leaf' },
+        activeLeafId: 'leaf',
+        expandedLeafId: null,
+        ptyIdsByLeafId: { leaf: 'pty' }
+      }
+    }
+    rendererSession.terminalPtyIncarnationsByPaneKey = { 'tab:leaf': 'inc-old' }
+    const respawnedSession = structuredClone(rendererSession)
+    respawnedSession.terminalPtyIncarnationsByPaneKey = { 'tab:leaf': 'inc-new' }
+    const store = {
+      getWorkspaceSession: vi
+        .fn()
+        .mockReturnValueOnce(rendererSession)
+        .mockReturnValue(respawnedSession),
+      stageWorkspaceSessionBeforeUnload: vi.fn(),
+      updateUI: vi.fn(),
+      flushPendingOrThrowAsync: vi.fn(() => Promise.resolve()),
+      runTerminalLeafMutations: vi.fn(async (_keys, operation) => {
+        await laneBlocked
+        return await operation()
+      })
+    }
+    registerRendererShutdownCheckpointHandler(store as never)
+
+    syncHandlers.get('app:stage-before-unload-sync')?.(
+      {},
+      { sessions: [{ state: rendererSession }], ui: {} }
+    )
+    expect(store.getWorkspaceSession).toHaveBeenCalledTimes(1)
+    expect(store.stageWorkspaceSessionBeforeUnload).not.toHaveBeenCalled()
+
+    releaseLane()
+    await expect(invokeHandlers.get(AWAIT_CHANNEL)?.()).resolves.toEqual({ ok: true })
+
+    expect(store.getWorkspaceSession).toHaveBeenCalledTimes(2)
+    expect(store.stageWorkspaceSessionBeforeUnload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        terminalPtyIncarnationsByPaneKey: { 'tab:leaf': 'inc-new' }
+      }),
+      undefined
+    )
+  })
+
   it('reports a failed durable write instead of a successful checkpoint', async () => {
     const store = {
       stageWorkspaceSessionBeforeUnload: vi.fn(),

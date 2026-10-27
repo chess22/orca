@@ -96,7 +96,7 @@ export async function runOrcadDeltaMove(args: OrcadDeltaMoveArgs): Promise<Orcad
     return refuse('orcad_migration_terminals', terminals.reason)
   }
   const settled: SettledTerminals = terminals
-  retireProvenExitedLeases(store, target.id, terminals)
+  await retireProvenExitedLeases(store, target.id, terminals)
   return args.runTargetLifecycle(target.id, async () => {
     // Why re-checked: another move of this host may have journaled or finished while this waited.
     const changedAt = store.getSshTarget(target.id)?.orcadFence?.sourceChangedAt

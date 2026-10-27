@@ -55,10 +55,10 @@ export function registerLegacyRelayBridgeIpc(args: {
   }
   installLegacyRelayBridge({
     leases: (targetId) => args.store.getSshRemotePtyLeases(targetId),
-    retireLease: (targetId, relayPtyId, evidence) => {
+    retireLease: async (targetId, relayPtyId, evidence) => {
       // Cleared first so the retire can prune the tombstone.
       args.store.setSshRemotePtyLeasePendingKill(targetId, relayPtyId, null)
-      args.store.markSshRemotePtyLease(targetId, relayPtyId, evidence)
+      await args.store.markSshRemotePtyLease(targetId, relayPtyId, evidence)
       if (evidence instanceof PtyRetirementWithoutProof) {
         args
           .runtime?.()

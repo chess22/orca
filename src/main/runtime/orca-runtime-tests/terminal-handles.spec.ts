@@ -82,6 +82,7 @@ describe('OrcaRuntimeService', () => {
     const shown = await runtime.showTerminal(terminals.terminals[0].handle)
     expect(shown.handle).toBe(terminals.terminals[0].handle)
     expect(shown.ptyId).toBe('pty-1')
+    expect(shown.ptyGeneration).toEqual(expect.any(Number))
     const mobileTabs = await runtime.listMobileSessionTabs('branch:feature/foo')
     const mobileHandle = mobileTabs.tabs.find((tab) => tab.type === 'terminal')?.terminal
     if (!mobileHandle) {

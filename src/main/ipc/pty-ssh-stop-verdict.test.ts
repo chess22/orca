@@ -9,6 +9,7 @@ import {
   setPtyOwnership
 } from './pty/provider/ownership-state'
 import { getLocalPtyProvider } from './pty/provider/registry'
+import { TerminalLeafMutationLane } from '../terminal-leaf-mutation-lane'
 
 vi.mock('electron', () => import('./pty-ipc-mock-registry').then((m) => m.electronModuleMock()))
 vi.mock('fs', () => import('./pty-ipc-mock-registry').then((m) => m.fsModuleMock()))
@@ -58,7 +59,7 @@ vi.mock('../codex/codex-state-db-backfill-recovery', () =>
 describe('stopping a PTY whose SSH provider is unregistered', () => {
   const { handlers, mainWindow, installObservableDaemonTestProvider } = setupPtyIpcSuite()
 
-  function installController(): {
+  function installController(store?: unknown): {
     controller: {
       kill: (ptyId: string) => boolean
       listProcesses: (hostId?: string) => Promise<{ id: string }[]>
@@ -83,19 +84,62 @@ describe('stopping a PTY whose SSH provider is unregistered', () => {
       markPtyLivenessLive: vi.fn()
     }
     handlers.clear()
-    registerPtyHandlers(mainWindow as never, runtime as never)
+    registerPtyHandlers(
+      mainWindow as never,
+      runtime as never,
+      undefined,
+      undefined,
+      undefined,
+      store as never
+    )
     return {
       controller: runtime.setPtyController.mock.calls[0]?.[0] as never,
       runtime
     }
   }
 
-  it('reports an unconfirmed stop instead of a fabricated kill', () => {
+  function storeWithUnrelatedSshLeaf(ptyId: string) {
+    const lane = new TerminalLeafMutationLane()
+    const target = {
+      executionHostId: 'ssh:ssh-dropped' as const,
+      worktreeId: 'wt-target',
+      tabId: 'tab-target',
+      leafId: 'leaf-target'
+    }
+    const session = {
+      tabsByWorktree: {
+        'wt-target': [{ id: 'tab-target' }],
+        'wt-unrelated': [{ id: 'tab-unrelated' }]
+      },
+      terminalLayoutsByTabId: {
+        'tab-target': { ptyIdsByLeafId: { 'leaf-target': ptyId } },
+        'tab-unrelated': { ptyIdsByLeafId: { 'leaf-unrelated': 'ssh-unrelated-pty' } }
+      },
+      terminalPtyIncarnationsByPaneKey: {}
+    }
+    const markSshRemotePtyLease = vi.fn(() => lane.run([target], () => undefined))
+    return {
+      store: {
+        getWorkspaceSessionHostIds: () => ['ssh:ssh-dropped'],
+        getWorkspaceSession: () => session,
+        getSshPtyRetirementMutationKeys: () => [target],
+        runTerminalLeafMutations: lane.run.bind(lane),
+        markSshRemotePtyLease
+      },
+      markSshRemotePtyLease
+    }
+  }
+
+  it('reports an unconfirmed stop instead of a fabricated kill', async () => {
     setPtyOwnership('ssh-detached-pty', 'ssh:ssh-dropped')
-    const { controller, runtime } = installController()
+    const { store, markSshRemotePtyLease } = storeWithUnrelatedSshLeaf('ssh-detached-pty')
+    const { controller, runtime } = installController(store)
 
     expect(controller.kill('ssh-detached-pty')).toBe(false)
-    expect(runtime.onPtyExit).toHaveBeenCalledWith('ssh-detached-pty', -1, undefined)
+    await vi.waitFor(() =>
+      expect(runtime.onPtyExit).toHaveBeenCalledWith('ssh-detached-pty', -1, undefined)
+    )
+    expect(markSshRemotePtyLease).toHaveBeenCalledOnce()
     expect(runtime.markPtyLivenessUnverifiable).toHaveBeenCalledWith(
       'ssh-detached-pty',
       expect.stringContaining('SSH')
@@ -105,10 +149,12 @@ describe('stopping a PTY whose SSH provider is unregistered', () => {
 
   it('reports an unconfirmed exact stop instead of a fabricated teardown', async () => {
     setPtyOwnership('ssh-detached-stop', 'ssh:ssh-dropped')
-    const { controller, runtime } = installController()
+    const { store, markSshRemotePtyLease } = storeWithUnrelatedSshLeaf('ssh-detached-stop')
+    const { controller, runtime } = installController(store)
 
     await expect(controller.stopAndWait('ssh-detached-stop')).resolves.toBe(false)
     expect(runtime.onPtyExit).toHaveBeenCalledWith('ssh-detached-stop', -1, undefined)
+    expect(markSshRemotePtyLease).toHaveBeenCalledOnce()
     expect(runtime.markPtyLivenessUnverifiable).toHaveBeenCalledWith(
       'ssh-detached-stop',
       expect.stringContaining('SSH')
@@ -119,7 +165,8 @@ describe('stopping a PTY whose SSH provider is unregistered', () => {
   it('preserves lost-contact evidence for renderer IPC teardown', async () => {
     const ptyId = 'ssh-renderer-detached'
     setPtyOwnership(ptyId, 'ssh:ssh-dropped')
-    const { runtime } = installController()
+    const { store, markSshRemotePtyLease } = storeWithUnrelatedSshLeaf(ptyId)
+    const { runtime } = installController(store)
     try {
       await handlers.get('pty:kill')!(null, { id: ptyId })
 
@@ -128,6 +175,7 @@ describe('stopping a PTY whose SSH provider is unregistered', () => {
         SSH_PROVIDER_UNREGISTERED_REASON
       )
       expect(runtime.onPtyExit).toHaveBeenCalledWith(ptyId, -1, undefined)
+      expect(markSshRemotePtyLease).toHaveBeenCalledOnce()
     } finally {
       deletePtyOwnership(ptyId)
     }

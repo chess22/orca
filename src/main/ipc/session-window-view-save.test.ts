@@ -121,6 +121,61 @@ describe('a window save in a layout-owner build', () => {
     expect(saved.activeWorktreeId).toBe(GIT_KEY)
   })
 
+  it.each(['session:set', 'session:patch'] as const)(
+    '%s re-reads the persisted incarnation after waiting for the terminal leaf lane',
+    async (channel) => {
+      store.setWorkspaceSession(mainSession(), 'local')
+      let release!: () => void
+      const blocked = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      let laneHeld = false
+      const holder = store.runTerminalLeafMutations(
+        [{ executionHostId: 'local', worktreeId: GIT_KEY, tabId: 'tab-a', leafId: leaf(1) }],
+        async () => {
+          laneHeld = true
+          await blocked
+          const current = store.getWorkspaceSession('local')
+          store.setWorkspaceSession(
+            {
+              ...current,
+              terminalPtyIncarnationsByPaneKey: {
+                ...current.terminalPtyIncarnationsByPaneKey,
+                [`tab-a:${leaf(1)}`]: 'incarnation-after-wait'
+              }
+            },
+            'local'
+          )
+        }
+      )
+      await vi.waitFor(() => expect(laneHeld).toBe(true))
+
+      let saved = false
+      const incoming = laggingWindowSave()
+      const replay = call(
+        channel,
+        channel === 'session:set'
+          ? incoming
+          : {
+              tabsByWorktree: incoming.tabsByWorktree,
+              terminalLayoutsByTabId: incoming.terminalLayoutsByTabId
+            },
+        'local'
+      ).then(() => {
+        saved = true
+      })
+      await Promise.resolve()
+      expect(saved).toBe(false)
+      release()
+      await holder
+      await replay
+      expect(saved).toBe(true)
+      expect(
+        store.getWorkspaceSession('local').terminalPtyIncarnationsByPaneKey?.[`tab-a:${leaf(1)}`]
+      ).toBe('incarnation-after-wait')
+    }
+  )
+
   it('takes a scrollback patch into main’s panes and leaves main’s tree', async () => {
     store.setWorkspaceSession(mainSession(), 'local')
     const windowLayout = laggingWindowSave().terminalLayoutsByTabId['tab-a']!

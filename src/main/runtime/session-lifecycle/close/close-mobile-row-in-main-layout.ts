@@ -12,6 +12,7 @@ import {
 } from '../../session-tabs/main-layout-close-command'
 import type { ExplicitCloseStop } from '../../session-tabs/explicit-terminal-close-pty-stops'
 import { retireTerminalSurfacesFromSnapshot } from '../../mobile-session-terminal-retirement'
+import { LOCAL_EXECUTION_HOST_ID, type ExecutionHostId } from '../../../../shared/execution-host'
 
 export abstract class OrcaRuntimeWithCloseMobileRowInMainLayout extends OrcaRuntimeWithRefuseUnattributedMobileSessionTabClose {
   protected abstract stopExplicitlyClosedTabPtys(
@@ -39,6 +40,35 @@ export abstract class OrcaRuntimeWithCloseMobileRowInMainLayout extends OrcaRunt
     }
     const close = await closeInMainLayout(
       {
+        runLeafMutation: (leafIds, operation) => {
+          const hostIds = [
+            ...this.getWorkspaceSessionHostIdsForTab(worktreeId, row.parentTabId)
+          ].sort()
+          const mutationHostIds: ExecutionHostId[] =
+            hostIds.length > 0 ? hostIds : [LOCAL_EXECUTION_HOST_ID]
+          return this.runTerminalLeafMutations(
+            mutationHostIds.flatMap((executionHostId) =>
+              leafIds.map((leafId) => ({
+                executionHostId,
+                worktreeId,
+                tabId: row.parentTabId,
+                leafId
+              }))
+            ),
+            () => {
+              const lockedHostIds = [
+                ...this.getWorkspaceSessionHostIdsForTab(worktreeId, row.parentTabId)
+              ].sort()
+              if (
+                lockedHostIds.length !== hostIds.length ||
+                lockedHostIds.some((hostId, index) => hostId !== hostIds[index])
+              ) {
+                throw new Error('terminal_pane_owner_changed')
+              }
+              return operation()
+            }
+          )
+        },
         panesOfTab: (id) => surfaces.panesOfTab(id),
         applyLayoutCommand: (command) => this.applyLayoutCommand(command),
         stop: (ptyIds, addressed) => this.stopExplicitlyClosedTabPtys(ptyIds, addressed),

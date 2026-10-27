@@ -8,13 +8,12 @@
  * its exit, or when every relay this target could have left was asked and none holds it.
  */
 import { toAppSshPtyId } from '../../../shared/ssh-pty-id'
-import type { SshRemotePtyLease } from '../../../shared/ssh-types'
 import type {
   LegacyRelayBridgeAttachResult,
   LegacyRelayBridgedPane
 } from '../../../shared/legacy-relay-bridge-contract'
-import type { LegacyRelayClient, LegacyRelayOwnerClaim } from './legacy-relay-client'
-import type { LegacyRelayEndpoint, LegacyRelayEndpointListing } from './legacy-relay-endpoints'
+import type { LegacyRelayClient } from './legacy-relay-client'
+import type { LegacyRelayEndpoint } from './legacy-relay-endpoints'
 import { LegacyRelayRetry, LegacyRelayWaiters } from './legacy-relay-bridge-timers'
 import {
   ATTACH_WAIT_MS,
@@ -29,40 +28,18 @@ import {
   servedBridgedPanes,
   type Pane
 } from './legacy-relay-bridge-leases'
-import type { LegacyRelayPaneOwners } from './legacy-relay-pane-owners'
+import type {
+  LegacyRelayEndpointState,
+  LegacyRelayTargetBridgeDeps
+} from './legacy-relay-target-bridge-contract'
 
-export type LegacyRelayTargetBridgeDeps = {
-  targetId: string
-  /** The target's non-terminated leases. */
-  leases: () => SshRemotePtyLease[]
-  /** Only on the relay's word: its exit report, or every relay answered and none holds it. */
-  retireLease: (relayPtyId: string, proof: 'exit-observed' | 'absent') => void
-  listEndpoints: (signal: AbortSignal) => Promise<LegacyRelayEndpointListing>
-  openClient: (
-    endpoint: LegacyRelayEndpoint,
-    resume: LegacyRelayOwnerClaim | null
-  ) => Promise<LegacyRelayClient>
-  /** Only a dead socket proves its relay gone; anything else about a failed open is unverifiable. */
-  endpointExited: (endpoint: LegacyRelayEndpoint) => Promise<boolean>
-  onPanesChanged: () => void
-  onData: (ptyId: string, data: string) => void
-  onExit: (ptyId: string, code: number) => void
-  onTerminalExited: () => void
-  /** The target's relay-id owners; the registry keeps them across bridges, so a reconnect keeps them. */
-  owners: LegacyRelayPaneOwners
-}
+export type { LegacyRelayTargetBridgeDeps } from './legacy-relay-target-bridge-contract'
 
 // Unique across bridges, so a viewer acquired on a replaced bridge releases nothing on its successor.
 let lastAcquisitionId = 0
 
-type EndpointState = {
-  endpoint: LegacyRelayEndpoint
-  client: LegacyRelayClient | null
-  claim: LegacyRelayOwnerClaim | null
-}
-
 export class LegacyRelayTargetBridge {
-  private readonly endpoints = new Map<string, EndpointState>()
+  private readonly endpoints = new Map<string, LegacyRelayEndpointState>()
   private readonly panes = new Map<string, Pane>()
   readonly livePaneForKey = (paneKey: string) =>
     findLivePane(this.panes, paneKey, this.deps.leases())
@@ -135,8 +112,9 @@ export class LegacyRelayTargetBridge {
     } catch (error) {
       this.detach(ptyId, acquisitionId)
       if (PROVEN_EXITED.test(error instanceof Error ? error.message : String(error))) {
-        this.retire(ptyId, pane, null)
-        return { status: 'exited' }
+        return (await this.retire(ptyId, pane, null))
+          ? { status: 'exited' }
+          : { status: 'unverifiable' }
       }
       // An unmarked refusal also means "never minted here": the next listing decides, on backoff.
       pane.state = 'unverifiable'
@@ -223,8 +201,21 @@ export class LegacyRelayTargetBridge {
       const seen = relistedPane(lease, relayPtyId, listedRows, this.deps.owners, complete)
       if ('exited' in seen) {
         const proven = seen.exited !== null
-        const counted = proven || Boolean(this.panes.get(ptyId)?.endpoint)
-        this.deps.retireLease(relayPtyId, proven ? 'exit-observed' : 'absent')
+        const retiringPane = this.panes.get(ptyId)
+        const counted = proven || Boolean(retiringPane?.endpoint)
+        await this.deps.retireLease(relayPtyId, proven ? 'exit-observed' : 'absent')
+        if (this.disposed) {
+          return
+        }
+        // An exit callback or another graph update may have replaced this same id while persistence
+        // waited. Its pane is a different process and must remain published.
+        const currentPane = this.panes.get(ptyId)
+        if (retiringPane && currentPane !== retiringPane) {
+          if (currentPane) {
+            next.set(ptyId, currentPane)
+          }
+          continue
+        }
         this.emitExit(ptyId, seen.exited ?? -1, counted)
       } else {
         next.set(ptyId, seen)
@@ -283,7 +274,9 @@ export class LegacyRelayTargetBridge {
       const pane = this.panes.get(ptyId)
       this.deps.owners.noteExit(relayPtyId, endpoint, code)
       if (pane && this.deps.owners.speaksFor(relayPtyId, endpoint, client)) {
-        this.retire(ptyId, pane, code)
+        void this.retire(ptyId, pane, code).catch((error: unknown) =>
+          console.warn('[legacy-relay] failed to retire exited pane:', error)
+        )
       }
     })
     client.onClose(() => {
@@ -307,15 +300,20 @@ export class LegacyRelayTargetBridge {
     })
   }
 
-  private retire(ptyId: string, pane: Pane, code: number | null): void {
+  private async retire(ptyId: string, pane: Pane, code: number | null): Promise<boolean> {
     // A null code is the relay refusing an attach as proven exited.
+    await this.deps.retireLease(pane.relayPtyId, code === null ? 'absent' : 'exit-observed')
+    // A refresh may have published a same-id replacement while durable retirement waited.
+    if (this.panes.get(ptyId) !== pane) {
+      return false
+    }
     this.deps.owners.forget(pane.relayPtyId)
-    this.deps.retireLease(pane.relayPtyId, code === null ? 'absent' : 'exit-observed')
     this.panes.delete(ptyId)
     this.emitExit(ptyId, code ?? -1)
     this.closeIdleClients(new Set([...this.panes.values()].map((entry) => entry.endpoint ?? '')))
     this.deps.onPanesChanged()
     this.waiters.wake()
+    return true
   }
 
   /** Only a terminal this session saw running counts as a bridged exit in telemetry. */

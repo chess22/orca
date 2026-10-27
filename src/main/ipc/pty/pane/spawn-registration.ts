@@ -103,7 +103,7 @@ export async function discardUnpersistedPtySpawn(
     }
     stopped = true
     // The proof names this incarnation, so a replacement that arrived meanwhile keeps its own.
-    finishPtyShutdown(result.id, null, undefined, proof)
+    void finishPtyShutdown(result.id, null, undefined, proof)
   } finally {
     settleStop?.(stopped)
   }

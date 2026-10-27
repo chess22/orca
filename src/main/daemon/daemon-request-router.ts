@@ -64,6 +64,8 @@ export class DaemonRequestRouter {
         return {}
       case 'createOrAttach':
         return this.options.admission.createOrAttach(clientId, request)
+      case 'respawnIfMatch':
+        return this.options.admission.respawnIfMatch(clientId, request)
       case 'cancelCreateOrAttach':
         return {
           canceled: this.options.preparations.cancel(request.payload.sessionId, {

@@ -113,17 +113,18 @@ export function retireProvenExitedLeases(
   store: Pick<Store, 'getSshRemotePtyLeases' | 'markSshRemotePtyLease'>,
   targetId: string,
   proof: OrcadMigrationTerminalVerdict
-): void {
+): Promise<void> {
   if (proof.verdict !== 'exited') {
-    return
+    return Promise.resolve()
   }
   const proven = new Set(proof.provenPtyIds)
   const census = PtyExitProof.from('host-census', undefined)
-  for (const lease of store.getSshRemotePtyLeases(targetId)) {
-    if (lease.state !== 'terminated' && proven.has(lease.ptyId)) {
-      store.markSshRemotePtyLease(targetId, lease.ptyId, census)
-    }
-  }
+  return Promise.all(
+    store
+      .getSshRemotePtyLeases(targetId)
+      .filter((lease) => lease.state !== 'terminated' && proven.has(lease.ptyId))
+      .map((lease) => store.markSshRemotePtyLease(targetId, lease.ptyId, census))
+  ).then(() => undefined)
 }
 
 /**

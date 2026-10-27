@@ -65,7 +65,7 @@ function installHost(): void {
   const connection = {} as SshConnection
   registry.installLegacyRelayBridge({
     leases: () => leases,
-    retireLease: (_target, relayPtyId) => {
+    retireLease: async (_target, relayPtyId) => {
       leases = leases.map((row) => {
         if (row.ptyId !== relayPtyId) {
           return row

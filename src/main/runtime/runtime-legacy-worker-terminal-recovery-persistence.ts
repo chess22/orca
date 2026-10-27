@@ -43,62 +43,79 @@ export class RuntimeLegacyWorkerTerminalRecoveryPersistence {
     const dispatchIds = new Set<string>()
     let adopted = false
     try {
-      return await store.runDurableMutation(() => {
-        for (const { candidate, resolution, hostId: observedHostId } of resolutions) {
-          const hostId = observedHostId ?? this.getHostId(candidate.worktreeId)
-          const session = hostId ? getWorkspaceSession(hostId) : null
-          if (!hostId || !session) {
-            continue
-          }
-          let next =
-            resolution === 'exited'
-              ? retireTerminalSurfaceFromPersistence(session, {
-                  worktreeId: candidate.worktreeId,
-                  parentTabId: candidate.tabId,
-                  leafId: candidate.leafId,
-                  ptyId: candidate.ptyId,
-                  incarnationId: candidate.incarnationId
-                })
-              : session
-          const record = next.sleepingAgentSessionsByPaneKey?.[candidate.paneKey]
-          if (record && worktreeIdsEqual(record.worktreeId, candidate.worktreeId)) {
-            const sleeping = { ...next.sleepingAgentSessionsByPaneKey }
-            delete sleeping[candidate.paneKey]
-            next = { ...next, sleepingAgentSessionsByPaneKey: sleeping }
-          }
-          if (next !== session) {
-            originals.set(hostId, originals.get(hostId) ?? cloneWorkspaceSessionState(session))
-            setWorkspaceSession(next, hostId)
-          }
-          adopted ||= resolution === 'adopted'
-          dispatchIds.add(candidate.dispatchId)
-        }
-        // Rollback needs the final stored state, not a full-session copy after every worker.
-        for (const hostId of originals.keys()) {
-          staged.set(hostId, cloneWorkspaceSessionState(getWorkspaceSession(hostId)))
-        }
-        return {
-          value: dispatchIds,
-          persist: originals.size > 0 || adopted,
-          rollback: () => {
-            for (const [hostId, original] of originals) {
-              const stagedSession = staged.get(hostId)
-              const current = getWorkspaceSession(hostId)
-              if (!stagedSession || !current) {
-                continue
+      const keys = resolutions.flatMap(({ candidate, hostId: observedHostId }) => {
+        const executionHostId = observedHostId ?? this.getHostId(candidate.worktreeId)
+        return executionHostId
+          ? [
+              {
+                executionHostId,
+                worktreeId: candidate.worktreeId,
+                tabId: candidate.tabId,
+                leafId: candidate.leafId
               }
-              const rolledBack = rollbackWorkspaceSessionAfterFailedAsyncWrite(
-                original,
-                stagedSession,
-                current
-              )
-              if (rolledBack !== current) {
-                setWorkspaceSession(rolledBack, hostId)
+            ]
+          : []
+      })
+      const mutate = () =>
+        store.runDurableMutation!(() => {
+          for (const { candidate, resolution, hostId: observedHostId } of resolutions) {
+            const hostId = observedHostId ?? this.getHostId(candidate.worktreeId)
+            const session = hostId ? getWorkspaceSession(hostId) : null
+            if (!hostId || !session) {
+              continue
+            }
+            let next =
+              resolution === 'exited'
+                ? retireTerminalSurfaceFromPersistence(session, {
+                    worktreeId: candidate.worktreeId,
+                    parentTabId: candidate.tabId,
+                    leafId: candidate.leafId,
+                    ptyId: candidate.ptyId,
+                    incarnationId: candidate.incarnationId
+                  })
+                : session
+            const record = next.sleepingAgentSessionsByPaneKey?.[candidate.paneKey]
+            if (record && worktreeIdsEqual(record.worktreeId, candidate.worktreeId)) {
+              const sleeping = { ...next.sleepingAgentSessionsByPaneKey }
+              delete sleeping[candidate.paneKey]
+              next = { ...next, sleepingAgentSessionsByPaneKey: sleeping }
+            }
+            if (next !== session) {
+              originals.set(hostId, originals.get(hostId) ?? cloneWorkspaceSessionState(session))
+              setWorkspaceSession(next, hostId)
+            }
+            adopted ||= resolution === 'adopted'
+            dispatchIds.add(candidate.dispatchId)
+          }
+          // Rollback needs the final stored state, not a full-session copy after every worker.
+          for (const hostId of originals.keys()) {
+            staged.set(hostId, cloneWorkspaceSessionState(getWorkspaceSession(hostId)))
+          }
+          return {
+            value: dispatchIds,
+            persist: originals.size > 0 || adopted,
+            rollback: () => {
+              for (const [hostId, original] of originals) {
+                const stagedSession = staged.get(hostId)
+                const current = getWorkspaceSession(hostId)
+                if (!stagedSession || !current) {
+                  continue
+                }
+                const rolledBack = rollbackWorkspaceSessionAfterFailedAsyncWrite(
+                  original,
+                  stagedSession,
+                  current
+                )
+                if (rolledBack !== current) {
+                  setWorkspaceSession(rolledBack, hostId)
+                }
               }
             }
           }
-        }
-      })
+        })
+      return await (store.runTerminalLeafMutations
+        ? store.runTerminalLeafMutations(keys, mutate)
+        : mutate())
     } catch (error) {
       console.warn('[orchestration] failed to persist legacy worker recovery batch', {
         dispatchIds: [...dispatchIds],

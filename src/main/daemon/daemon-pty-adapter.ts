@@ -3,10 +3,16 @@ import {
   type PtyFencedTerminationRequest,
   type PtyFencedTerminationOutcome
 } from '../../shared/pty-fenced-termination'
-import { FENCED_TERMINATION_PROTOCOL_VERSION } from './daemon-protocol-version'
-import { emitPtyListeners, createPtyExitPayload } from './daemon-pty-listener-emission'
+import {
+  CONDITIONAL_RESPAWN_PROTOCOL_VERSION,
+  FENCED_TERMINATION_PROTOCOL_VERSION
+} from './daemon-protocol-version'
 import { DaemonPtyDaemonRecovery } from './daemon-pty-daemon-recovery'
-import type { DaemonPtyAdapterOptions } from './daemon-pty-runtime-state'
+import type {
+  DaemonPtyAdapterOptions,
+  PendingDaemonSpawnOperation
+} from './daemon-pty-runtime-state'
+import { createPtyExitPayload, emitPtyListeners } from './daemon-pty-listener-emission'
 import { supportsMode2031UnsubscribeFact, type DaemonEvent } from './types'
 import type { DaemonEndpointIdentity } from './daemon-hello-protocol'
 import type { IPtyProvider } from '../providers/pty-provider-contract'
@@ -20,12 +26,56 @@ import {
 import { isUnknownRequestTypeError } from './daemon-endpoint-errors'
 import type { AutomaticWorkRequestType } from './daemon-automatic-work-protocol'
 import type { DaemonAsyncIoStatus } from '../../shared/daemon-async-io-health'
+import type {
+  TerminalConditionalRespawnResult,
+  TerminalRespawnReplacement
+} from '../../shared/terminal-conditional-respawn'
+import {
+  recordConditionalRespawnExit,
+  respawnDaemonPtyIfMatch
+} from './daemon-pty-adapter-conditional-respawn'
 
 export class DaemonPtyAdapter extends DaemonPtyDaemonRecovery implements IPtyProvider {
+  private readonly uncertainConditionalRespawns = new Map<
+    string,
+    {
+      fingerprint: string
+      operation: PendingDaemonSpawnOperation
+    }
+  >()
+
   constructor(opts: DaemonPtyAdapterOptions) {
     super(opts)
     // Registered after the base listener, which marks the sessions awaiting recovery first.
     this.client.onDisconnected(() => this.recoverAfterEndpointLoss())
+  }
+
+  async respawnIfMatch(
+    id: string,
+    expectedIncarnationId: string,
+    mutationId: string,
+    replacement: TerminalRespawnReplacement
+  ): Promise<TerminalConditionalRespawnResult> {
+    // SAFETY: the coordinator receives this adapter's private state as one cohesive state machine.
+    return respawnDaemonPtyIfMatch(
+      {
+        protocolVersion: this.protocolVersion,
+        uncertainConditionalRespawns: this.uncertainConditionalRespawns,
+        withHistorySpawnLock: this.withHistorySpawnLock.bind(this),
+        ensureConnected: this.ensureConnected.bind(this),
+        client: this.client,
+        pendingSpawnOperationsBySessionId: this.pendingSpawnOperationsBySessionId,
+        sessionIncarnations: this.sessionIncarnations,
+        activeSessionIds: this.activeSessionIds,
+        clearExitedSessionState: this.clearExitedSessionState.bind(this),
+        exitListeners: this.exitListeners
+      },
+      CONDITIONAL_RESPAWN_PROTOCOL_VERSION,
+      id,
+      expectedIncarnationId,
+      mutationId,
+      replacement
+    )
   }
 
   supportsFencedTermination(_id: string): boolean {
@@ -183,9 +233,21 @@ export class DaemonPtyAdapter extends DaemonPtyDaemonRecovery implements IPtyPro
           ...(this.pendingSpawnOperationsBySessionId.get(event.sessionId) ?? []),
           ...this.pendingClaimSpawnOperations
         ])
+        if (
+          event.payload.incarnationId !== undefined &&
+          [...pendingOperations].some(
+            (operation) =>
+              operation.conditionalRespawnOldIncarnationId === event.payload.incarnationId
+          )
+        ) {
+          return
+        }
         for (const operation of pendingOperations) {
           if (operation.ignoreNextExit) {
             operation.ignoreNextExit = false
+            continue
+          }
+          if (recordConditionalRespawnExit(operation, event.sessionId, event.payload)) {
             continue
           }
           const exits = operation.exitsBySessionId.get(event.sessionId) ?? []

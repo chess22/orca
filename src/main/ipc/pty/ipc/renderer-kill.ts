@@ -2,7 +2,7 @@ import type {
   PtyFencedTerminationRequest,
   PtyFencedTerminationOutcome
 } from '../../../../shared/pty-fenced-termination'
-import { LOCAL_EXECUTION_HOST_ID } from '../../../../shared/execution-host'
+import { LOCAL_EXECUTION_HOST_ID, type ExecutionHostId } from '../../../../shared/execution-host'
 import { isRemoteRuntimePtyId } from '../../../../shared/remote-runtime-pty-id'
 import { getPtyIpc } from '../../pty-host-bindings'
 import type { Store } from '../../../persistence'
@@ -21,6 +21,86 @@ import {
 import { finishPtyShutdown, isPtyAlreadyGoneError } from '../provider/liveness'
 import { publishSyntheticExit, stopLegacyRelayBridgedPty } from '../runtime/kill'
 import { PtyExitProof, PtyRetirementWithoutProof } from '../../../pty-exit-proof'
+import type { TerminalLeafMutationKey } from '../../../terminal-leaf-mutation-lane'
+
+type RendererKillIdentity = {
+  incarnationId: string | null
+  bindings: readonly {
+    executionHostId: ExecutionHostId
+    worktreeId: string
+    tabId: string
+    leafId: string
+    incarnationId: string | null
+  }[]
+  keys: readonly TerminalLeafMutationKey[]
+}
+
+function captureRendererKillIdentity(
+  store: Store | undefined,
+  ptyId: string
+): RendererKillIdentity {
+  const bindings: RendererKillIdentity['bindings'][number][] = []
+  for (const executionHostId of store?.getWorkspaceSessionHostIds?.() ?? []) {
+    const session = store?.getWorkspaceSession(executionHostId)
+    if (!session) {
+      continue
+    }
+    const worktreeByTab = new Map<string, string>()
+    for (const [worktreeId, tabs] of Object.entries(session.tabsByWorktree ?? {})) {
+      for (const tab of tabs) {
+        worktreeByTab.set(tab.id, worktreeId)
+      }
+    }
+    for (const [tabId, layout] of Object.entries(session.terminalLayoutsByTabId ?? {})) {
+      const worktreeId = worktreeByTab.get(tabId)
+      if (!worktreeId) {
+        continue
+      }
+      for (const [leafId, boundPtyId] of Object.entries(layout.ptyIdsByLeafId ?? {})) {
+        if (boundPtyId !== ptyId) {
+          continue
+        }
+        bindings.push({
+          executionHostId,
+          worktreeId,
+          tabId,
+          leafId,
+          incarnationId: session.terminalPtyIncarnationsByPaneKey?.[`${tabId}:${leafId}`] ?? null
+        })
+      }
+    }
+  }
+  bindings.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
+  const connectionId = getPtySshConnectionId(ptyId)
+  const retirementKeys = connectionId
+    ? (store?.getSshPtyRetirementMutationKeys?.(connectionId, ptyId) ?? [])
+    : []
+  return {
+    incarnationId: ptyIncarnationById.get(ptyId) ?? null,
+    bindings,
+    keys: [
+      ...bindings.map(({ executionHostId, worktreeId, tabId, leafId }) => ({
+        executionHostId,
+        worktreeId,
+        tabId,
+        leafId
+      })),
+      ...retirementKeys
+    ]
+  }
+}
+
+function rendererKillIdentityMatches(
+  store: Store | undefined,
+  ptyId: string,
+  expected: RendererKillIdentity
+): boolean {
+  const current = captureRendererKillIdentity(store, ptyId)
+  return (
+    current.incarnationId === expected.incarnationId &&
+    JSON.stringify(current.bindings) === JSON.stringify(expected.bindings)
+  )
+}
 
 export type PtyKillIpcDeps = {
   store?: Store
@@ -67,29 +147,38 @@ async function stopRendererOwnedPtyAs(
     // Runtime handles belong to terminal.close; unowned routing could target a local provider.
     throw new Error('Invalid PTY provider id')
   }
-  const settleStop = intentionalStop
-    ? deps.runtime?.intentionalPtyStops?.mark(
-        args.id,
-        intentionalStop,
-        ptyIncarnationById.get(args.id) ?? null
-      )
-    : undefined
-  let stopped = false
-  try {
-    await stopRendererOwnedPtyProcess(deps, args)
-    stopped = true
-  } finally {
-    settleStop?.(stopped)
-    if (!stopped) {
-      // The failed shutdown left the process running.
-      deps.runtime?.clearPtyStopRequest?.(args.id)
+  const identity = captureRendererKillIdentity(deps.store, args.id)
+  const stop = async (): Promise<void> => {
+    if (!rendererKillIdentityMatches(deps.store, args.id, identity)) {
+      throw new Error('terminal_kill_pty_identity_changed')
+    }
+    const settleStop = intentionalStop
+      ? deps.runtime?.intentionalPtyStops?.mark(args.id, intentionalStop, identity.incarnationId)
+      : undefined
+    let stopped = false
+    try {
+      if (!rendererKillIdentityMatches(deps.store, args.id, identity)) {
+        throw new Error('terminal_kill_pty_identity_changed')
+      }
+      await stopRendererOwnedPtyProcess(deps, args, identity)
+      stopped = true
+    } finally {
+      settleStop?.(stopped)
+      if (!stopped) {
+        // The failed shutdown left the process running.
+        deps.runtime?.clearPtyStopRequest?.(args.id)
+      }
     }
   }
+  await (deps.store?.runTerminalLeafMutations
+    ? deps.store.runTerminalLeafMutations(identity.keys, stop)
+    : stop())
 }
 
 async function stopRendererOwnedPtyProcess(
   deps: PtyKillIpcDeps,
-  args: { id: string; keepHistory?: boolean }
+  args: { id: string; keepHistory?: boolean },
+  identity: RendererKillIdentity
 ): Promise<void> {
   const { store, runtime, getLocalPtyProviderStartupPromise, shutdownProviderAndDetectExit } = deps
   runtime?.markPtyStopRequested?.(args.id)
@@ -104,11 +193,16 @@ async function stopRendererOwnedPtyProcess(
   if (startupPromise) {
     await startupPromise
   }
+  // Provider startup can wait behind ownership handoff; fence the exact process again at the
+  // final destructive boundary so a same-id replacement is never stopped by the old request.
+  if (!rendererKillIdentityMatches(store, args.id, identity)) {
+    throw new Error('terminal_kill_pty_identity_changed')
+  }
   const provider = tryGetProviderForPty(args.id)
   if (!provider && connectionId) {
     // Detached/unhydrated SSH ownership must be tombstoned, never routed to local fallback.
     const unproven = PtyRetirementWithoutProof.because(SSH_PROVIDER_UNREGISTERED_REASON)
-    const incarnationId = finishPtyShutdown(args.id, connectionId, store, unproven)
+    const incarnationId = await finishPtyShutdown(args.id, connectionId, store, unproven)
     publishSyntheticExit(deps, args.id, -1, incarnationId, unproven)
     return
   }
@@ -132,7 +226,7 @@ async function stopRendererOwnedPtyProcess(
     proof = PtyExitProof.from('absent', stoppingIncarnationId)
   }
   // Some shutdown paths omit onExit; idempotent cleanup must cover them too.
-  const incarnationId = finishPtyShutdown(args.id, connectionId, store, proof)
+  const incarnationId = await finishPtyShutdown(args.id, connectionId, store, proof)
   if (proof.source !== 'exit-observed') {
     publishSyntheticExit(deps, args.id, -1, incarnationId, proof)
   }
@@ -167,7 +261,7 @@ async function stopFencedRendererPty(
       ptyIncarnationById.get(args.id) === args.expectedIncarnationId
     ) {
       deps.runtime?.markPtyStopRequested?.(args.id)
-      finishPtyShutdown(
+      await finishPtyShutdown(
         args.id,
         null,
         deps.store,

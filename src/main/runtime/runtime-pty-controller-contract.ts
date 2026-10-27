@@ -27,6 +27,10 @@ import type { WriteSettlement } from '../../shared/pty-write-settlement'
 import type { StartupCwdFallback } from '../../shared/startup-cwd-fallback'
 import type { TerminalInputKind } from '../../shared/terminal-input-kind'
 import type { PaneResumeOutcome } from '../../shared/workspace-layout/workspace-layout-published'
+import type {
+  TerminalConditionalRespawnResult,
+  TerminalRespawnReplacement
+} from '../../shared/terminal-conditional-respawn'
 
 export type PtyInventoryRefreshOptions = {
   includeForegroundProcessEvidence?: boolean
@@ -126,6 +130,12 @@ export type RuntimePtyController = {
     startupCwdFallback?: StartupCwdFallback
     savedStartupCwd?: string
   }>
+  respawnIfMatch?(
+    ptyId: string,
+    expectedIncarnationId: string,
+    mutationId: string,
+    replacement: TerminalRespawnReplacement
+  ): Promise<TerminalConditionalRespawnResult>
   /** The local terminal owner's automatic-restore state; null when it has no fork gate. */
   getAutomaticWorkStatus?(): Promise<AutomaticWorkStatus | null>
   resumeAutomaticWork?(): Promise<AutomaticWorkResumeOutcome>
@@ -147,6 +157,8 @@ export type RuntimePtyController = {
     ptyId: string,
     opts?: { keepHistory?: boolean; deadlineMs?: number }
   ): Promise<boolean>
+  /** Stops only this incarnation; false means the replacement may still be live. */
+  stopIncarnationIfMatch?(ptyId: string, expectedIncarnationId: string): Promise<boolean>
   getCwd?(ptyId: string): Promise<string | null>
   getForegroundProcess(ptyId: string): Promise<string | null>
   inspectProcess?(

@@ -31,6 +31,7 @@ import type { ProfileStatePersistenceAuthority } from './profile-state-authority
 import type { AutomationRun } from '../../../shared/automations-types'
 import { resolveNewPaneShellPath } from '../migrating-orcad-catalog/orcad-shell-history-installer'
 import { OrcadTerminalRestoreHintStore } from '../migrating-orcad-catalog/orcad-terminal-restore-hint-store'
+import { TerminalLeafMutationLane } from '../../terminal-leaf-mutation-lane'
 
 export type DurableProfileStateMutation<T> = {
   value: T
@@ -51,6 +52,7 @@ export type StoreRuntimeOptions = {
 
 /** Mutable coordination state shared only with this Store's private collaborators. */
 export class StoreRuntimeState {
+  readonly terminalLeafMutationLane = new TerminalLeafMutationLane()
   state!: PersistedState
   readonly dataFile: string
   readonly storageAuthority: AutomationStorageAuthority

@@ -1,5 +1,5 @@
 import { LocalPtyProvider } from '../../../providers/local-pty-provider'
-import { isCurrentPtyExit, ptyOwnership } from './ownership-state'
+import { isCurrentPtyExit, ptyIncarnationById } from './ownership-state'
 import {
   localBackgroundStreamUnsub,
   localDataUnsub,
@@ -11,11 +11,12 @@ import {
   setLocalWriteUnavailableUnsub
 } from './listener-lifecycle'
 import { localProvider } from './registry'
-import { clearProviderPtyState } from './state-cleanup'
+import { clearExitedProviderPtyState } from './state-cleanup'
 import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../../../shared/layout-owner-switch'
 import { providerSnapshotRequiredPtys, visibleRendererPtys } from '../delivery/visibility-state'
 import type { PtyIpcSession } from '../session'
 import { publishPtyEndpointLoss } from '../../../runtime/terminal/pty-endpoint-loss-signal'
+import { consumeLocalRuntimePtyExit, settleRuntimePtyExit } from './runtime-exit-settlement'
 
 export function bindProviderListeners(session: PtyIpcSession): void {
   localDataUnsub?.()
@@ -89,6 +90,7 @@ export function bindProviderListeners(session: PtyIpcSession): void {
       if (!isCurrentPtyExit(payload)) {
         return
       }
+      const expectedIncarnationId = payload.incarnationId ?? ptyIncarnationById.get(payload.id)
       const syntheticExit = session.consumeSyntheticKillExit(payload.id, payload.incarnationId)
       // Daemon restart replaces processes while their panes survive.
       const settleRestartStop = payload.replacedByRestart
@@ -98,33 +100,43 @@ export function bindProviderListeners(session: PtyIpcSession): void {
             payload.incarnationId ?? null
           )
         : undefined
-      try {
-        if (!isLocalProvider) {
-          const viewShown = ORCA_LAYOUT_OWNER_IS_MAIN && visibleRendererPtys.has(payload.id)
-          clearProviderPtyState(payload.id)
-          ptyOwnership.delete(payload.id)
-          if (syntheticExit) {
-            session.runtime?.markPtyStopRequested(payload.id)
-          }
+      const viewShown = ORCA_LAYOUT_OWNER_IS_MAIN && visibleRendererPtys.has(payload.id)
+      if (!isLocalProvider && syntheticExit) {
+        session.runtime?.markPtyStopRequested(payload.id)
+      }
+      const settlement =
+        (isLocalProvider
+          ? consumeLocalRuntimePtyExit(payload.id, payload.incarnationId)
+          : undefined) ??
+        settleRuntimePtyExit(payload.id, () =>
           session.runtime?.onPtyExit(payload.id, payload.code, payload.incarnationId, {
             providerExitObserved: true,
             ...(viewShown ? { viewShown } : {}),
             ...(payload.cause ? { cause: payload.cause } : {})
           })
-        }
-        // Control replies may overtake stream data; physical exit must still retire late output.
-        if (syntheticExit) {
-          return
-        }
-        // Exit cause belongs to runtime records; preserve the renderer event contract.
-        session.sendPtyExitToRenderer({
-          id: payload.id,
-          code: payload.code,
-          ...(payload.incarnationId ? { incarnationId: payload.incarnationId } : {})
+        )
+      void settlement
+        .then((retired) => {
+          try {
+            // Control replies may overtake stream data; physical exit must still retire late output.
+            const retiredProviderIdentity =
+              retired && clearExitedProviderPtyState(payload.id, expectedIncarnationId)
+            if (!retiredProviderIdentity || syntheticExit) {
+              return
+            }
+            // Exit cause belongs to runtime records; preserve the renderer event contract.
+            session.sendPtyExitToRenderer({
+              id: payload.id,
+              code: payload.code,
+              ...(payload.incarnationId ? { incarnationId: payload.incarnationId } : {})
+            })
+          } finally {
+            settleRestartStop?.(true)
+          }
         })
-      } finally {
-        settleRestartStop?.(true)
-      }
+        .catch((error: unknown) => {
+          console.error(`[pty] Failed to publish PTY ${payload.id} provider exit:`, error)
+        })
     })
   )
 }

@@ -46,7 +46,7 @@ export type OrcadMigrationSource = OrcadMigrationSourceCutoverPort & {
   /** Before the fence. Loss of contact is `unverifiable`, never `exited`. */
   assessTerminals: () => Promise<OrcadMigrationTerminalVerdict>
   /** Marks what an exited proof covers as ended, so later checks stop counting it. */
-  retireProvenExitedTerminals: (proof: OrcadMigrationTerminalVerdict) => void
+  retireProvenExitedTerminals: (proof: OrcadMigrationTerminalVerdict) => Promise<void>
   /** Throws when the journal cannot be read: an unreadable record keeps the source fenced. */
   resolveFence: () => OrcadMigrationFenceState
   /** Journal, then fence, then flush, then the terminal re-check under the fence. */

@@ -186,7 +186,7 @@ async function fenceOrResume(
   if (terminalProof.verdict === 'live' || terminalProof.verdict === 'unverifiable') {
     return refuse(terminalProof.verdict, 'orcad_migration_terminals', terminalProof.reason)
   }
-  source.retireProvenExitedTerminals(terminalProof)
+  await source.retireProvenExitedTerminals(terminalProof)
   await args.releaseDirectSession?.(target.id)
   const result = await runTargetLifecycle(target.id, () =>
     source.acquireFence({

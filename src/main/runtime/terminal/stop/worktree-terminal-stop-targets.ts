@@ -1,5 +1,5 @@
 import { setTimeout as delay } from 'node:timers/promises'
-import { OrcaRuntimeWithSleepResolvedWorktreeTerminals } from './worktree-terminal-sleep'
+import { OrcaRuntimeWithConditionalRespawn } from './conditional-respawn'
 import { setsEqual } from '../../runtime-worktree-binding-index'
 import type { RuntimeLeafRecord } from '../../runtime-terminal-state-records'
 import { worktreeIdsEqual } from '../../../../shared/worktree/id'
@@ -14,7 +14,7 @@ import { PTY_CONTROLLER_LIST_TIMEOUT_MS } from '../../orca-runtime-postlude'
 const POST_STOP_LIVENESS_RETRY_MS = PTY_CONTROLLER_LIST_TIMEOUT_MS
 const POST_STOP_LIVENESS_RETRY_DELAY_MS = 100
 
-export abstract class OrcaRuntimeWithStopExactTerminalsForWorktree extends OrcaRuntimeWithSleepResolvedWorktreeTerminals {
+export abstract class OrcaRuntimeWithStopExactTerminalsForWorktree extends OrcaRuntimeWithConditionalRespawn {
   protected abstract issueHandle(leaf: RuntimeLeafRecord): string
 
   async stopExactTerminalsForWorktree(
@@ -60,20 +60,31 @@ export abstract class OrcaRuntimeWithStopExactTerminalsForWorktree extends OrcaR
 
     const stoppedPtyIds: string[] = []
     for (const ptyId of [...expected].sort()) {
-      // Why: exact-stop is the sleep transaction boundary; its exit must leave the sleeping surface for wake.
-      const settleStop = opts.keepHistory
-        ? this.intentionalPtyStops.mark(
-            ptyId,
-            'reversible',
-            this.ptysById.get(ptyId)?.incarnationId ?? null
-          )
-        : null
-      let stopped = false
-      try {
-        stopped = await this.ptyController.stopAndWait(ptyId, { keepHistory: opts.keepHistory })
-      } finally {
-        settleStop?.(stopped)
+      const identity = this.captureTerminalStopIdentity(ptyId)
+      if (!identity) {
+        throw Object.assign(new Error('terminal_exact_stop_pty_identity_changed'), { ptyId })
       }
+      const stopped = await this.runTerminalStopMutation(identity, async () => {
+        if (!this.terminalStopIdentityMatches(identity)) {
+          throw Object.assign(new Error('terminal_exact_stop_pty_identity_changed'), { ptyId })
+        }
+        // Why: exact-stop is the sleep transaction boundary; its exit must leave the sleeping surface for wake.
+        const settleStop = opts.keepHistory
+          ? this.intentionalPtyStops.mark(ptyId, 'reversible', identity.incarnationId)
+          : null
+        let didStop = false
+        try {
+          if (!this.terminalStopIdentityMatches(identity)) {
+            throw Object.assign(new Error('terminal_exact_stop_pty_identity_changed'), { ptyId })
+          }
+          didStop = await this.ptyController!.stopAndWait!(ptyId, {
+            keepHistory: opts.keepHistory
+          })
+          return didStop
+        } finally {
+          settleStop?.(didStop)
+        }
+      })
       if (!stopped) {
         throw Object.assign(new Error('terminal_exact_stop_failed'), { ptyId })
       }

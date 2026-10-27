@@ -20,22 +20,19 @@ import {
   isAgentSessionExecutionClaim,
   isAgentSessionSurfaceBinding
 } from '../../shared/agent-session-host-authority'
-import { type DaemonRequest, TerminalAttachCanceledError } from './types'
+import {
+  type DaemonRequest,
+  type RespawnIfMatchRequest,
+  TerminalAttachCanceledError
+} from './types'
+import {
+  admitConditionalTerminalRespawn,
+  resolveSpawnAdmissionDeadline
+} from './daemon-terminal-conditional-respawn-admission'
 
 type CreateOrAttachRequest = Extract<DaemonRequest, { type: 'createOrAttach' }>
 
-const MAX_SPAWN_ADMISSION_WINDOW_MS = 12_000
-
-// Leave time for the paced spawn to finish before caller cancellation (15 seconds on remote clients).
-function resolveSpawnAdmissionDeadline(cancelAfterMs: unknown): number {
-  const windowMs =
-    Number.isSafeInteger(cancelAfterMs) && Number(cancelAfterMs) > 0
-      ? Math.min(Number(cancelAfterMs) / 2, MAX_SPAWN_ADMISSION_WINDOW_MS)
-      : MAX_SPAWN_ADMISSION_WINDOW_MS
-  return Date.now() + windowMs
-}
-
-type DaemonTerminalAdmissionOptions = {
+export type DaemonTerminalAdmissionOptions = {
   host: TerminalHost
   connections: DaemonClientConnections
   endpoint: DaemonEndpointLifecycle
@@ -54,6 +51,10 @@ export class DaemonTerminalAdmission {
   private static readonly INTERACTIVE_OUTPUT_WINDOW_MS = 100
   private static readonly INTERACTIVE_OUTPUT_MAX_CHARS = 1024
   private createOrAttachInFlight = 0
+  private readonly conditionalRespawnExitFences = new Map<
+    string,
+    Map<string, { deferred: (() => void)[] }>
+  >()
 
   constructor(private readonly options: DaemonTerminalAdmissionOptions) {}
 
@@ -186,6 +187,21 @@ export class DaemonTerminalAdmission {
     }
   }
 
+  async respawnIfMatch(clientId: string, request: RespawnIfMatchRequest): Promise<unknown> {
+    // SAFETY: the helper receives this admission boundary's private state as one authority unit.
+    return await admitConditionalTerminalRespawn(
+      {
+        options: this.options,
+        incrementInFlight: () => this.createOrAttachInFlight++,
+        decrementInFlight: () => this.createOrAttachInFlight--,
+        createStreamClient: this.createStreamClient.bind(this),
+        beginConditionalRespawnExitFence: this.beginConditionalRespawnExitFence.bind(this)
+      },
+      clientId,
+      request
+    )
+  }
+
   private createStreamClient(
     clientId: string,
     sessionId: () => string
@@ -209,25 +225,64 @@ export class DaemonTerminalAdmission {
       },
       onExit: (code, incarnationId, cause) => {
         const routedSessionId = sessionId()
-        this.options.log.log('session-exited', {
-          sessionId: routedSessionId,
-          code,
-          cause: cause?.kind
-        })
-        this.options.streamDataBatcher.enqueueControlEvent(clientId, routedSessionId, {
-          type: 'event',
-          event: 'exit',
-          sessionId: routedSessionId,
-          payload: { code, incarnationId, ...(cause ? { cause } : {}) }
-        })
-        this.options.streamDataBatcher.flush(clientId)
-        recordDaemonStreamBacklogEvent('sessionExit', {
-          sessionIdSuffix: routedSessionId.slice(-10)
-        })
-        this.options.transientFactRelay.onSessionExit(routedSessionId)
-        this.options.streamDataBatcher.refreshSessionDroppability(routedSessionId)
-        this.options.attachments.release(routedSessionId)
-        this.options.reevaluateIdleShutdown()
+        const deliver = (): void => {
+          this.options.log.log('session-exited', {
+            sessionId: routedSessionId,
+            code,
+            cause: cause?.kind
+          })
+          this.options.streamDataBatcher.enqueueControlEvent(clientId, routedSessionId, {
+            type: 'event',
+            event: 'exit',
+            sessionId: routedSessionId,
+            payload: { code, incarnationId, ...(cause ? { cause } : {}) }
+          })
+          this.options.streamDataBatcher.flush(clientId)
+          recordDaemonStreamBacklogEvent('sessionExit', {
+            sessionIdSuffix: routedSessionId.slice(-10)
+          })
+          this.options.transientFactRelay.onSessionExit(routedSessionId)
+          this.options.streamDataBatcher.refreshSessionDroppability(routedSessionId)
+          this.options.attachments.release(routedSessionId)
+          this.options.reevaluateIdleShutdown()
+        }
+        if (
+          incarnationId !== undefined &&
+          this.conditionalRespawnExitFences.get(routedSessionId)?.has(incarnationId)
+        ) {
+          this.conditionalRespawnExitFences
+            .get(routedSessionId)
+            ?.get(incarnationId)
+            ?.deferred.push(deliver)
+          return
+        }
+        deliver()
+      }
+    }
+  }
+
+  private beginConditionalRespawnExitFence(
+    sessionId: string,
+    incarnationId: string
+  ): (replacementPublished: boolean) => void {
+    const fences =
+      this.conditionalRespawnExitFences.get(sessionId) ??
+      new Map<string, { deferred: (() => void)[] }>()
+    const fence = { deferred: [] as (() => void)[] }
+    fences.set(incarnationId, fence)
+    this.conditionalRespawnExitFences.set(sessionId, fences)
+    return (replacementPublished) => {
+      if (fences.get(incarnationId) !== fence) {
+        return
+      }
+      fences.delete(incarnationId)
+      if (fences.size === 0) {
+        this.conditionalRespawnExitFences.delete(sessionId)
+      }
+      if (!replacementPublished) {
+        for (const deliver of fence.deferred) {
+          deliver()
+        }
       }
     }
   }

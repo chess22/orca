@@ -12,6 +12,7 @@ import { spawnPtyFromRuntimeController } from './spawn'
 import {
   killPtyFromRuntimeController,
   retireRejectedPtyFromRuntimeController,
+  stopPtyIncarnationIfMatchFromRuntimeController,
   stopAndWaitPtyFromRuntimeController
 } from './kill'
 import {
@@ -39,6 +40,7 @@ import {
   listProcessesFromRuntimeController,
   listProcessesWithHostScopeFromRuntimeController
 } from './inventory-operations'
+import { respawnPtyIfMatch } from './conditional-respawn'
 
 export function installPtyRuntimeController(deps: PtyRuntimeControllerDeps): void {
   const { runtime, adoptStablePane, requestSerializedBuffer } = deps
@@ -59,6 +61,8 @@ export function installPtyRuntimeController(deps: PtyRuntimeControllerDeps): voi
       return adopted
     },
     spawn: async (args) => spawnPtyFromRuntimeController(deps, args),
+    respawnIfMatch: (ptyId, expectedIncarnationId, mutationId, replacement) =>
+      respawnPtyIfMatch(ptyId, expectedIncarnationId, mutationId, replacement),
     // Automatic-work gates belong to the local provider; SSH runtimes own theirs.
     getAutomaticWorkStatus: () => getLocalAutomaticWorkStatus(localProvider),
     resumeAutomaticWork: () => resumeLocalAutomaticWork(localProvider),
@@ -72,6 +76,8 @@ export function installPtyRuntimeController(deps: PtyRuntimeControllerDeps): voi
     retireRejectedPty: (ptyId, stopConfirmed, incarnationId) =>
       retireRejectedPtyFromRuntimeController(deps, ptyId, stopConfirmed, incarnationId),
     stopAndWait: (ptyId, opts) => stopAndWaitPtyFromRuntimeController(deps, ptyId, opts),
+    stopIncarnationIfMatch: (ptyId, expectedIncarnationId) =>
+      stopPtyIncarnationIfMatchFromRuntimeController(ptyId, expectedIncarnationId),
     getForegroundProcess: (ptyId) => getForegroundProcessFromRuntimeController(ptyId),
     inspectProcess: (ptyId, options) => inspectProcessFromRuntimeController(ptyId, options),
     confirmForegroundProcess: (ptyId) => confirmForegroundProcessFromRuntimeController(ptyId),

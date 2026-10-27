@@ -76,7 +76,7 @@ describe('operator-closed SSH lease tombstones', () => {
   it('keeps the tombstone while a binding the scrub could not reach still names the pty', async () => {
     const store = await storeWithDetachedPaneBinding()
 
-    store.markSshRemotePtyLease(
+    await store.markSshRemotePtyLease(
       'ssh-1',
       'ssh:ssh-1@@remote-pty',
       PtyExitProof.from('exit-observed', undefined)
@@ -97,7 +97,7 @@ describe('operator-closed SSH lease tombstones', () => {
       { targetId: 'ssh-1', ptyId: 'remote-pty', state: 'attached', pendingKill }
     ])
 
-    store.markSshRemotePtyLease(
+    await store.markSshRemotePtyLease(
       'ssh-1',
       'ssh:ssh-1@@remote-pty',
       PtyExitProof.from('exit-observed', undefined)
@@ -131,7 +131,7 @@ describe('operator-closed SSH lease tombstones', () => {
       { targetId: 'ssh-1', ptyId: 'remote-pty-3', state: 'attached' }
     ])
 
-    store.markSshRemotePtyLease(
+    await store.markSshRemotePtyLease(
       'ssh-1',
       'ssh:ssh-1@@remote-pty-3',
       PtyExitProof.from('exit-observed', undefined)
@@ -158,7 +158,7 @@ describe('operator-closed SSH lease tombstones', () => {
     ])
     expect(store.getSshRemotePtyLeases()).toHaveLength(4)
 
-    store.markSshRemotePtyLease(
+    await store.markSshRemotePtyLease(
       'ssh-1',
       'ssh:ssh-1@@remote-pty-1',
       PtyExitProof.from('exit-observed', undefined)

@@ -370,7 +370,9 @@ describe('registerPtyHandlers', () => {
           'relay-pty',
           expect.objectContaining({ unverifiableReason: SSH_PROVIDER_UNREGISTERED_REASON })
         )
-        expect(runtime.onPtyExit).toHaveBeenCalledWith('ssh:ssh-1@@relay-pty', -1, undefined)
+        await vi.waitFor(() =>
+          expect(runtime.onPtyExit).toHaveBeenCalledWith('ssh:ssh-1@@relay-pty', -1, undefined)
+        )
       })
       it('marks a detached SSH lease terminated when runtime controller kill has no provider', async () => {
         const store = { markSshRemotePtyLease: vi.fn() }
@@ -399,7 +401,9 @@ describe('registerPtyHandlers', () => {
           'remote-pty',
           expect.objectContaining({ unverifiableReason: SSH_PROVIDER_UNREGISTERED_REASON })
         )
-        expect(runtime.onPtyExit).toHaveBeenCalledWith('remote-pty', -1, undefined)
+        await vi.waitFor(() =>
+          expect(runtime.onPtyExit).toHaveBeenCalledWith('remote-pty', -1, undefined)
+        )
       })
     })
   })

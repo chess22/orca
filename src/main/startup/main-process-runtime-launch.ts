@@ -170,7 +170,7 @@ async function launchServeMode(
       })
     )
   }
-  publishHeadlessRuntimeGraph(runtime)
+  await publishHeadlessRuntimeGraph(runtime)
   // Why before RPC binds: the first paired client must already see this host's SSH targets.
   registerHeadlessServeSshHandlers(state.store!, runtime)
   await runtimeRpc.start().catch((error) => {

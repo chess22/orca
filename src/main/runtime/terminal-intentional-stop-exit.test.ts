@@ -230,13 +230,14 @@ describe('intentional stops keep the pane through the exit', () => {
     ])
   })
 
-  it('keeps the pane when main restarts the daemon under it', () => {
+  it('keeps the pane when main restarts the daemon under it', async () => {
     const harness = createHarness()
 
     harness.emitDaemonRestartExit(true)
 
     expect(harness.tabIds()).toEqual([TAB_ID])
     expect(harness.boundPtyId()).toBe(PTY_ID)
+    await vi.waitFor(() => expect(harness.rendererExits()).toHaveLength(1))
     expect(harness.rendererExits()).toEqual([
       {
         id: PTY_ID,
@@ -248,13 +249,14 @@ describe('intentional stops keep the pane through the exit', () => {
     ])
   })
 
-  it('retires the pane on a daemon-wide exit that no restart claims', () => {
+  it('retires the pane on a daemon-wide exit that no restart claims', async () => {
     const harness = createHarness()
 
     harness.emitDaemonRestartExit()
 
     // Switch-on, main keeps the pane as the window does on a -1 no host confirmed (lost contact).
     expect(harness.boundPtyId()).toBe(ORCA_LAYOUT_OWNER_IS_MAIN ? PTY_ID : null)
+    await vi.waitFor(() => expect(harness.rendererExits()).toHaveLength(1))
     expect(harness.rendererExits()).toEqual([
       { id: PTY_ID, code: -1, incarnationId: INCARNATION_ID, hostId: 'local' }
     ])
@@ -301,7 +303,9 @@ describe('intentional stops keep the pane through the exit', () => {
     harness.emitProviderExit(LATER_INCARNATION_ID)
 
     // Why wait: an unstopped exit retires the pane through an async durable save.
-    await vi.waitFor(() => expect(harness.boundPtyId()).toBeNull())
+    await vi.waitFor(() =>
+      expect(harness.rendererExits().at(-1)?.incarnationId).toBe(LATER_INCARNATION_ID)
+    )
     expect(harness.rendererExits().at(-1)).toEqual({
       id: PTY_ID,
       code: 0,

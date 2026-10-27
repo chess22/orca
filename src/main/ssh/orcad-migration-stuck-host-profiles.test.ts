@@ -131,7 +131,7 @@ async function connectMove(
   if (proof.verdict === 'live' || proof.verdict === 'unverifiable') {
     return { outcome: 'refused', reason: proof.reason }
   }
-  retireProvenExitedLeases(loaded.store, TARGET.id, proof)
+  await retireProvenExitedLeases(loaded.store, TARGET.id, proof)
   return fenceOrcadMigrationSource({
     userDataPath: loaded.userDataPath,
     store: loaded.store,

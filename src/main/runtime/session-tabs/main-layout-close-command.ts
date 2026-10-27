@@ -11,6 +11,7 @@ import { parseAppSshPtyId } from '../../../shared/ssh-pty-id'
 const NO_STOP: ExplicitCloseStop = { stopped: false }
 
 export type MainLayoutCloseHost = {
+  runLeafMutation: <T>(leafIds: readonly string[], operation: () => Promise<T>) => Promise<T>
   /** Every pane of a tab main owns, in pane order. */
   panesOfTab: (tabId: string) => { leafId: string; ptyId: string | null }[]
   applyLayoutCommand: (command: WindowLayoutCommand) => Promise<LayoutApplyReply>
@@ -46,6 +47,16 @@ export type MainLayoutClose = {
  * pinned tab refuses (`terminal_tab_pinned`) unless forced; any other refusal throws its code.
  */
 export async function closeInMainLayout(
+  host: MainLayoutCloseHost,
+  target: MainLayoutCloseTarget
+): Promise<MainLayoutClose | null> {
+  const initialLeafIds = host.panesOfTab(target.tabId).map((pane) => pane.leafId)
+  return host.runLeafMutation(initialLeafIds.length > 0 ? initialLeafIds : [target.leafId], () =>
+    closeInMainLayoutWithinLeafLane(host, target)
+  )
+}
+
+async function closeInMainLayoutWithinLeafLane(
   host: MainLayoutCloseHost,
   target: MainLayoutCloseTarget
 ): Promise<MainLayoutClose | null> {

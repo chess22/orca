@@ -1,12 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { preserveTerminalRetirementProofs } from '../mobile-session-terminal-retirement-proof'
 import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../../shared/layout-owner-switch'
 import { startedMainTerminalSurfaces } from '../terminal/surface/main-terminal-surfaces'
 import { mainBindsUnendedTerminal } from '../terminal/surface/main-pane-verdict'
-import {
-  headlessMobileSnapshotContentUnchanged,
-  mobileSnapshotIdentityUnchanged
-} from '../mobile-session-snapshot-equality'
 import type { TuiAgent } from '../../../shared/tui-agent'
 import { isTuiAgent } from '../../../shared/tui-agent-config'
 import type { RuntimeStore } from '../runtime-store-contract'
@@ -65,8 +60,24 @@ import type { PtyLivenessVerdict } from '../../../shared/pty-liveness-verdict'
 import type { HostScopedWorktreeKey } from '../../../shared/worktree/host-qualified-identity'
 
 import { RuntimeConstructionServices } from './runtime-construction-services'
+import {
+  TerminalLeafMutationLane,
+  type TerminalLeafMutationKey
+} from '../../terminal-leaf-mutation-lane'
+import { prepareRuntimeMobileSessionSnapshot } from './runtime-mobile-session-snapshot-store'
 
 export abstract class OrcaRuntimeWithRuntimeId extends RuntimeConstructionServices {
+  private readonly terminalLeafMutationLane = new TerminalLeafMutationLane()
+
+  runTerminalLeafMutations<T>(
+    keys: readonly TerminalLeafMutationKey[],
+    operation: () => Promise<T> | T
+  ): Promise<T> {
+    return this.store?.runTerminalLeafMutations
+      ? this.store.runTerminalLeafMutations(keys, operation)
+      : this.terminalLeafMutationLane.run(keys, operation)
+  }
+
   protected readonly runtimeId = randomUUID()
 
   protected readonly startedAt = Date.now()
@@ -118,27 +129,10 @@ export abstract class OrcaRuntimeWithRuntimeId extends RuntimeConstructionServic
     snapshot: RuntimeMobileSessionTabsSnapshot
   ): RuntimeMobileSessionTabsSnapshot {
     const existing = this.mobileSessionTabsByWorktree.get(worktreeId)
-    if (ORCA_LAYOUT_OWNER_IS_MAIN) {
-      // Every write keeps main's order and groups; its rows and their facts stay as written.
-      const merged = startedMainTerminalSurfaces(this)?.withMainOrder(snapshot) ?? snapshot
-      // A write main's order wholly overrides (a rebuild from the saved session) changes nothing,
-      // unless it names a new occupant, window publication or retirement proof.
-      if (
-        existing &&
-        mobileSnapshotIdentityUnchanged(existing, snapshot) &&
-        headlessMobileSnapshotContentUnchanged(existing, merged) &&
-        !headlessMobileSnapshotContentUnchanged(snapshot, merged)
-      ) {
-        return existing
-      }
-      snapshot = merged
-    }
-    snapshot = preserveTerminalRetirementProofs(snapshot, existing)
-    const snapshotVersion = existing
-      ? Math.max(snapshot.snapshotVersion, existing.snapshotVersion + 1)
-      : snapshot.snapshotVersion
-    const stamped =
-      snapshotVersion === snapshot.snapshotVersion ? snapshot : { ...snapshot, snapshotVersion }
+    const mainOrderedSnapshot = ORCA_LAYOUT_OWNER_IS_MAIN
+      ? (startedMainTerminalSurfaces(this)?.withMainOrder(snapshot) ?? snapshot)
+      : null
+    const stamped = prepareRuntimeMobileSessionSnapshot(existing, snapshot, mainOrderedSnapshot)
     this.mobileSessionTabsByWorktree.set(worktreeId, stamped)
     return stamped
   }

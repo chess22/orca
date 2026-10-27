@@ -44,6 +44,7 @@ import type {
   ProfileStatePersistenceAuthority,
   ProfileStateMaintenance
 } from './profile-state-authority'
+import type { TerminalLeafMutationKey } from '../../terminal-leaf-mutation-lane'
 
 export type StoreOptions = StoreRuntimeOptions & {
   /** Storage-form JSON supplied by a read-only profile migration/import boundary. */
@@ -171,6 +172,13 @@ export class Store {
         scheduleSave(this.domains.scheduling)
       }
     }
+  }
+
+  runTerminalLeafMutations<T>(
+    keys: readonly TerminalLeafMutationKey[],
+    operation: () => Promise<T> | T
+  ): Promise<T> {
+    return this.runtime.terminalLeafMutationLane.run(keys, operation)
   }
 
   /** Moves the #22551 settings-slot OpenCode Go key into `target`; it stays on disk until that succeeds. */

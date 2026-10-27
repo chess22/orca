@@ -32,6 +32,22 @@ export abstract class OrcaRuntimeWithAdoptTerminalOrphansFromInventory extends O
     workspace: TerminalWorkspaceLaunchScope,
     inventory: PtyControllerInventory
   ): Promise<RuntimeTerminalOrphanAdoptionResult> {
+    return this.runTerminalLeafMutations(
+      request.claims.map((claim) => ({
+        executionHostId: this.workspaceSessions.getHostId(workspace.id),
+        worktreeId: workspace.id,
+        tabId: claim.tabId,
+        leafId: claim.leafId
+      })),
+      () => this.adoptTerminalOrphansWithinLeafLane(request, workspace, inventory)
+    )
+  }
+
+  private async adoptTerminalOrphansWithinLeafLane(
+    request: RuntimeTerminalOrphanAdoptionRequest,
+    workspace: TerminalWorkspaceLaunchScope,
+    inventory: PtyControllerInventory
+  ): Promise<RuntimeTerminalOrphanAdoptionResult> {
     const store = this.store
     if (!store?.setWorkspaceSession || (!store.flushPendingOrThrowAsync && !store.flushOrThrow)) {
       throw new Error('workspace_session_unavailable')

@@ -119,10 +119,10 @@ describe('terminal gate characterization: census-only verdicts', () => {
 })
 
 describe('acting on a terminal proof', () => {
-  it('retires every lease an exited proof covers, attached ones included (#29083)', () => {
+  it('retires every lease an exited proof covers, attached ones included (#29083)', async () => {
     const leases = store(MIXED)
-    const markSshRemotePtyLease = vi.fn()
-    retireProvenExitedLeases({ ...leases, markSshRemotePtyLease }, 'ssh-1', {
+    const markSshRemotePtyLease = vi.fn(async () => {})
+    await retireProvenExitedLeases({ ...leases, markSshRemotePtyLease }, 'ssh-1', {
       verdict: 'exited',
       provenPtyIds: ['att', 'det', 'exp', 'ter']
     })
@@ -195,10 +195,10 @@ describe('a bridged conversion under its fence', () => {
     })
   })
 
-  it('retires nothing it bridged', () => {
+  it('retires nothing it bridged', async () => {
     const leases = store([{ ptyId: 'att', state: 'attached' }])
-    const markSshRemotePtyLease = vi.fn()
-    retireProvenExitedLeases({ ...leases, markSshRemotePtyLease }, 'ssh-1', bridged)
+    const markSshRemotePtyLease = vi.fn(async () => {})
+    await retireProvenExitedLeases({ ...leases, markSshRemotePtyLease }, 'ssh-1', bridged)
     expect(markSshRemotePtyLease).not.toHaveBeenCalled()
   })
 })

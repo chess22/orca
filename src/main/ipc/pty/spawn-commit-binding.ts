@@ -39,7 +39,11 @@ export async function savePtySpawnPaneBinding(
   const replaced = state.replacedPaneOwner
   try {
     const persisted = replaced
-      ? await store.persistPtyBinding(swapReplacedPaneBinding(store, binding, replaced))
+      ? await store.persistPtyBinding(
+          swapReplacedPaneBinding(store, binding, replaced),
+          connectionId ? toSshExecutionHostId(connectionId) : undefined,
+          binding
+        )
       : await persistFreshPaneBinding(store, binding, connectionId, absentOwner)
     if (persisted === false) {
       throw new Error(refusal)
@@ -72,24 +76,28 @@ export async function persistFreshPaneBinding(
 ): Promise<boolean> {
   let targetChanged = false
   const hostId = connectionId ? toSshExecutionHostId(connectionId) : undefined
-  const persisted = await store.persistPtyBinding(() => {
-    const session = store.getWorkspaceSession(hostId)
-    const paneKey = makePaneKey(binding.tabId, binding.leafId)
-    if (ptyBindingIsRefused(binding, session, binding.worktreeId, paneKey, [])) {
+  const persisted = await store.persistPtyBinding(
+    () => {
+      const session = store.getWorkspaceSession(hostId)
+      const paneKey = makePaneKey(binding.tabId, binding.leafId)
+      if (ptyBindingIsRefused(binding, session, binding.worktreeId, paneKey, [])) {
+        return binding
+      }
+      const bound = session.terminalLayoutsByTabId[binding.tabId]?.ptyIdsByLeafId?.[binding.leafId]
+      const stamp = session.terminalPtyIncarnationsByPaneKey?.[paneKey]
+      if (
+        bound &&
+        (bound !== binding.ptyId || stamp !== binding.incarnationId) &&
+        !isAbsentBindingReplay(absentOwner, bound, stamp)
+      ) {
+        targetChanged = true
+        return null
+      }
       return binding
-    }
-    const bound = session.terminalLayoutsByTabId[binding.tabId]?.ptyIdsByLeafId?.[binding.leafId]
-    const stamp = session.terminalPtyIncarnationsByPaneKey?.[paneKey]
-    if (
-      bound &&
-      (bound !== binding.ptyId || stamp !== binding.incarnationId) &&
-      !isAbsentBindingReplay(absentOwner, bound, stamp)
-    ) {
-      targetChanged = true
-      return null
-    }
-    return binding
-  }, hostId)
+    },
+    hostId,
+    binding
+  )
   if (targetChanged) {
     throw new PaneOwnerContentionError()
   }

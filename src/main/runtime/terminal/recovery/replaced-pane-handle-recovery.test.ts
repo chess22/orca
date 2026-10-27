@@ -154,7 +154,7 @@ describe('issuedForPaneKey census', () => {
     expect(users.sort()).toEqual([
       'src/main/runtime/runtime-terminal-contracts.ts',
       'src/main/runtime/terminal/identity/terminal-handle-bindings.ts',
-      'src/main/runtime/terminal/recovery/resolve-terminal-pane.ts'
+      'src/main/runtime/terminal/recovery/resolve-terminal-pane-recovery.ts'
     ])
   })
 })

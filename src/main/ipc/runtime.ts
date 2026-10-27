@@ -37,7 +37,7 @@ export function registerRuntimeHandlers(runtime: OrcaRuntimeService): void {
 
   ipcMain.handle(
     'runtime:syncWindowGraph',
-    (event, graph: RuntimeRendererSyncWindowGraph): RuntimeSyncWindowGraphResult => {
+    async (event, graph: RuntimeRendererSyncWindowGraph): Promise<RuntimeSyncWindowGraphResult> => {
       const window = BrowserWindow.fromWebContents(event.sender)
       if (!window) {
         throw new Error('Runtime graph sync must originate from a BrowserWindow')
@@ -49,7 +49,7 @@ export function registerRuntimeHandlers(runtime: OrcaRuntimeService): void {
       if (typeof graph.rendererGeneration !== 'string' || graph.rendererGeneration.length === 0) {
         throw new Error('Runtime graph sync requires a renderer generation')
       }
-      const result = runtime.syncWindowGraph(window.id, graph)
+      const result = await runtime.syncWindowGraphSerialized(window.id, graph)
       // Only the authoritative window's accepted graph may publish its project catalog.
       if (graph.projectSectionCatalog) {
         publishMobileProjectSections(graph.projectSectionCatalog)

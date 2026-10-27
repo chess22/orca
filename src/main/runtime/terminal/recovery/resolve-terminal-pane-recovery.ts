@@ -1,0 +1,230 @@
+import type { OrcaRuntimeWithCreateTerminal } from '../launch/terminal-create'
+import { OrcaRuntimeWithRestoredHandlePaneStart } from '../surface/restored-handle-pane-start'
+import type {
+  RuntimeTerminalRead,
+  RuntimeTerminalResolvePane
+} from '../../../../shared/runtime-types'
+import type {
+  RuntimeTerminalCreate,
+  RuntimeTerminalSummary
+} from '../../../../shared/runtime-terminal-contracts'
+import type { TerminalHandleRecord } from '../../runtime-terminal-contracts'
+import type {
+  RuntimeLeafRecord,
+  RuntimePtyWorktreeRecord
+} from '../../runtime-terminal-state-records'
+import type { ResolvedWorktree } from '../../runtime-worktree-path-identity'
+import { parsePaneKey } from '../../../../shared/stable-pane-id'
+import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../../../shared/layout-owner-switch'
+import { LOCAL_EXECUTION_HOST_ID, toSshExecutionHostId } from '../../../../shared/execution-host'
+
+export abstract class OrcaRuntimeWithResolveTerminalPaneRecovery extends OrcaRuntimeWithRestoredHandlePaneStart {
+  protected abstract assertLiveTerminalHandleTargetsPty(handle: string, expectedPtyId: string): void
+  abstract createTerminal(
+    ...args: Parameters<OrcaRuntimeWithCreateTerminal['createTerminal']>
+  ): ReturnType<OrcaRuntimeWithCreateTerminal['createTerminal']>
+
+  abstract getTerminalHandleForPaneKey(paneKey: string): string | null
+  abstract getPtyExecutionHostMetadata(
+    ptyId: string | null
+  ): Pick<RuntimeTerminalCreate, 'executionHostId' | 'hostPlatform' | 'incarnationId'>
+  protected abstract getPaneKeyForTerminalHandle(handle: string): string | null
+  protected abstract getResolvedWorktreeMap(): Promise<Map<string, ResolvedWorktree>>
+  protected abstract buildPtyTerminalSummary(
+    pty: RuntimePtyWorktreeRecord,
+    worktreesById: Map<string, ResolvedWorktree>
+  ): RuntimeTerminalSummary
+  protected abstract getLiveLeafForHandle(handle: string): {
+    record: TerminalHandleRecord
+    leaf: RuntimeLeafRecord
+  }
+  protected abstract buildTerminalSummary(
+    leaf: RuntimeLeafRecord,
+    worktreesById: Map<string, ResolvedWorktree>,
+    provenLivePtyIds?: ReadonlySet<string> | null
+  ): RuntimeTerminalSummary
+  protected abstract readPtyTerminal(
+    handle: string,
+    pty: RuntimePtyWorktreeRecord,
+    opts?: { cursor?: number; limit?: number }
+  ): RuntimeTerminalRead
+
+  protected async rootProcessIdForCurrentPty(
+    handle: string,
+    pty: RuntimePtyWorktreeRecord
+  ): Promise<number | undefined> {
+    if (!this.ptyController?.listProcesses || !pty.incarnationId) {
+      return undefined
+    }
+    const hostId = pty.connectionId
+      ? toSshExecutionHostId(pty.connectionId)
+      : LOCAL_EXECUTION_HOST_ID
+    const process = await this.ptyController
+      .listProcesses(hostId)
+      .then((rows) =>
+        rows.find(
+          (row) =>
+            row.id === pty.ptyId &&
+            row.incarnationId === pty.incarnationId &&
+            Number.isSafeInteger(row.rootProcessId) &&
+            (row.rootProcessId ?? 0) > 0
+        )
+      )
+      .catch(() => undefined)
+    if (!process?.rootProcessId) {
+      return undefined
+    }
+    try {
+      this.assertLiveTerminalHandleTargetsPty(handle, pty.ptyId)
+      const current = this.ptysById.get(pty.ptyId)
+      return current?.incarnationId === pty.incarnationId ? process.rootProcessId : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  resolveTerminalPane(paneKey: string, expectedWorktreeId?: string): RuntimeTerminalResolvePane {
+    // Why: the renderer context menu only knows the stable pane key; main owns
+    // the runtime terminal handle that agents and CLI commands can address.
+    const handle = this.getTerminalHandleForPaneKey(paneKey)
+    if (!handle) {
+      throw new Error('terminal_not_found')
+    }
+    const record = this.handles.get(handle)
+    const parsed = parsePaneKey(paneKey)
+    const leaf = parsed ? this.leaves.get(this.getLeafKey(parsed.tabId, parsed.leafId)) : null
+    const pty = this.getPtyRecordForPaneKey(paneKey)
+    const candidateWorktreeIds = [leaf?.worktreeId, pty?.worktreeId].filter(
+      (worktreeId): worktreeId is string => Boolean(worktreeId)
+    )
+    const worktreeId = candidateWorktreeIds[0] ?? null
+    if (
+      (candidateWorktreeIds.length > 1 && new Set(candidateWorktreeIds).size > 1) ||
+      (expectedWorktreeId && candidateWorktreeIds.some((id) => id !== expectedWorktreeId)) ||
+      (expectedWorktreeId && candidateWorktreeIds.length === 0)
+    ) {
+      // Why: pane coordinates restored by a paired client must not cross workspace ownership.
+      throw new Error('terminal_not_found')
+    }
+    return {
+      handle,
+      tabId: parsed?.tabId ?? record?.tabId ?? '',
+      leafId: parsed?.leafId ?? record?.leafId ?? '',
+      ptyId: record?.ptyId ?? null,
+      connected: pty?.connected === true,
+      ...(worktreeId ? { worktreeId } : {}),
+      ...this.getPtyExecutionHostMetadata(record?.ptyId ?? pty?.ptyId ?? null)
+    }
+  }
+
+  /** Whether the caller's handle still names the pane it asks to recover. */
+  private handleNamesRecoveredPane(
+    handle: string,
+    paneKey: string,
+    worktreeId: string,
+    pty: RuntimePtyWorktreeRecord
+  ): boolean {
+    const handlePaneKey = this.getPaneKeyForTerminalHandle(handle)
+    if (handlePaneKey === paneKey) {
+      return true
+    }
+    if (!ORCA_LAYOUT_OWNER_IS_MAIN || handlePaneKey !== null) {
+      return false
+    }
+    // Switch point: main's layout names no pane for a terminal its replacement unbound, so a handle
+    // resolved for this pane, whose terminal ended, learns the connected replacement (never spawns).
+    const staleRecord = this.handles.get(handle)
+    const stale = staleRecord?.ptyId ? this.ptysById.get(staleRecord.ptyId) : undefined
+    return (
+      staleRecord?.issuedForPaneKey === paneKey &&
+      !stale?.connected &&
+      pty.connected &&
+      this.getTerminalWorktreeIdForHandle(handle) === worktreeId
+    )
+  }
+
+  async recoverTerminalPane(
+    paneKey: string,
+    expectedWorktreeId: string,
+    expectedHandle?: string
+  ): Promise<RuntimeTerminalResolvePane> {
+    const parsed = parsePaneKey(paneKey)
+    const pty = this.getPtyRecordForPaneKey(paneKey)
+    if (
+      !parsed ||
+      !pty ||
+      !expectedHandle ||
+      pty.worktreeId !== expectedWorktreeId ||
+      !this.handleNamesRecoveredPane(expectedHandle, paneKey, expectedWorktreeId, pty)
+    ) {
+      throw new Error('terminal_not_found')
+    }
+    const recoveryKey = `${expectedWorktreeId}\0${paneKey}`
+    const pending = this.terminalPaneRecoveryByIdentity.get(recoveryKey)
+    if (pending) {
+      return pending
+    }
+    if (pty?.connected) {
+      const current = this.resolveTerminalPane(paneKey, expectedWorktreeId)
+      if (expectedHandle === undefined || current.handle !== expectedHandle) {
+        return current
+      }
+      throw new Error('terminal_not_recoverable')
+    }
+    const expiredLease = this.getRecentExpiredSshLease(
+      expectedWorktreeId,
+      parsed.tabId,
+      parsed.leafId,
+      pty.ptyId
+    )
+    if (!expiredLease) {
+      // Why: an explicit close leaves a terminated lease; only relay expiry authorizes shell
+      // recreation. `getRecentExpiredSshLease` also refuses a superseded or relay-id-recycled
+      // lease, which is `expired` for a reason that already names the successor — the pane's id no
+      // longer routes to the shell it describes, so recovering through it would adopt a stranger's
+      // process or re-race a pane that already moved on.
+      throw new Error('terminal_not_recoverable')
+    }
+    // Why an `expired` lease is not on its own authority to spawn a replacement: every writer of
+    // that state records that the CLIENT lost its route — a superseded sibling, a recycled relay
+    // id, a persistPtyBinding refusal, a failed reattach, a relay reset — and each says in-place
+    // that it is not evidence the shell died (`terminated` is the attested-death state, refused
+    // above). `!pty.connected` is the same inference: one dropped relay clears it for every PTY it
+    // owned. So the pair can hold over a remote shell that is still running, and createTerminal
+    // would rebind the pane away from it, leaving the original orphaned and its agent duplicated.
+    // The runtime grades that: `live` is the host proving the shell survived, `unverifiable` is the
+    // client losing contact, and both refuse. What this gate must NOT require is a positive
+    // `exited`: the only answer that ever reaches it is a reachable relay reporting it has no such
+    // id, and that is a union — pty.attach throws not-found for an unknown id with no liveness
+    // check, and a relay restart makes every previously minted id unknown. No writer of
+    // `exited` co-occurs with a reattachable `expired` lease either, since a host-delivered exit
+    // frame tombstones the lease `terminated`. Demanding one would close this gate permanently, and
+    // an unrecoverable pane is its own failure (docs/reference/ssh-execution-boundary.md,
+    // shared/pty-liveness-verdict.ts).
+    const liveness = this.getPtyLivenessVerdict(pty.ptyId)
+    if (liveness?.status === 'unverifiable' || liveness?.status === 'live') {
+      throw new Error('terminal_not_recoverable')
+    }
+    // Why: disconnected PTYs can reissue handles during graph cleanup; only a connected replacement satisfies the pane CAS.
+    const recovery = this.createTerminal(`id:${expectedWorktreeId}`, {
+      tabId: parsed.tabId,
+      leafId: parsed.leafId,
+      focus: false
+    }).then((terminal) => ({
+      handle: terminal.handle,
+      tabId: parsed.tabId,
+      leafId: parsed.leafId,
+      ptyId: terminal.ptyId ?? null,
+      worktreeId: expectedWorktreeId,
+      ...(terminal.incarnationId ? { incarnationId: terminal.incarnationId } : {})
+    }))
+    this.terminalPaneRecoveryByIdentity.set(recoveryKey, recovery)
+    const clearRecovery = (): void => {
+      if (this.terminalPaneRecoveryByIdentity.get(recoveryKey) === recovery) {
+        this.terminalPaneRecoveryByIdentity.delete(recoveryKey)
+      }
+    }
+    void recovery.then(clearRecovery, clearRecovery)
+    return recovery
+  }
+}

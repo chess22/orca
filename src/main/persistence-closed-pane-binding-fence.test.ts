@@ -102,6 +102,103 @@ describe('a pane main closed or took back is not brought back by its late termin
     rmSync(testState.dir, { recursive: true, force: true })
   })
 
+  it('waits for a conditional respawn reservation before admitting a split beside its pane', async () => {
+    const store = createStore()
+    expect(
+      await store.admitTerminalPane({
+        type: 'createTerminalTab',
+        workspace: WORKTREE,
+        tabId: TAB,
+        leafId: TEST_LEAF_1
+      })
+    ).toBe('admitted')
+    let release!: () => void
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let entered = false
+    const reservation = store.runTerminalLeafMutations(
+      [
+        {
+          executionHostId: LOCAL_EXECUTION_HOST_ID,
+          worktreeId: WORKTREE,
+          tabId: TAB,
+          leafId: TEST_LEAF_1
+        }
+      ],
+      async () => {
+        entered = true
+        await blocked
+      }
+    )
+    await vi.waitFor(() => expect(entered).toBe(true))
+
+    let admitted = false
+    const admission = store
+      .admitTerminalPane({
+        type: 'splitPane',
+        workspace: WORKTREE,
+        tabId: TAB,
+        leafId: TEST_LEAF_1,
+        direction: 'vertical',
+        newLeafId: TEST_LEAF_2
+      })
+      .then((result) => {
+        admitted = true
+        return result
+      })
+    await Promise.resolve()
+    expect(admitted).toBe(false)
+
+    release()
+    await reservation
+    await expect(admission).resolves.toBe('admitted')
+  })
+
+  it('waits for a conditional respawn reservation before withdrawing its pane', async () => {
+    const store = createStore()
+    await tabWithStartingSplit(store)
+    let release!: () => void
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let entered = false
+    const reservation = store.runTerminalLeafMutations(
+      [
+        {
+          executionHostId: LOCAL_EXECUTION_HOST_ID,
+          worktreeId: WORKTREE,
+          tabId: TAB,
+          leafId: TEST_LEAF_2
+        }
+      ],
+      async () => {
+        entered = true
+        await blocked
+      }
+    )
+    await vi.waitFor(() => expect(entered).toBe(true))
+
+    let withdrawn = false
+    const withdrawal = store
+      .withdrawTerminalPane({
+        type: 'closePane',
+        workspace: WORKTREE,
+        tabId: TAB,
+        leafId: TEST_LEAF_2
+      })
+      .then((result) => {
+        withdrawn = true
+        return result
+      })
+    await Promise.resolve()
+    expect(withdrawn).toBe(false)
+
+    release()
+    await reservation
+    await expect(withdrawal).resolves.toBeNull()
+  })
+
   it('refuses the binding of a split main took back when its terminal did not start in time', async () => {
     const store = createStore()
     await tabWithStartingSplit(store)

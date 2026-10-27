@@ -21,6 +21,10 @@ import { routeSpawnOrHold } from './daemon-router-newer-daemon-hold'
 import { findLegacySessionOwner } from './daemon-router-legacy-owner'
 import { retireExitedLegacyAdapter, type ExitedLegacyVerdict } from './daemon-router-exited-legacy'
 import type { WriteSettlement } from '../../shared/pty-write-settlement'
+import type {
+  TerminalConditionalRespawnResult,
+  TerminalRespawnReplacement
+} from '../../shared/terminal-conditional-respawn'
 import type { TerminalOscColorQueryReplyColors } from '../../shared/terminal-osc-color-reply'
 
 export class DaemonPtyRouter implements IPtyProvider {
@@ -78,6 +82,19 @@ export class DaemonPtyRouter implements IPtyProvider {
     } finally {
       this.retirement.spawnInFlight--
     }
+  }
+
+  async respawnIfMatch(
+    id: string,
+    expectedIncarnationId: string,
+    mutationId: string,
+    replacement: TerminalRespawnReplacement
+  ): Promise<TerminalConditionalRespawnResult> {
+    const adapter = this.ownerResolver.getVerifiedRoute(id)
+    if (!adapter?.respawnIfMatch) {
+      return { outcome: 'unsupported', mutationId, reason: 'daemon_owner_unavailable' }
+    }
+    return await adapter.respawnIfMatch(id, expectedIncarnationId, mutationId, replacement)
   }
 
   requestIdleRetirement(): Promise<DaemonIdleRetirementResult> {

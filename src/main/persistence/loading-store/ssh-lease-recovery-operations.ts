@@ -1,6 +1,7 @@
 import type { SshPendingPtyKill } from '../../../shared/ssh-pending-pty-kill'
 import type { SshRemotePtyLease } from '../../../shared/ssh-types'
 import type { PtyRetirementEvidence } from '../../pty-exit-proof'
+import { PtyExitProof } from '../../pty-exit-proof'
 import {
   getSshRemotePtyLeases as getSshRemotePtyLeasesOperation,
   markSshRemotePtyLease as markSshRemotePtyLeaseOperation,
@@ -19,10 +20,16 @@ import type { WriteFlushBarrierOperations } from './write-flush-barriers'
 import type { TerminalBindingRecoveryOperations } from './terminal-binding-recovery'
 import type { WriteSchedulingOperations } from './write-scheduling'
 import { scheduleSave } from './write-scheduling'
+import {
+  sameLogicalLeafKeys,
+  sshPtyBindingRetirementState,
+  sshPtyCleanupMutationKeys
+} from './ssh-lease-recovery-mutation-keys'
+import type { TerminalLeafMutationKey } from '../../terminal-leaf-mutation-lane'
 
 type SshLeaseRecoveryOperationsRuntime = Pick<
   StoreRuntimeState,
-  'dirtyProfileStateDomains' | 'state'
+  'dirtyProfileStateDomains' | 'state' | 'terminalLeafMutationLane'
 >
 
 const sshLeaseRecoveryOperationsContext = Symbol('SshLeaseRecoveryOperations')
@@ -57,8 +64,42 @@ export class SshLeaseRecoveryOperations {
     )
   }
 
-  markSshRemotePtyLease(targetId: string, ptyId: string, evidence: PtyRetirementEvidence): void {
-    markSshRemotePtyLeaseOperation(getSshPtyLeaseOperations(this), targetId, ptyId, evidence)
+  /** Keys a stop/kill caller must hold before retiring this legacy SSH lease. */
+  getSshPtyRetirementMutationKeys(targetId: string, ptyId: string): TerminalLeafMutationKey[] {
+    return sshPtyBindingRetirementState(this[sshLeaseRecoveryOperationsContext], targetId, ptyId)
+      .keys
+  }
+
+  async markSshRemotePtyLease(
+    targetId: string,
+    ptyId: string,
+    evidence: PtyRetirementEvidence
+  ): Promise<void> {
+    const context = this[sshLeaseRecoveryOperationsContext]
+    const before = sshPtyBindingRetirementState(
+      this[sshLeaseRecoveryOperationsContext],
+      targetId,
+      ptyId
+    )
+    await context.runtime.terminalLeafMutationLane.run(before.keys, () => {
+      const current = sshPtyBindingRetirementState(
+        this[sshLeaseRecoveryOperationsContext],
+        targetId,
+        ptyId
+      )
+      const expectedIncarnationId =
+        evidence instanceof PtyExitProof ? evidence.incarnationId : undefined
+      const identityMatches =
+        !current.hasUnfencedBinding &&
+        current.matchingIncarnationIds.every(
+          (incarnationId) => incarnationId === expectedIncarnationId
+        )
+      const operations = getSshPtyLeaseOperations(this)
+      if (current.fingerprint !== before.fingerprint || !identityMatches) {
+        operations.clearBindingsForLeases = () => false
+      }
+      markSshRemotePtyLeaseOperation(operations, targetId, ptyId, evidence)
+    })
   }
 
   setSshRemotePtyLeasePendingKill(
@@ -74,8 +115,29 @@ export class SshLeaseRecoveryOperations {
     )
   }
 
-  removeSshRemotePtyLeases(targetId: string): void {
-    removeSshRemotePtyLeasesOperation(getSshPtyLeaseOperations(this), targetId)
+  async removeSshRemotePtyLeases(targetId: string): Promise<void> {
+    const context = this[sshLeaseRecoveryOperationsContext]
+    for (;;) {
+      const keys = sshPtyCleanupMutationKeys(this[sshLeaseRecoveryOperationsContext], targetId)
+      let keysChanged = false
+      await context.runtime.terminalLeafMutationLane.run(keys, () => {
+        // A matching leaf may have appeared while this cleanup waited for an earlier leaf. Do not
+        // clear it outside its lane: release and retry with the expanded, deterministically sorted
+        // key set. The final scan and synchronous scrub cannot interleave on the main JS thread.
+        const currentKeys = sshPtyCleanupMutationKeys(
+          this[sshLeaseRecoveryOperationsContext],
+          targetId
+        )
+        if (!sameLogicalLeafKeys(keys, currentKeys)) {
+          keysChanged = true
+          return
+        }
+        removeSshRemotePtyLeasesOperation(getSshPtyLeaseOperations(this), targetId)
+      })
+      if (!keysChanged) {
+        return
+      }
+    }
   }
 }
 

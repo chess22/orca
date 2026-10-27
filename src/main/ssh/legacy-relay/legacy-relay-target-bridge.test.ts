@@ -33,12 +33,12 @@ function paneStops(): LegacyRelayPaneStops {
     recordStop: (_target, relayPtyId, pendingKill) => {
       leases = leases.map((row) => (row.ptyId === relayPtyId ? { ...row, pendingKill } : row))
     },
-    retireLease: (_target, relayPtyId) => retire(relayPtyId)
+    retireLease: async (_target, relayPtyId) => retire(relayPtyId)
   }))
 }
 
 /** As the store's retire records: terminated, and any stop it carried delivered. */
-function retire(relayPtyId: string): void {
+async function retire(relayPtyId: string): Promise<void> {
   leases = leases.map((row) => {
     if (row.ptyId !== relayPtyId) {
       return row
@@ -149,6 +149,8 @@ describe('one target’s legacy relay bridge', () => {
     await subject.refresh()
     await subject.attach(PTY)
     relay.clients[0].emitExit('pty-1', 0)
+    await Promise.resolve()
+    await Promise.resolve()
     expect(events.exits).toEqual([PTY])
     expect(events.exitedTelemetry).toBe(1)
     expect(leases[0].state).toBe('terminated')

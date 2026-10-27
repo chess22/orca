@@ -35,7 +35,7 @@ export async function removeRegisteredSshTarget(targetId: string): Promise<void>
       // Failed disconnect must not leave removed targets and their leases registered.
       console.warn(`[ssh] Failed to disconnect removed target ${targetId}: ${errorMessage(err)}`)
     }
-    persistedStore?.removeSshRemotePtyLeases(targetId)
+    await persistedStore?.removeSshRemotePtyLeases(targetId)
     forgetLegacyRelayTarget(targetId)
     store.removeTarget(targetId)
     // Target removal also retires its scoped browser cookie storage.

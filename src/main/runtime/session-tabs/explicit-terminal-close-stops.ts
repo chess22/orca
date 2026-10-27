@@ -1,89 +1,21 @@
-import type { WorktreePtyHostFence } from '../worktree-pty-host-fence'
 import type { RuntimeTerminalClose } from '../../../shared/runtime-types'
 import type { RuntimePtyTabCloseAuthority } from '../runtime-terminal-state-records'
 import { parsePaneKey } from '../../../shared/stable-pane-id'
-import type { ResolvedWorktree } from '../runtime-worktree-path-identity'
 import { ORCA_LAYOUT_OWNER_IS_MAIN } from '../../../shared/layout-owner-switch'
-import type { LayoutApplyReply } from '../../../shared/workspace-layout/workspace-layout-command-types'
-import type { WindowLayoutCommand } from '../runtime-layout-apply'
 import { closeMainOwnedPaneByHandle } from './main-handle-close'
-import {
-  NO_STOP,
-  OrcaRuntimeWithExplicitCloseTabPtyStops,
-  type ExplicitCloseStop
-} from './explicit-terminal-close-pty-stops'
-import {
-  closePairedHostLeafFirst,
-  isTerminalTabPinnedInSession
-} from './paired-host-terminal-close'
+import { NO_STOP } from './explicit-terminal-close-pty-stops'
+import { OrcaRuntimeWithExplicitTerminalCloseIdentity } from './explicit-terminal-close-identity'
 
-export abstract class OrcaRuntimeWithStopExplicitlyClosedTabPtys extends OrcaRuntimeWithExplicitCloseTabPtyStops {
-  protected abstract getResolvedWorktreeMap(): Promise<Map<string, ResolvedWorktree>>
-  abstract applyLayoutCommand(command: WindowLayoutCommand): Promise<LayoutApplyReply>
-  protected abstract refreshPtyWorktreeRecordsFromController(
-    resolvedWorktrees: ResolvedWorktree[],
-    targetWorktreeId?: string | null,
-    deadline?: number
-  ): Promise<Set<string> | null>
-  protected abstract getLivePtyIdsForWorktree(
-    worktreeId: string,
-    freshPtyIds?: ReadonlySet<string>,
-    hostFence?: WorktreePtyHostFence
-  ): Set<string>
-  protected abstract getTerminalHandlesForPtyId(ptyId: string): string[]
-  protected abstract getRecordedTerminalSleepHandles(
-    ptyIds: Iterable<string>,
-    terminalHandlesByPtyId: Readonly<Record<string, readonly string[]>>
-  ): string[]
-  protected abstract commitWorktreeTerminalSleepPtys(args: {
-    worktreeId: string
-    generation: number
-    ptyIds: readonly string[]
-    pendingPtyIds: Set<string>
-    committedPtyIds: Set<string>
-    terminalHandlesByPtyId: Readonly<Record<string, readonly string[]>>
-  }): void
-
-  protected describeTerminalClose(
-    handle: string,
-    tabId: string,
-    ptyId: string | null,
-    stop: ExplicitCloseStop
-  ): RuntimeTerminalClose {
-    const close: RuntimeTerminalClose = { handle, tabId, ptyKilled: stop.stopped }
-    if (stop.stopped || !ptyId) {
-      return close
-    }
-    const verdict = this.getPtyLivenessVerdict(ptyId)
-    if (verdict?.status === 'unverifiable') {
-      return { ...close, ptyStopVerdict: 'unverifiable', ptyStopReason: verdict.reason }
-    }
-    if (verdict?.status === 'live') {
-      return { ...close, ptyStopVerdict: 'live' }
-    }
-    return close
-  }
-
-  /** null when this machine owns the PTY; see `closePairedHostLeafFirst` otherwise. */
-  private closeOnOwningPairedHost(
-    handle: string,
-    leaf: { worktreeId: string; tabId: string; leafId: string; ptyId: string | null },
-    method: 'terminal.close' | 'terminal.closeTab',
-    closesTab: boolean
-  ): ReturnType<typeof closePairedHostLeafFirst> {
-    return closePairedHostLeafFirst(leaf, method, {
-      call: (environmentId, hostMethod, params, timeoutMs) =>
-        this.callOrchestrationWorkerServer(environmentId, hostMethod, params, timeoutMs),
-      isTabPinned: () =>
-        closesTab &&
-        this.getWorkspaceSessionHostIdsForTab(leaf.worktreeId, leaf.tabId).some((hostId) =>
-          isTerminalTabPinnedInSession(this.store?.getWorkspaceSession?.(hostId), leaf)
-        ),
-      readBoundLeaf: () => this.getLiveLeafForHandle(handle).leaf
+export abstract class OrcaRuntimeWithStopExplicitlyClosedTabPtys extends OrcaRuntimeWithExplicitTerminalCloseIdentity {
+  async closeTerminal(handle: string): Promise<RuntimeTerminalClose> {
+    const expected = this.captureTerminalCloseIdentity(handle)
+    return this.runTerminalLeafMutations(expected?.mutationKeys ?? [], () => {
+      this.assertTerminalCloseIdentity(handle, expected)
+      return this.closeTerminalWithinLeafLane(handle)
     })
   }
 
-  async closeTerminal(handle: string): Promise<RuntimeTerminalClose> {
+  private async closeTerminalWithinLeafLane(handle: string): Promise<RuntimeTerminalClose> {
     // Switch point: a pane main owns closes in main's layout, whatever the window lists.
     if (ORCA_LAYOUT_OWNER_IS_MAIN) {
       const mainClose = await closeMainOwnedPaneByHandle(
@@ -254,6 +186,14 @@ export abstract class OrcaRuntimeWithStopExplicitlyClosedTabPtys extends OrcaRun
   }
 
   async closeTerminalTab(handle: string): Promise<RuntimeTerminalClose> {
+    const expected = this.captureTerminalCloseIdentity(handle)
+    return this.runTerminalLeafMutations(expected?.mutationKeys ?? [], () => {
+      this.assertTerminalCloseIdentity(handle, expected)
+      return this.closeTerminalTabWithinLeafLane(handle)
+    })
+  }
+
+  private async closeTerminalTabWithinLeafLane(handle: string): Promise<RuntimeTerminalClose> {
     // Switch point: a pane main owns closes in main's layout, whatever the window lists.
     if (ORCA_LAYOUT_OWNER_IS_MAIN) {
       const mainClose = await closeMainOwnedPaneByHandle(

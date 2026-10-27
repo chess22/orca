@@ -27,6 +27,23 @@ const METHOD_CASES: readonly (readonly [string, unknown, boolean])[] = [
   ['terminal.wait', { terminal: 'term', for: 'exit' }, false],
   ['terminal.create', {}, false],
   ['terminal.split', { terminal: 'term' }, false],
+  [
+    'terminal.respawnIfMatch',
+    {
+      mutationId: 'mutation',
+      terminal: 'term',
+      expected: {
+        worktreeId: 'worktree',
+        tabId: 'tab',
+        leafId: 'leaf',
+        ptyId: 'pty',
+        ptyGeneration: 1,
+        incarnationId: 'incarnation'
+      },
+      replacement: { cols: 80, rows: 24 }
+    },
+    false
+  ],
   ['terminal.stop', { worktree: 'worktree' }, false],
   ['terminal.closeAll', { worktree: 'worktree' }, false],
   ['terminal.sleep', { worktree: 'worktree' }, false],
@@ -71,11 +88,11 @@ async function invoke(name: string, params: unknown, runtime: Partial<OrcaRuntim
 
 describe('terminal RPC manifest characterization', () => {
   it('preserves all method names, order, streaming flags, and parseable minimum inputs', () => {
-    expect(TERMINAL_METHODS).toHaveLength(40)
+    expect(TERMINAL_METHODS).toHaveLength(41)
     expect(TERMINAL_METHODS.map((method) => [method.name, 'stream' in method])).toEqual(
       METHOD_CASES.map(([name, _params, stream]) => [name, stream])
     )
-    expect(new Set(TERMINAL_METHODS.map((method) => method.name)).size).toBe(40)
+    expect(new Set(TERMINAL_METHODS.map((method) => method.name)).size).toBe(41)
     for (const [name, params] of METHOD_CASES) {
       expect(() => schemaFor(name).parse(params), name).not.toThrow()
     }

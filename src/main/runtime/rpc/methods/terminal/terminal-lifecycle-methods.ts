@@ -14,6 +14,7 @@ import {
   TerminalFocus,
   TerminalHandle,
   TerminalReveal,
+  TerminalRespawnIfMatch,
   TerminalSplit,
   TerminalWait
 } from '../../../../../shared/rpc-contract/terminal-unary-params'
@@ -157,6 +158,14 @@ export const TERMINAL_LIFECYCLE_METHODS = [
               telemetrySource: params.telemetrySource,
               retrySplit: params.retrySplit
             })
+    })
+  }),
+  defineMethod({
+    name: 'terminal.respawnIfMatch',
+    permission: 'workspace',
+    params: TerminalRespawnIfMatch,
+    handler: async (params, { runtime }) => ({
+      respawn: await runtime.respawnTerminalIfMatch(params)
     })
   }),
   ...TERMINAL_WORKSPACE_STOP_METHODS,

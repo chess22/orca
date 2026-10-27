@@ -44,6 +44,44 @@ vi.mock('electron', () => ({
 afterEach(closeMoveTestStores)
 
 describe('moving a pane to a new tab', () => {
+  it.each([
+    ['source', SOURCE],
+    ['target', TARGET]
+  ] as const)(
+    'waits for a conditional respawn reservation on the %s pane key',
+    async (_side, tabId) => {
+      const store = openStore(newDataFile())
+      await seedSplitSource(store)
+      let release!: () => void
+      const blocked = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      let entered = false
+      const reservation = store.runTerminalLeafMutations(
+        [{ executionHostId: 'local', worktreeId: WT, tabId, leafId: MOVED }],
+        async () => {
+          entered = true
+          await blocked
+        }
+      )
+      await vi.waitFor(() => expect(entered).toBe(true))
+
+      let moved = false
+      const move = store
+        .moveTerminalLeafToNewTab({ ...moveRequest, ptyId: 'pty-agent' })
+        .then((result) => {
+          moved = true
+          return result
+        })
+      await Promise.resolve()
+      expect(moved).toBe(false)
+
+      release()
+      await reservation
+      await expect(move).resolves.toEqual({ status: 'moved', ptyId: 'pty-agent' })
+    }
+  )
+
   it('moves the leaf and its binding in one write and re-keys pane-keyed records', async () => {
     const store = openStore(newDataFile())
     await seedSplitSource(store)

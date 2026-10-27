@@ -258,6 +258,27 @@ export const CORE_COMMAND_SPECS: CommandSpec[] = [
   },
   TERMINAL_SET_PANE_TITLE_COMMAND_SPEC,
   {
+    path: ['terminal', 'respawn-if-match'],
+    summary: 'Replace one terminal only while its complete identity still matches',
+    usage:
+      'orca terminal respawn-if-match --terminal <handle> --mutation-id <id> --expected-worktree-id <id> --expected-tab-id <id> --expected-leaf-id <id> --expected-pty-id <id> --expected-pty-generation <n> --expected-incarnation-id <id> [--cols <n>] [--rows <n>] [--cwd <path>] [--command <text>] [--json]',
+    allowedFlags: [
+      ...GLOBAL_FLAGS,
+      'terminal',
+      'mutation-id',
+      'expected-worktree-id',
+      'expected-tab-id',
+      'expected-leaf-id',
+      'expected-pty-id',
+      'expected-pty-generation',
+      'expected-incarnation-id',
+      'cols',
+      'rows',
+      'cwd',
+      'command'
+    ]
+  },
+  {
     path: ['terminal', 'split'],
     summary: 'Split an existing terminal pane',
     usage:

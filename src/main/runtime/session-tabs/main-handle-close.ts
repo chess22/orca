@@ -44,7 +44,7 @@ export async function closeMainOwnedPaneByHandle(
     return null
   }
   // The graph takes main's latest panes first, so a handle names what main holds now.
-  surfaces.republish()
+  await surfaces.republish()
   const target: HandleTarget = host.livePty() ?? host.liveLeaf()
   if (!surfaces.ownsWorkspace(target.worktreeId)) {
     return null
@@ -58,6 +58,7 @@ export async function closeMainOwnedPaneByHandle(
   const close = pane
     ? await closeInMainLayout(
         {
+          runLeafMutation: (_leafIds, operation) => operation(),
           panesOfTab: (tabId) => surfaces.panesOfTab(tabId),
           applyLayoutCommand: host.applyLayoutCommand,
           remoteSessionIdOf: (tabId) => host.remoteSessionIdOf(target.worktreeId, tabId),

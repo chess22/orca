@@ -79,10 +79,14 @@ describe('a pane whose SSH lease expired can still be re-adopted', () => {
     ).toMatchObject({ tabId: TAB, leafId: TEST_LEAF_1, ptyId: APP_PTY_ID })
   })
 
-  it('drops the persisted owner after the lease is terminated', () => {
+  it('drops the persisted owner after the lease is terminated', async () => {
     const store = storeWithBoundRemotePane()
 
-    store.markSshRemotePtyLease(TARGET, APP_PTY_ID, PtyExitProof.from('exit-observed', undefined))
+    await store.markSshRemotePtyLease(
+      TARGET,
+      APP_PTY_ID,
+      PtyExitProof.from('exit-observed', undefined)
+    )
 
     expect(
       resolvePersistedStablePaneOwner(store, makePaneKey(TAB, TEST_LEAF_1), WORKTREE, TARGET)

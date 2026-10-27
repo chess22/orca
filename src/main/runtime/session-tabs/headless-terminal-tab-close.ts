@@ -17,6 +17,7 @@ import type { RuntimePtyWorktreeRecord } from '../runtime-terminal-state-records
 import type { TerminalPaneLayoutNode } from '../../../shared/terminal-tab-types'
 import type { RuntimeTerminalRename } from '../../../shared/runtime-terminal-contracts'
 import type { RuntimeSessionTabCloseReason } from '../../../shared/runtime-session-contracts'
+import { LOCAL_EXECUTION_HOST_ID, type ExecutionHostId } from '../../../shared/execution-host'
 
 export abstract class OrcaRuntimeWithCloseHeadlessMobileTerminalTab extends OrcaRuntimeWithMainLayoutTabMoves {
   protected abstract applyHeadlessTerminalPaneLayoutToSnapshot(
@@ -50,6 +51,55 @@ export abstract class OrcaRuntimeWithCloseHeadlessMobileTerminalTab extends Orca
       force?: boolean
       reason?: RuntimeSessionTabCloseReason
     } = {}
+  ): Promise<void> {
+    const hostIds = [...this.getWorkspaceSessionHostIdsForTab(worktreeId, tab.parentTabId)].sort()
+    const leafIds = [
+      ...new Set([
+        tab.leafId,
+        ...snapshot.tabs.flatMap((candidate) =>
+          candidate.type === 'terminal' && candidate.parentTabId === tab.parentTabId
+            ? [candidate.leafId]
+            : []
+        )
+      ])
+    ]
+    const mutationHostIds: ExecutionHostId[] =
+      hostIds.length > 0 ? hostIds : [LOCAL_EXECUTION_HOST_ID]
+    await this.runTerminalLeafMutations(
+      mutationHostIds.flatMap((executionHostId) =>
+        leafIds.map((leafId) => ({
+          executionHostId,
+          worktreeId,
+          tabId: tab.parentTabId,
+          leafId
+        }))
+      ),
+      () => {
+        const lockedHostIds = [
+          ...this.getWorkspaceSessionHostIdsForTab(worktreeId, tab.parentTabId)
+        ].sort()
+        if (
+          lockedHostIds.length !== hostIds.length ||
+          lockedHostIds.some((hostId, index) => hostId !== hostIds[index])
+        ) {
+          throw new Error('terminal_pane_owner_changed')
+        }
+        return this.closeHeadlessMobileTerminalTabWithinLeafLane(worktreeId, snapshot, tab, options)
+      }
+    )
+  }
+
+  private async closeHeadlessMobileTerminalTabWithinLeafLane(
+    worktreeId: string,
+    snapshot: RuntimeMobileSessionTabsSnapshot,
+    tab: RuntimeMobileSessionTerminalTab,
+    options: {
+      allowMissingPersistedTab?: boolean
+      killPtys?: boolean
+      authorizedPty?: RuntimePtyWorktreeRecord
+      force?: boolean
+      reason?: RuntimeSessionTabCloseReason
+    }
   ): Promise<void> {
     const closedParentTabId = tab.parentTabId
     const retirementProofs = snapshot.tabs.flatMap((candidate) => {
